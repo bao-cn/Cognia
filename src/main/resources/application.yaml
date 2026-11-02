@@ -1,0 +1,121 @@
+server:
+  port: ${SERVER_PORT:8080}
+  compression:
+    enabled: true
+  error:
+    include-message: never
+    include-stacktrace: never
+
+spring:
+  application:
+    name: cognia
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/cognia}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      continue-on-error: false
+
+  # Object storage uploads pass through the backend; keep the servlet limits in
+  # sync with the per-connection maximum (512 MB) configured in the console.
+  servlet:
+    multipart:
+      max-file-size: 512MB
+      max-request-size: 520MB
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 3s
+
+  # Spring AI is kept ready for the knowledge-base features. The auth/user
+  # APIs do not depend on any model provider being reachable.
+  ai:
+    # Both OpenAI and Ollama starters are on the classpath; pick one provider
+    # explicitly so the vector store gets a single EmbeddingModel bean.
+    model:
+      chat: openai
+      embedding: openai
+    openai:
+      api-key: ${OPENAI_API_KEY:sk-cognia-placeholder}
+    vectorstore:
+      pgvector:
+        initialize-schema: false
+
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: ${APP_TIME_ZONE:Asia/Shanghai}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+      logic-delete-field: isDeleted
+      logic-delete-value: "true"
+      logic-not-delete-value: "false"
+
+jwt:
+  # HS256 requires at least 32 bytes. Always override this in production!
+  secret: ${JWT_SECRET:30288baa847304653707cdb0f1acea8039169ad8d0210cad19375dffed986469}
+  issuer: cognia
+  access-expiration: ${JWT_ACCESS_EXPIRATION:30m}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:7d}
+  remember-me-expiration: ${JWT_REMEMBER_ME_EXPIRATION:30d}
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173}
+    allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+    allowed-headers: "*"
+    exposed-headers: Authorization,Content-Disposition
+    allow-credentials: true
+    max-age: 3600
+  verification-code:
+    length: 6
+    ttl: 5m
+    resend-interval: 60s
+    max-attempts: 5
+    daily-limit: 10
+  settings:
+    # Encrypts SMTP passwords and Turnstile secrets stored in the database.
+    # Override in production.
+    secret: ${SETTINGS_SECRET:c7f1d9a3b5e7482f9a0c4d6e8b1f3a5c7e9d0b2f4a6c8e1d3b5f7a9c0e2d4b6f}
+  mail:
+    # Development helper only: return the email verification code in the API
+    # response. SMTP parameters are stored in sys_site_setting (console).
+    expose-code: ${MAIL_EXPOSE_CODE:true}
+  login:
+    max-failures: 5
+    lock-duration: 15m
+  init:
+    enabled: ${INIT_DATA_ENABLED:true}
+    admin-username: ${ADMIN_USERNAME:admin}
+    admin-password: ${ADMIN_PASSWORD:Admin@123}
+    admin-email: ${ADMIN_EMAIL:admin@cognia.local}
+
+logging:
+  level:
+    root: INFO
+    bao.gabriel.cognia: INFO
+    org.springframework.security: INFO

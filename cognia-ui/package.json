@@ -1,0 +1,132 @@
+{
+  "name": "cognia-ui",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "dev:desktop": "vite --mode desktop",
+    "build": "vue-tsc -b && vite build",
+    "build:desktop": "vue-tsc -b && vite build --mode desktop",
+    "dist:desktop": "pnpm build:desktop && electron-builder",
+    "dist:desktop:dir": "pnpm build:desktop && electron-builder --dir",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@comark/vue": "^0.7.0",
+    "@dnd-kit/abstract": "^0.5.1",
+    "@dnd-kit/dom": "^0.5.1",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/noto-sans": "^5.3.0",
+    "@inspira-ui/plugins": "^0.0.2",
+    "@lucide/vue": "^1.59.0",
+    "@rive-app/webgl2": "^2.45.0",
+    "@stream-markdown/code": "^2.1.0",
+    "@stream-markdown/math": "^2.1.0",
+    "@stream-markdown/mermaid": "^2.1.0",
+    "@tabler/icons-vue": "^3.49.0",
+    "@tanstack/vue-table": "^9.3.1",
+    "@unovis/ts": "^1.7.1",
+    "@unovis/vue": "^1.7.1",
+    "@vue-flow/background": "^1.3.2",
+    "@vue-flow/controls": "^1.1.3",
+    "@vue-flow/core": "^1.48.2",
+    "@vue-flow/node-toolbar": "^1.1.1",
+    "@vueuse/core": "^15.0.0",
+    "ai": "^7.0.143",
+    "ansi-to-vue3": "^0.1.2",
+    "axios": "^1.20.0",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.5.0",
+    "dnd-kit-vue": "^0.0.2",
+    "embla-carousel-vue": "^8.6.0",
+    "katex": "^0.19.0",
+    "media-chrome": "^4.19.3",
+    "motion-v": "^2.8.0",
+    "nanoid": "^6.0.2",
+    "ogl": "^1.0.11",
+    "pinia": "^4.1.0",
+    "reka-ui": "^2.11.0",
+    "shiki": "^4.5.0",
+    "tokenlens": "^1.3.1",
+    "tw-animate-css": "^1.4.0",
+    "vue": "^3.5.13",
+    "vue-i18n": "^11.4.16",
+    "vue-router": "^5.4.0",
+    "vue-sonner": "^2.0.9",
+    "vue-stick-to-bottom": "^1.0.1",
+    "vue-stream-markdown": "^2.1.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^22.20.5",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^8.3.4",
+    "vite-plugin-electron": "1.1.2",
+    "vue-tsc": "^2.2.0"
+  },
+  "description": "Cognia · 面向团队的 RAG 知识系统",
+  "author": "Cognia",
+  "license": "MIT",
+  "main": "dist-electron/main.cjs",
+  "packageManager": "pnpm@11.5.0",
+  "build": {
+    "appId": "com.cognia.desktop",
+    "productName": "Cognia",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "asar": true,
+    "compression": "normal",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "npmRebuild": false,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": null
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Office",
+      "maintainer": "Cognia",
+      "vendor": "Cognia",
+      "executableName": "cognia",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "syncDesktopName": true
+    }
+  },
+  "homepage": "https://cognia.app",
+  "desktopName": "cognia"
+}
