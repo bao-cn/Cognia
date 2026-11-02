@@ -69,7 +69,10 @@ Authorization: Bearer <accessToken>
 - `POST /auth/login`
 - `POST /auth/refresh`
 - `GET /settings/public`
+- `GET /settings/downloads/public`
 - `GET /legal/documents`
+- `GET /profiles/owner/{identifier}`
+- `GET /storage/avatar/{ownerId}`
 
 ### 1.4 分页
 
@@ -732,45 +735,164 @@ Authorization: Bearer <accessToken>
 
 ---
 
-## 5.9 团队
+## 5.9 团队与个人空间
 
-团队是知识库的归属单位。用户必须先创建或加入团队；不提供个人频道。
+系统同时支持个人空间与团队空间。用户与团队共用一级路由，团队不再有独立的 `/teams/{id}` 页面：
+
+| 前端路由 | 说明 |
+| --- | --- |
+| `/{username}` | 个人主页；如 `username` 为团队标识，则展示团队主页 |
+| `/{teamSlug}` | 团队主页，包含介绍、频道、成员与设置 |
+| `/{owner}/{channelSlug}` | 频道详情 |
+| `/{owner}/{channelSlug}/settings` | 频道设置 |
+| `/settings/teams` | 账号设置中的「我的团队」：团队列表、创建团队、处理邀请 |
+
+团队标识与用户名共享命名空间，全局唯一；`teams`、`login`、`settings` 等保留字不可注册。
+
+### 5.9.1 团队接口
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
 | `GET` | `/teams/mine` | 已登录 | 当前用户加入的团队 |
 | `GET` | `/teams/limits` | 已登录 | 当前用户创建/加入数量与系统上限 |
-| `GET` | `/teams/{id}` | 已登录 | 团队成员查看详情、成员与公开频道 |
-| `POST` | `/teams` | 已登录 | 创建团队，创建者为 `OWNER` |
+| `GET` | `/teams/{id}` | 已登录 | 团队详情、成员、权限与旧版频道字段；非成员仅可预览公开信息 |
+| `POST` | `/teams` | 已登录 | 创建团队，创建者为 `OWNER`；`slug` 必填且需符合频道/团队标识规范 |
 | `GET` | `/teams/invitations` | 已登录 | 当前用户收到的待处理邀请 |
 | `POST` | `/teams/invitations/{id}/accept` | 已登录 | 接受邀请，加入团队 |
 | `POST` | `/teams/invitations/{id}/decline` | 已登录 | 拒绝邀请 |
-| `GET` | `/teams/{id}/invitations` | 团队创建者 | 团队待处理邀请 |
-| `POST` | `/teams/{id}/invitations` | 团队创建者 | 邀请用户，请求体 `{ "userId": "..." }` |
-| `GET` | `/teams/{id}/invitees` | 团队创建者 | 搜索可邀请的用户，支持 `keyword` |
-| `PUT` | `/teams/{id}/readme` | 团队创建者 | 更新团队 README（Markdown） |
-| `PUT` | `/teams/{id}/members/{userId}/role` | 团队创建者 | 设置成员角色：`MANAGER` / `EDITOR` / `MEMBER` |
-| `POST` | `/teams/{id}/channels` | 创建者/管理者/编辑 | 创建频道 |
-| `PUT` | `/teams/{id}/channels/{channelId}` | 创建者/管理者/编辑 | 修改频道 |
-| `DELETE` | `/teams/{id}/channels/{channelId}` | 创建者/管理者；编辑仅限自建 | 删除频道 |
-| `POST` | `/teams/{id}/channels/{channelId}/pin` | 创建者/管理者 | 置顶/取消置顶，最多 6 个 |
-| `PUT` | `/teams/{id}` | 团队创建者 | 更新团队名称、介绍、Logo、自定义链接（最多 4 个）、加入申请开关、新成员默认权限 |
-| `DELETE` | `/teams/{id}` | 团队创建者 | 删除团队及其成员、频道、邀请 |
-| `POST` | `/teams/{id}/transfer` | 团队创建者 | 转让团队创建者 |
-| `DELETE` | `/teams/{id}/members/{userId}` | 团队创建者 | 移除成员（不可移除创建者） |
+| `GET` | `/teams/{id}/invitations` | 创建者/管理者 | 团队待处理邀请 |
+| `POST` | `/teams/{id}/invitations` | 创建者/管理者 | 邀请用户，请求体 `{ "userId": "..." }` |
+| `GET` | `/teams/{id}/invitees` | 创建者/管理者 | 搜索可邀请的用户，支持 `keyword` |
+| `PUT` | `/teams/{id}/readme` | 创建者 | 更新团队 README（Markdown） |
+| `PUT` | `/teams/{id}/members/{userId}/role` | 创建者 | 设置成员角色：`MANAGER` / `EDITOR` / `MEMBER` |
+| `PUT` | `/teams/{id}` | 创建者 | 更新团队名称、介绍、Logo、自定义链接（最多 4 个）、加入申请开关、新成员默认权限 |
+| `POST` | `/teams/{id}/transfer` | 创建者 | 转让团队创建者 |
+| `DELETE` | `/teams/{id}/members/{userId}` | 创建者 | 移除成员（不可移除创建者） |
+| `DELETE` | `/teams/{id}` | 创建者 | 逻辑删除团队，成员、邀请与团队频道进入清理流程 |
 
-- 创建上限默认 5，加入上限默认 10，控制台「系统设置 → 团队设置」可修改。
-- 创建团队计入创建上限；加入团队计入加入上限，自己创建的团队不计入加入上限。
-- `publicChannels` 当前为空数组，频道、文档上传与参数配置将在后续版本实现。
-- 团队采用邀请制：不提供团队搜索或公开团队列表。创建者在团队详情/成员设置中搜索用户并发送邀请；被邀请人在「我的团队」页面接受或拒绝。
-- 团队详情仅团队成员可访问；邀请卡片展示团队名称、Logo、介绍和邀请人。
-- 团队详情包含 `readme`、`channels`、`viewerRole` 和频道管理权限字段；`channels` 中的 `pinned` 表示 Popular Channel。
-- 团队详情前端提供 介绍 / 频道 / 成员 / 设置 四个标签；设置仅团队创建者可见。
-- 概览显示 README、置顶频道（最多 6 个）和热门公开频道（最多 10 个，排除已置顶频道）；未配置的区块不展示。
-- 团队详情允许非成员预览；非成员只能看到公开频道，People 始终展示全部成员；设置和成员管理仅创建者可见。
-- 频道创建、编辑、删除与置顶集中在独立的 `/teams/{id}/channels/manage` 页面，频道 Tab 只读。
-- 成员角色：`OWNER` 创建者、`MANAGER` 管理者（创建/修改/删除频道、置顶）、`EDITOR` 编辑（创建/修改频道，仅删除自己创建的频道）、`MEMBER` 成员（查看）。
-- 接受邀请时校验加入团队上限；创建团队时校验创建团队上限。数量上限由控制台「团队设置」配置。
+> `/teams/{id}/channels` 系列接口为旧版团队频道接口，保留用于兼容；新前端统一使用 `/channels` 接口，频道归属通过 `ownerType=TEAM&ownerId={teamId}` 表示。
+
+### 5.9.2 控制台团队管理
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/teams` | `team:read` 或 `user:read` | 分页查询团队，支持 `keyword` |
+| `DELETE` | `/admin/teams/{id}` | `team:update` 或 `user:update` | 管理员解散团队 |
+
+### 5.9.3 个人主页
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/profiles/owner/{identifier}` | 公开 | 按用户名或团队标识解析个人/团队主页；公开访问仅返回公开频道 |
+| `GET` | `/profiles/me` | 已登录 | 当前用户完整主页数据 |
+| `PUT` | `/profiles/me` | 已登录 | 更新昵称、性别、简介、企业、家乡、时区、README 与最多 4 个链接 |
+
+个人主页返回 `type`（`USER` / `TEAM`）、`username`、`nickname`、`avatar`、`readme`、`links`、`badges`、`teams`、`channels`、`pinnedChannels`、`memberCount`、`viewerRole`、`self`、`canEdit` 等字段。
+
+### 5.9.4 频道、文件夹与文档
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/channels/owner/{ownerType}/{ownerId}` | 已登录 | 列出个人/团队频道；非成员仅返回公开频道 |
+| `GET` | `/channels/{id}` | 已登录 | 频道详情、文件夹、文档与当前用户权限 |
+| `POST` | `/channels` | 已登录 | 创建频道，`ownerType` + `ownerId` + `name` + `slug` + `isPublic` |
+| `PUT` | `/channels/{id}` | 所有者/管理者/编辑 | 修改频道名称、简介与可见性 |
+| `PUT` | `/channels/{id}/pin` | 所有者/管理者 | 置顶/取消置顶，每个 owner 最多 4 个 |
+| `DELETE` | `/channels/{id}` | 所有者/管理者 | 删除频道 |
+| `POST` | `/channels/{id}/folders` | 所有者/管理者/编辑 | 创建文件夹；受系统最大深度限制 |
+| `DELETE` | `/channels/{id}/folders/{folderId}` | 所有者/管理者/编辑 | 删除空文件夹 |
+| `GET` | `/channels/{id}/documents?folderId=` | 已登录 | 文档列表；不传 `folderId` 返回全部 |
+| `POST` | `/channels/{id}/documents` | 所有者/管理者/编辑 | 多部分上传：`file`、可选 `folderId`、`title`、`documentType`、`expirationTime` |
+| `POST` | `/channels/{id}/markdown?kind=README\|AGENT` | 所有者/管理者/编辑 | 上传/替换 README.md 或 AGENT.md |
+| `GET` | `/channels/{id}/markdown/{kind}` | 已登录 | 读取 README/AGENT Markdown 原文 |
+| `PUT` | `/channels/{id}/agent` | 所有者/管理者/编辑 | 更新 AGENT.md frontmatter 元信息 |
+| `POST` | `/channels/{id}/documents/{documentId}/retry` | 所有者/管理者/编辑 | 重新解析与向量化失败文档 |
+| `DELETE` | `/channels/{id}/documents/{documentId}` | 所有者/管理者/编辑 | 逻辑删除文档并写入回收站 |
+
+文档上传成功后同步进入 `PENDING → PROCESSING → READY/FAILED` 状态机；文档删除不删除对象存储文件，永久清理由回收站或计划任务执行。
+
+### 5.9.5 对象存储
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/storage/settings` | `storage:read` 或 `settings:read` | 读取对象存储配置；SecretKey 仅返回是否已配置 |
+| `PUT` | `/storage/settings` | `storage:update` 或 `settings:update` | 保存 Endpoint、Region、Bucket、AccessKey、SecretKey、路径风格、公网地址、上传限制等 |
+| `POST` | `/storage/settings/test` | `storage:update` | 测试 Bucket 读写删权限与延迟 |
+| `POST` | `/storage/settings/lifecycle/sync` | `storage:update` | 立即同步 `tmp/` 生命周期规则 |
+| `POST` | `/storage/objects` | `storage:update` | 通用上传（多部分文件） |
+| `POST` | `/storage/temp` | 已登录 | 上传临时多模态文件到 `tmp/` |
+| `DELETE` | `/storage/objects?key=` | `storage:update` | 删除指定对象 |
+| `GET` | `/storage/objects/presigned-url?key=&expiresInSeconds=` | `storage:read` | 生成预签名 URL |
+| `GET` | `/storage/avatar/{ownerId}` | 公开 | 头像对象访问入口 |
+
+### 5.9.6 审计、通知、回收站与计划任务
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/audit-logs` | `audit:read` 或 `settings:read` | 分页查询审计日志，支持模块、状态、关键字、时间范围 |
+| `GET` | `/audit-logs/modules` | `audit:read` 或 `settings:read` | 审计模块列表 |
+| `GET` | `/notifications` | 已登录 | 当前用户通知分页，支持 `unreadOnly` |
+| `GET` | `/notifications/unread-count` | 已登录 | 未读数 |
+| `PUT` | `/notifications/{id}/read` | 已登录 | 标记单条已读 |
+| `PUT` | `/notifications/read-all` | 已登录 | 全部标记已读 |
+| `GET` | `/notifications/stream` | 已登录 | SSE 通知流；事件 `connected` / `notification` / `unread-count` |
+| `GET` | `/recycle-bin?ownerType=&ownerId=` | 所有者/团队成员 | 回收站列表 |
+| `DELETE` | `/recycle-bin/{id}` | 所有者/团队成员 | 永久清理回收站条目及对象/向量 |
+| `GET` | `/scheduled-tasks` | `task:read` 或 `settings:read` | 预设计划任务列表与最近执行状态 |
+| `PUT` | `/scheduled-tasks/{code}` | `task:update` 或 `settings:update` | 更新启用状态、Cron、阈值、留存期、批量大小 |
+| `POST` | `/scheduled-tasks/{code}/run` | `task:update` 或 `settings:update` | 立即执行一次 |
+
+预设计划任务代码：
+
+| code | 作用 |
+| --- | --- |
+| `DOCUMENT_TIMEOUT_SCAN` | 扫描处理超时文档并标记失败、通知上传者 |
+| `MULTIPART_CLEANUP` | 清理 `kb/` 下超时未完成分片 |
+| `RECYCLE_BIN_CLEANUP` | 按每条记录留存期清理回收站 |
+| `DELETED_OWNER_CLEANUP` | 清理已注销用户/解散团队的文件、文档、向量与回收站 |
+| `STORAGE_LIFECYCLE_SYNC` | 同步 `tmp/` 生命周期规则 |
+
+### 5.9.7 模型、检索与 Prompt
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/models/providers` | `model:read` | 供应商列表 |
+| `POST` | `/admin/models/providers` | `model:update` | 新增 OpenAI 兼容供应商；API Key 加密存储 |
+| `PUT` | `/admin/models/providers/{id}` | `model:update` | 修改供应商 |
+| `DELETE` | `/admin/models/providers/{id}` | `model:update` | 删除供应商 |
+| `POST` | `/admin/models/providers/{id}/fetch` | `model:update` | 拉取该供应商的 `/models` |
+| `POST` | `/admin/models/providers/fetch` | `model:update` | 使用临时端点与 Key 拉取模型 |
+| `GET` | `/admin/models/configs` | `model:read` | 已配置模型列表 |
+| `POST` | `/admin/models/configs` | `model:update` | 新增/更新模型配置（类型、可见性、工具、思考、推理强度、`extra_body`） |
+| `DELETE` | `/admin/models/configs/{id}` | `model:update` | 删除模型配置 |
+| `GET` | `/admin/models/available` | `model:read` | 管理端可选模型 |
+| `GET` | `/admin/rag/settings` | `rag:read` 或 `settings:read` | 读取 Chat/Embedding/Rerank、切片与检索参数 |
+| `PUT` | `/admin/rag/settings` | `rag:update` 或 `settings:update` | 保存检索参数 |
+| `GET` | `/admin/prompts/settings` | `rag:read` 或 `settings:read` | 读取系统提示词配置 |
+| `PUT` | `/admin/prompts/settings` | `rag:update` 或 `settings:update` | 保存系统提示词、RAG/过期/工具规则 |
+| `GET` | `/admin/prompts/defaults` | `rag:read` 或 `settings:read` | 默认提示词 |
+| `POST` | `/admin/prompts/reset` | `rag:update` 或 `settings:update` | 恢复默认提示词 |
+
+### 5.9.8 对话与流式输出
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/chat/models` | 已登录 | 管理员开放给当前用户的 Chat 模型 |
+| `POST` | `/chat/stream` | 已登录 | SSE 流式对话；请求体包含 `modelId`、`messages`、可选 `channelIds`、`conversationId`、`effort` |
+| `GET` | `/chat/conversations` | 已登录 | 当前用户会话列表 |
+| `GET` | `/chat/conversations/{id}` | 已登录 | 会话详情与消息；`id` 为随机 `publicId` |
+| `DELETE` | `/chat/conversations/{id}` | 已登录 | 删除会话 |
+
+`/chat/stream` 的事件类型：
+
+| 事件 | 说明 |
+| --- | --- |
+| `start` | 开始，包含模型与会话 `conversationId` |
+| `reasoning` | 思考过程增量 |
+| `tool` | 工具调用状态，含 `name`、`status`、`input`/`output` |
+| `text` | 正文增量 |
+| `error` | 错误消息 |
+| `done` | 结束 |
 
 ## 6. 法律条款与同意
 

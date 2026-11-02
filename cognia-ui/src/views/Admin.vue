@@ -7,12 +7,6 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar"
 import {
-  IconDatabase,
-  IconFileDescription,
-  IconHelp,
-  IconReport,
-  IconSearch,
-  IconSettings,
   IconApi,
   IconUsers,
   IconBooks,

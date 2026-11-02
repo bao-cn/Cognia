@@ -1,6 +1,6 @@
 <template>
   <div class="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 pb-12 md:p-8">
-    <Button variant="ghost" size="sm" class="w-fit rounded-full text-muted-foreground" @click="router.push('/teams')">
+    <Button variant="ghost" size="sm" class="w-fit rounded-full text-muted-foreground" @click="router.push('/settings/teams')">
       <IconArrowLeft class="mr-1.5 size-4" />
       返回我的团队
     </Button>
@@ -11,7 +11,7 @@
     <div v-else-if="error" class="flex flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-16 text-center">
       <IconUsers class="size-8 text-muted-foreground" />
       <p class="text-sm font-medium">{{ error }}</p>
-      <Button size="sm" class="rounded-full" @click="router.push('/teams')">返回我的团队</Button>
+      <Button size="sm" class="rounded-full" @click="router.push('/settings/teams')">返回我的团队</Button>
     </div>
 
     <template v-else-if="team">
@@ -340,14 +340,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import {
   IconArrowLeft, IconBook, IconFlame, IconHash, IconLink, IconPin,
   IconSearch, IconSettings, IconUpload, IconUserPlus, IconUsers,
 } from '@tabler/icons-vue'
-import { channelApi, teamApi } from '@/api'
+import { channelApi, profileApi, teamApi } from '@/api'
 import type { ChannelCard, TeamDetail, TeamLink, TeamMember, TeamUserSearch } from '@/types/api'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -361,7 +361,8 @@ import Markdown from '@/components/Markdown.vue'
 
 const route = useRoute()
 const router = useRouter()
-const teamId = String(route.params.id || '')
+const identity = computed(() => String(route.params.identifier || route.params.id || ''))
+const teamId = ref('')
 const team = ref<TeamDetail | null>(null)
 const kbChannels = ref<ChannelCard[]>([])
 const loading = ref(true)
@@ -452,7 +453,12 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const detail = await teamApi.detail(teamId)
+    const profile = await profileApi.get(identity.value)
+    if (profile.type !== 'TEAM') {
+      throw new Error('该主页不是团队')
+    }
+    teamId.value = profile.id
+    const detail = await teamApi.detail(teamId.value)
     applyTeam(detail)
     try {
       kbChannels.value = await channelApi.list('TEAM', detail.id)
@@ -534,7 +540,7 @@ async function saveBasic(): Promise<void> {
   basicSaving.value = true
   basicError.value = ''
   try {
-    applyTeam(await teamApi.updateTeam(teamId, payload()))
+    applyTeam(await teamApi.updateTeam(teamId.value, payload()))
     toast.success('团队设置已保存')
   } catch (err) {
     basicError.value = err instanceof Error ? err.message : '保存失败'
@@ -546,7 +552,7 @@ async function saveBasic(): Promise<void> {
 async function saveReadme(): Promise<void> {
   readmeSaving.value = true
   try {
-    applyTeam(await teamApi.updateReadme(teamId, readmeDraft.value))
+    applyTeam(await teamApi.updateReadme(teamId.value, readmeDraft.value))
     toast.success('Readme 已保存')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : 'Readme 保存失败')
@@ -558,7 +564,7 @@ async function saveReadme(): Promise<void> {
 async function saveDefaultRole(): Promise<void> {
   defaultRoleSaving.value = true
   try {
-    applyTeam(await teamApi.updateTeam(teamId, payload()))
+    applyTeam(await teamApi.updateTeam(teamId.value, payload()))
     toast.success('默认成员权限已保存')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : '保存失败')
@@ -579,7 +585,7 @@ async function searchUsers(): Promise<void> {
   inviteSearching.value = true
   inviteError.value = ''
   try {
-    inviteResults.value = await teamApi.searchInvitees(teamId, inviteKeyword.value.trim() || undefined)
+    inviteResults.value = await teamApi.searchInvitees(teamId.value, inviteKeyword.value.trim() || undefined)
   } catch (err) {
     inviteError.value = err instanceof Error ? err.message : '用户搜索失败'
   } finally {
@@ -591,7 +597,7 @@ async function sendInvite(user: TeamUserSearch): Promise<void> {
   invitingId.value = user.id
   inviteError.value = ''
   try {
-    await teamApi.invite(teamId, user.id)
+    await teamApi.invite(teamId.value, user.id)
     user.invited = true
     toast.success(`已向 ${user.nickname} 发送邀请`)
   } catch (err) {
@@ -604,7 +610,7 @@ async function sendInvite(user: TeamUserSearch): Promise<void> {
 async function changeRole(member: TeamMember, role: string): Promise<void> {
   roleSaving.value = member.userId
   try {
-    applyTeam(await teamApi.updateMemberRole(teamId, member.userId, role))
+    applyTeam(await teamApi.updateMemberRole(teamId.value, member.userId, role))
     toast.success('成员权限已更新')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : '成员权限更新失败')
@@ -617,10 +623,10 @@ async function confirmRemove(): Promise<void> {
   if (!removeTarget.value) return
   removing.value = true
   try {
-    await teamApi.removeMember(teamId, removeTarget.value.userId)
+    await teamApi.removeMember(teamId.value, removeTarget.value.userId)
     toast.success('成员已移除')
     removeTarget.value = null
-    const detail = await teamApi.detail(teamId)
+    const detail = await teamApi.detail(teamId.value)
     applyTeam(detail)
     try {
       kbChannels.value = await channelApi.list('TEAM', detail.id)
@@ -638,7 +644,7 @@ async function confirmTransfer(): Promise<void> {
   if (!transferTarget.value) return
   transferring.value = true
   try {
-    applyTeam(await teamApi.transferOwnership(teamId, transferTarget.value))
+    applyTeam(await teamApi.transferOwnership(teamId.value, transferTarget.value))
     transferOpen.value = false
     transferTarget.value = ''
     activeTab.value = 'overview'
@@ -653,9 +659,9 @@ async function confirmTransfer(): Promise<void> {
 async function confirmDelete(): Promise<void> {
   deletingTeam.value = true
   try {
-    await teamApi.deleteTeam(teamId)
+    await teamApi.deleteTeam(teamId.value)
     toast.success('团队已删除')
-    await router.replace('/teams')
+    await router.replace('/settings/teams')
   } catch (err) {
     toast.error(err instanceof Error ? err.message : '删除团队失败')
   } finally {
@@ -664,4 +670,5 @@ async function confirmDelete(): Promise<void> {
 }
 
 onMounted(load)
+watch(identity, () => void load())
 </script>

@@ -14,12 +14,10 @@ const subtitle = computed(() => {
   switch (route.name) {
     case 'Favorites':
       return '把重要内容留在手边'
-    case 'Teams':
+    case 'SettingsTeams':
       return '管理团队、成员与公开频道'
-    case 'TeamDetail':
-      return '团队知识空间'
-    case 'TeamChannelManage':
-      return '管理团队频道'
+    case 'OwnerProfile':
+      return '个人与团队主页'
     case 'Download':
       return '选择适合你的客户端'
     case 'Settings':

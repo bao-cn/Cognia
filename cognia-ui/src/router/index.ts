@@ -19,27 +19,11 @@ const routes: Array<RouteRecordRaw> = [
         },
       },
       {
-        name: 'Teams',
-        path: 'teams',
+        name: 'SettingsTeams',
+        path: 'settings/teams',
         component: () => import('@/pages/Teams.vue'),
         meta: {
           title: '我的团队',
-        },
-      },
-      {
-        name: 'TeamChannelManage',
-        path: 'teams/:id/channels/manage',
-        component: () => import('@/pages/ChannelManage.vue'),
-        meta: {
-          title: '频道管理',
-        },
-      },
-      {
-        name: 'TeamDetail',
-        path: 'teams/:id',
-        component: () => import('@/pages/TeamDetail.vue'),
-        meta: {
-          title: '团队详情',
         },
       },
       {
@@ -65,6 +49,16 @@ const routes: Array<RouteRecordRaw> = [
         meta: {
           title: '对话',
         },
+      },
+      {
+        name: 'LegacyTeams',
+        path: 'teams',
+        redirect: '/settings/teams',
+      },
+      {
+        name: 'LegacyTeamDetail',
+        path: 'teams/:pathMatch(.*)*',
+        redirect: '/settings/teams',
       },
       {
         name: 'ChannelSettings',

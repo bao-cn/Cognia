@@ -516,10 +516,10 @@ function handleChangeLanguage(val: AcceptableValue) {
 
 // 点击事件
 function handleCreateTeam() {
-  void router.push('/teams?create=1')
+  void router.push('/settings/teams?create=1')
 }
 function handleMyTeams() {
-  void router.push('/teams')
+  void router.push('/settings/teams')
 }
 function handleModelList() {
   toast.warning('暂不可用，管理员未配置模型列表功能')

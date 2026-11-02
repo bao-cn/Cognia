@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import Markdown from '@/components/Markdown.vue'
+import TeamDetail from '@/pages/TeamDetail.vue'
 import { profileApi, channelApi } from '@/api'
 import type { ChannelCard, OwnerProfile, ProfileLink } from '@/types/api'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -16,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   IconPlus, IconPencil, IconLink, IconBrandGithub, IconMail,
   IconMapPin, IconBuilding, IconClock, IconUsers, IconBook, IconPin,
-  IconFolder, IconArrowUpRight, IconSettings, IconShieldCheck, IconId,
+  IconFolder, IconArrowUpRight, IconShieldCheck, IconId,
 } from '@tabler/icons-vue'
 
 const route = useRoute()
@@ -55,10 +56,6 @@ function goChannel(channel: ChannelCard) {
 
 function goTeam(slug: string) {
   void router.push(`/${slug}`)
-}
-
-function goTeamSettings(teamId: string) {
-  void router.push(`/teams/${teamId}`)
 }
 
 const editOpen = ref(false)
@@ -195,7 +192,9 @@ watch(identity, load)
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
+  <TeamDetail v-if="isTeam" />
+
+  <div v-else class="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
     <div v-if="loading" class="flex h-72 items-center justify-center rounded-xl border">
       <Spinner class="size-6" />
     </div>
@@ -235,9 +234,6 @@ watch(identity, load)
                 </Button>
                 <Button v-if="profile.canEdit" size="sm" class="w-full" @click="openCreate">
                   <IconPlus class="mr-1 size-4" />新建频道
-                </Button>
-                <Button v-if="profile.canEdit && isTeam" variant="outline" size="sm" class="w-full" @click="goTeamSettings(profile.id)">
-                  <IconSettings class="mr-1 size-4" />团队设置
                 </Button>
               </div>
 
