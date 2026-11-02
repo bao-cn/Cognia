@@ -2,7 +2,7 @@
 
 # Cognia
 
-**Cognia 是一个专为高校、年轻团队和新型企业打造的 RAG 知识库 SaaS 平台**
+**Cognia 是一个专为高校、年轻团队和新兴企业打造的 RAG 知识库 SaaS 平台**
 
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F.svg)](https://spring.io/projects/spring-boot)
