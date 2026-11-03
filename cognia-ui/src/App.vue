@@ -2,6 +2,7 @@
   <div :class="isStandalonePage ? 'min-h-dvh' : 'h-dvh overflow-hidden'">
     <router-view />
     <Toaster />
+    <GlobalSearch />
 
     <!-- Global re-consent dialog: cannot be dismissed until the user agrees
          or explicitly declines (which logs out and closes the window). -->
@@ -83,6 +84,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Toaster } from '@/components/ui/sonner'
+import GlobalSearch from '@/components/GlobalSearch.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
