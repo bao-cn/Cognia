@@ -863,11 +863,14 @@ Authorization: Bearer <accessToken>
 | `POST` | `/admin/models/providers/{id}/fetch` | `model:update` | 拉取该供应商的 `/models` |
 | `POST` | `/admin/models/providers/fetch` | `model:update` | 使用临时端点与 Key 拉取模型 |
 | `GET` | `/admin/models/configs` | `model:read` | 已配置模型列表 |
-| `POST` | `/admin/models/configs` | `model:update` | 新增/更新模型配置（类型、可见性、工具、思考、推理强度、`extra_body`） |
+| `POST` | `/admin/models/configs` | `model:update` | 新增/更新模型配置（类型、可见性、工具、思考、推理强度、`extra_body`、`contextWindow` 最大上下文长度） |
 | `DELETE` | `/admin/models/configs/{id}` | `model:update` | 删除模型配置 |
 | `GET` | `/admin/models/available` | `model:read` | 管理端可选模型 |
-| `GET` | `/admin/rag/settings` | `rag:read` 或 `settings:read` | 读取 Chat/Embedding/Rerank、切片与检索参数 |
-| `PUT` | `/admin/rag/settings` | `rag:update` 或 `settings:update` | 保存检索参数 |
+| `GET` | `/admin/rag/settings` | `rag:read` 或 `settings:read` | 读取 Chat/Embedding/Rerank、切片/召回、上下文压缩、对话标题生成与两层缓存参数 |
+| `PUT` | `/admin/rag/settings` | `rag:update` 或 `settings:update` | 保存检索、上下文压缩、对话标题生成与缓存参数 |
+| `GET` | `/admin/rag/cache/stats` | `rag:read` 或 `settings:read` | 语义/检索缓存条目数、命中、请求与命中率 |
+| `DELETE` | `/admin/rag/cache/retrieval?documentId=` | `rag:update` 或 `settings:update` | 按文档 ID 精准失效检索缓存 |
+| `DELETE` | `/admin/rag/cache/semantic` | `rag:update` 或 `settings:update` | 清空语义缓存 |
 | `GET` | `/admin/prompts/settings` | `rag:read` 或 `settings:read` | 读取系统提示词配置 |
 | `PUT` | `/admin/prompts/settings` | `rag:update` 或 `settings:update` | 保存系统提示词、RAG/过期/工具规则 |
 | `GET` | `/admin/prompts/defaults` | `rag:read` 或 `settings:read` | 默认提示词 |
@@ -877,22 +880,35 @@ Authorization: Bearer <accessToken>
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
-| `GET` | `/chat/models` | 已登录 | 管理员开放给当前用户的 Chat 模型 |
-| `POST` | `/chat/stream` | 已登录 | SSE 流式对话；请求体包含 `modelId`、`messages`、可选 `channelIds`、`conversationId`、`effort` |
+| `GET` | `/chat/models` | 已登录 | 管理员开放给当前用户的 Chat 模型；`supportsVision=true` 的模型允许上传图片 |
+| `POST` | `/chat/attachments` | 已登录 | 上传对话附件；图片返回 data URL，PDF/Office 返回解析后的文本（图片 PDF 自动 OCR） |
+| `POST` | `/chat/stream` | 已登录 | SSE 流式对话；请求体包含 `modelId`、`messages`、`attachments`、可选 `channelIds`、`conversationId`、`effort`、`webSearch`、`temporary`；图片仅支持 JPEG/GIF/PNG/WebP，文档会先解析为文本 |
 | `GET` | `/chat/conversations` | 已登录 | 当前用户会话列表 |
 | `GET` | `/chat/conversations/{id}` | 已登录 | 会话详情与消息；`id` 为随机 `publicId` |
 | `DELETE` | `/chat/conversations/{id}` | 已登录 | 删除会话 |
+
+首轮回答完成后，后端可异步调用聊天模型生成简短对话标题并更新会话；由 `sys_rag_setting.title_generation_enabled` 控制，默认开启。关闭时标题使用用户首条消息截断。
 
 `/chat/stream` 的事件类型：
 
 | 事件 | 说明 |
 | --- | --- |
-| `start` | 开始，包含模型与会话 `conversationId` |
+| `start` | 开始，包含模型、`supportsVision` 与会话 `conversationId` |
 | `reasoning` | 思考过程增量 |
 | `tool` | 工具调用状态，含 `name`、`status`、`input`/`output` |
 | `text` | 正文增量 |
+| `cache` | 缓存命中标记：`hitType` 为 `SEMANTIC`/`RETRIEVAL`/`NONE`，含 `similarity`、`cacheKey`、`hits`、`requests`、`hitRate` |
+| `context` | 上下文占用：`usedTokens`、`maxTokens`、`percent`、`compressionThreshold`、`compressed`、`droppedMessages` |
 | `error` | 错误消息 |
-| `done` | 结束 |
+| `done` | 结束，含本次 `hitType`/`similarity`/`cacheKey` |
+
+### 5.9.9 全局搜索
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/search?q=` | 已登录 | 搜索公开频道（名称/标识）、用户（用户名/昵称）与当前用户历史对话；每类最多 8 条 |
+
+返回 `channels`、`users`、`conversations` 三组结果；前端通过 `Ctrl/⌘ + K` 或侧边栏搜索按钮打开命令面板。
 
 ## 6. 法律条款与同意
 
