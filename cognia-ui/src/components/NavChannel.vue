@@ -7,6 +7,7 @@ import {
   IconMessageCirclePlus,
   IconPinned,
   IconChevronDown,
+  IconChevronRight,
   IconRss,
 } from "@tabler/icons-vue"
 import {
@@ -54,34 +55,6 @@ const isMenuCollapsed = ref(false)
 
       <div class="flex-1" />
 
-      <DropdownMenu>
-        <DropdownMenuTrigger as-child>
-          <Button variant="ghost" size="icon"
-            class="size-6 shrink-0 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/label:opacity-100 group-hover/label:pointer-events-auto focus-visible:opacity-100"
-            aria-label="频道更多操作">
-            <IconDots class="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-
-        <DropdownMenuContent align="end" side="bottom" class="w-32 rounded-lg">
-          <DropdownMenuItem>
-            <IconMessageCirclePlus />
-            <span>新建频道</span>
-          </DropdownMenuItem>
-
-          <DropdownMenuItem>
-            <IconPinned />
-            <span>置顶</span>
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem variant="destructive">
-            <IconTrash />
-            <span>删除频道</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </SidebarGroupLabel>
     <div class="grid transition-[grid-template-rows,opacity] duration-300 ease-in-out" :class="isMenuCollapsed
         ? 'grid-rows-[0fr] opacity-0'
@@ -125,10 +98,12 @@ const isMenuCollapsed = ref(false)
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton class="text-sidebar-foreground/70 cursor-pointer">
-              <IconDots class="text-sidebar-foreground/70" />
-              <span>更多</span>
+          <SidebarMenuItem v-if="items.length">
+            <SidebarMenuButton as-child>
+              <router-link to="/channels" class="min-w-0">
+                <IconChevronRight />
+                <span class="truncate">更多</span>
+              </router-link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

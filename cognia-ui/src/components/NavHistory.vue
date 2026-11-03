@@ -41,7 +41,7 @@ const isMenuCollapsed = ref(false)
 </script>
 
 <template>
-  <SidebarGroup class="group-data-[collapsible=icon]:hidden">
+  <SidebarGroup class="group-data-[collapsible=icon]:hidden flex min-h-20 flex-1 flex-col overflow-hidden">
     <SidebarGroupLabel class="group/label flex h-auto min-h-6 w-full gap-1 p-0">
       <span class="shrink-0">最近</span>
 
@@ -65,11 +65,11 @@ const isMenuCollapsed = ref(false)
         <IconMessagePlus class="size-4" />
       </Button>
     </SidebarGroupLabel>
-    <div class="grid transition-[grid-template-rows,opacity] duration-300 ease-in-out" :class="isMenuCollapsed
+    <div class="grid min-h-0 flex-1 transition-[grid-template-rows,opacity] duration-300 ease-in-out" :class="isMenuCollapsed
         ? 'grid-rows-[0fr] opacity-0'
         : 'grid-rows-[1fr] opacity-100'
       ">
-      <div class="min-h-0 overflow-hidden">
+      <div class="min-h-0 overflow-y-auto pr-1">
         <SidebarMenu>
           <SidebarMenuItem v-for="item in items" :key="item.id">
             <SidebarMenuButton as-child>

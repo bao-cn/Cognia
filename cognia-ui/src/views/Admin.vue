@@ -7,7 +7,6 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar"
 import {
-  IconApi,
   IconUsers,
   IconBooks,
   IconCpu,
@@ -84,39 +83,29 @@ const data = {
         },
       ],
     },
+    // {
+    //   title: "API 配置",
+    //   url: "#",
+    //   icon: IconApi,
+    //   items: [
+    //     {
+    //       title: "API 密钥",
+    //       url: "/console/api/key",
+    //     },
+    //     {
+    //       title: "Webhook",
+    //       url: "/console/api/webhook",
+    //     },
+    //     {
+    //       title: "限流策略",
+    //       url: "/console/api/rate-limit",
+    //     },
+    //   ],
+    // },
     {
       title: "安全审计",
-      url: "#",
+      url: "/console/security/audit",
       icon: IconShield,
-      items: [
-        {
-          title: "审计日志",
-          url: "/console/security/audit",
-        },
-        {
-          title: "IP 策略",
-          url: "/console/security/ip-whitelist",
-        },
-      ],
-    },
-    {
-      title: "API 配置",
-      url: "#",
-      icon: IconApi,
-      items: [
-        {
-          title: "API 密钥",
-          url: "/console/api/key",
-        },
-        {
-          title: "Webhook",
-          url: "/console/api/webhook",
-        },
-        {
-          title: "限流策略",
-          url: "/console/api/rate-limit",
-        },
-      ],
     },
     {
       title: "计划任务",

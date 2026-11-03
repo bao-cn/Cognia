@@ -35,6 +35,24 @@ const routes: Array<RouteRecordRaw> = [
         },
       },
       {
+        name: 'Discover',
+        path: 'discover',
+        component: () => import('@/pages/Discover.vue'),
+        meta: { title: '发现广场' },
+      },
+      {
+        name: 'MyChannels',
+        path: 'channels',
+        component: () => import('@/pages/MyChannels.vue'),
+        meta: { title: '我的频道' },
+      },
+      {
+        name: 'ChatTemporary',
+        path: 'chat/temporary',
+        component: () => import('@/pages/Chat.vue'),
+        meta: { title: '临时对话' },
+      },
+      {
         name: 'Chat',
         path: 'chat',
         component: () => import('@/pages/Chat.vue'),

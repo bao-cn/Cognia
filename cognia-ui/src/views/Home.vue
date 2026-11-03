@@ -6,7 +6,7 @@ import AppSidebar from '@/components/AppSidebar.vue'
 import SiteHeader from '@/components/SiteHeader.vue'
 import { useSiteStore } from '@/stores/site'
 import { useChatStore } from '@/stores/chat'
-import { channelApi, profileApi } from '@/api'
+import { channelApi, discoverApi, profileApi } from '@/api'
 import {
   SidebarInset,
   SidebarProvider,
@@ -61,7 +61,19 @@ async function loadChannels() {
         // A team the viewer left should not block the sidebar.
       }
     }
-    channels.value = next
+    const subscriptions = await discoverApi.subscriptions().catch(() => [])
+    const subscribed = subscriptions.map(channel => ({
+      id: `sub-${channel.id}`,
+      name: channel.name,
+      url: `/${channel.ownerSlug}/${channel.slug}`,
+    }))
+    const merged = [...subscribed, ...next]
+    const seen = new Set<string>()
+    channels.value = merged.filter(channel => {
+      if (seen.has(channel.url)) return false
+      seen.add(channel.url)
+      return true
+    }).slice(0, 3)
   } catch {
     // Sidebar is optional while the profile is still loading.
   }
@@ -72,6 +84,13 @@ function newChat() {
     window.dispatchEvent(new CustomEvent('chat:reset'))
   else
     router.push('/chat')
+}
+
+function temporaryChat() {
+  if (route.name === 'ChatTemporary')
+    window.dispatchEvent(new CustomEvent('chat:reset'))
+  else
+    router.push('/chat/temporary')
 }
 
 async function deleteConversation(item: { id: string, name: string }) {
@@ -112,11 +131,12 @@ watch(() => route.fullPath, () => {
       :badge_status="true"
       :badge_value="'Beta'"
       @new-chat="newChat"
+      @temporary-chat="temporaryChat"
       @delete-conversation="deleteConversation"
     />
 
     <SidebarInset class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <SiteHeader class="z-99 shrink-0 rounded-t-xl bg-background" />
+      <SiteHeader class="z-49 shrink-0 rounded-t-xl bg-background" />
 
       <div class="@container/main flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         <router-view />
