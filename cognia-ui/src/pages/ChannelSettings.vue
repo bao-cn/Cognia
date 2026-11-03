@@ -31,14 +31,17 @@ const readmeInput = ref<HTMLInputElement | null>(null)
 const agentInput = ref<HTMLInputElement | null>(null)
 const deleteOpen = ref(false)
 const deleting = ref(false)
+const notifyForm = reactive({ title: '', content: '' })
+const notifySending = ref(false)
 
 const ownerParam = computed(() => String(route.params.owner ?? ''))
 const slugParam = computed(() => String(route.params.channelSlug ?? ''))
 const channel = computed(() => detail.value?.channel)
 const canManage = computed(() => detail.value?.canManage ?? false)
+const canNotify = computed(() => detail.value?.canNotify ?? false)
 const channelPath = computed(() => `/${ownerParam.value}/${slugParam.value}`)
 
-const form = reactive({ name: '', description: '', isPublic: true })
+const form = reactive({ name: '', description: '', isPublic: true, webSearchEnabled: true })
 const agentForm = reactive({ name: '', description: '', tags: '' })
 
 function fill(value: ChannelDetail) {
@@ -46,6 +49,7 @@ function fill(value: ChannelDetail) {
   form.name = value.channel.name
   form.description = value.channel.description ?? ''
   form.isPublic = value.channel.isPublic
+  form.webSearchEnabled = value.channel.webSearchEnabled ?? true
   agentForm.name = value.channel.agentName ?? ''
   agentForm.description = value.channel.agentDescription ?? ''
   agentForm.tags = value.channel.agentTags ?? ''
@@ -84,6 +88,7 @@ async function saveBasic() {
       name: form.name.trim(),
       description: form.description.trim(),
       isPublic: form.isPublic,
+      webSearchEnabled: form.webSearchEnabled,
     })
     fill(await channelApi.detail(channel.value.id))
     toast.success('频道设置已保存')
@@ -166,6 +171,28 @@ async function removeChannel() {
   }
 }
 
+async function sendNotification() {
+  if (!channel.value) return
+  if (!notifyForm.title.trim() || !notifyForm.content.trim()) {
+    toast.error('通知标题和内容不能为空')
+    return
+  }
+  notifySending.value = true
+  try {
+    await channelApi.sendNotification(channel.value.id, {
+      title: notifyForm.title.trim(),
+      content: notifyForm.content.trim(),
+    })
+    notifyForm.title = ''
+    notifyForm.content = ''
+    toast.success('频道通知已发送')
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : '发送通知失败')
+  } finally {
+    notifySending.value = false
+  }
+}
+
 onMounted(load)
 watch(() => [route.params.owner, route.params.channelSlug], load)
 </script>
@@ -231,6 +258,13 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                 <p class="text-xs text-muted-foreground">关闭后仅所有者与团队成员可以访问。</p>
               </div>
               <Switch v-model="form.isPublic" />
+            </div>
+            <div class="flex items-center justify-between gap-4 md:col-span-2">
+              <div>
+                <p class="text-sm font-medium">允许联网搜索</p>
+                <p class="text-xs text-muted-foreground">仅在系统开启联网搜索后生效；关闭后使用本频道检索时不会调用联网搜索。</p>
+              </div>
+              <Switch v-model="form.webSearchEnabled" />
             </div>
           </div>
           <div class="flex justify-end border-t px-4 py-3">
@@ -309,6 +343,28 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             <Button variant="outline" :disabled="agentSaving" @click="saveAgent">
               <Spinner v-if="agentSaving" class="mr-2" />保存元信息
             </Button>
+          </div>
+        </section>
+
+        <section v-if="canNotify" class="rounded-xl border bg-card">
+          <header class="flex flex-col gap-1 border-b px-4 py-3">
+            <h2 class="text-sm font-semibold">频道通知</h2>
+            <p class="text-xs text-muted-foreground">向开启频道通知的用户推送消息，每个频道每天最多发送 1 次。</p>
+          </header>
+          <div class="grid gap-4 p-4">
+            <div class="grid gap-2">
+              <Label for="notify-title">通知标题</Label>
+              <Input id="notify-title" v-model="notifyForm.title" maxlength="200" placeholder="例如：本周新增资料" />
+            </div>
+            <div class="grid gap-2">
+              <Label for="notify-content">通知内容</Label>
+              <Textarea id="notify-content" v-model="notifyForm.content" rows="4" maxlength="2000" />
+            </div>
+            <div class="flex justify-end">
+              <Button :disabled="notifySending" @click="sendNotification">
+                <Spinner v-if="notifySending" class="mr-2" />发送通知
+              </Button>
+            </div>
           </div>
         </section>
 

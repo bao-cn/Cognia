@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { channelApi, profileApi } from '@/api'
+import { channelApi, discoverApi, profileApi } from '@/api'
 import type { ChannelDetail, ChannelDocument, ChannelFolder } from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,8 +12,8 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import Markdown from '@/components/Markdown.vue'
 import {
-  IconBook, IconChevronRight, IconCloudUpload,
-  IconFile, IconFileText, IconFolder, IconFolderPlus, IconInfoCircle,
+  IconBook, IconBookmark, IconBookmarkFilled, IconChevronRight, IconCloudUpload,
+  IconEye, IconEyeOff, IconFile, IconFileText, IconFolder, IconFolderPlus, IconInfoCircle,
   IconPlus, IconRefresh, IconSettings, IconTrash, IconAlertTriangle, IconCheck,
 } from '@tabler/icons-vue'
 
@@ -31,9 +31,53 @@ const channel = computed(() => detail.value?.channel)
 const ownerPath = computed(() => `/${ownerParam.value}`)
 const canWrite = computed(() => detail.value?.canWrite ?? false)
 const canManage = computed(() => detail.value?.canManage ?? false)
+const subscribed = ref(false)
+const notifySubscribed = ref(false)
+const engagementBusy = ref(false)
 
 function goSettings() {
   void router.push(`/${ownerParam.value}/${slugParam.value}/settings`)
+}
+
+async function loadEngagement() {
+  if (!channel.value?.isPublic)
+    return
+  try {
+    const list = await discoverApi.subscriptions()
+    const found = list.find(item => item.id === channel.value?.id)
+    subscribed.value = Boolean(found)
+    notifySubscribed.value = Boolean(found?.notifySubscribed)
+  } catch { /* engagement is optional */ }
+}
+
+async function toggleSubscribe() {
+  if (!channel.value) return
+  engagementBusy.value = true
+  try {
+    if (subscribed.value) await discoverApi.unsubscribe(channel.value.id)
+    else await discoverApi.subscribe(channel.value.id)
+    subscribed.value = !subscribed.value
+    toast.success(subscribed.value ? '已订阅频道' : '已取消订阅')
+  } catch (err: any) {
+    toast.error(err?.message || '操作失败')
+  } finally {
+    engagementBusy.value = false
+  }
+}
+
+async function toggleNotify() {
+  if (!channel.value) return
+  engagementBusy.value = true
+  try {
+    if (notifySubscribed.value) await discoverApi.unsubscribeNotify(channel.value.id)
+    else await discoverApi.subscribeNotify(channel.value.id)
+    notifySubscribed.value = !notifySubscribed.value
+    toast.success(notifySubscribed.value ? '已开启频道通知' : '已关闭频道通知')
+  } catch (err: any) {
+    toast.error(err?.message || '操作失败')
+  } finally {
+    engagementBusy.value = false
+  }
 }
 
 const currentFolder = computed(() =>
@@ -59,7 +103,7 @@ const readmeContent = ref('')
 const readmeLoading = ref(false)
 
 async function loadReadme(channelId: string) {
-  if (!detail.value?.channel.readmeKey) {
+  if (!detail.value?.channel) {
     readmeContent.value = ''
     return
   }
@@ -105,6 +149,7 @@ async function load() {
       return
     }
     detail.value = await channelApi.detail(target.id)
+    void loadEngagement()
     await loadReadme(target.id)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '加载频道失败'
@@ -367,6 +412,18 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
           <p class="max-w-2xl text-sm text-muted-foreground">{{ channel.description || '这个频道还没有简介。' }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <template v-if="channel.isPublic">
+            <Button variant="outline" size="sm" :disabled="engagementBusy" :aria-pressed="subscribed" @click="toggleSubscribe">
+              <IconBookmarkFilled v-if="subscribed" class="mr-1 size-4 text-primary" />
+              <IconBookmark v-else class="mr-1 size-4" />
+              {{ subscribed ? '已订阅' : '订阅' }}
+            </Button>
+            <Button variant="outline" size="sm" :disabled="engagementBusy" :aria-pressed="notifySubscribed" @click="toggleNotify">
+              <IconEye v-if="notifySubscribed" class="mr-1 size-4 text-primary" />
+              <IconEyeOff v-else class="mr-1 size-4" />
+              {{ notifySubscribed ? '通知已开启' : '接收通知' }}
+            </Button>
+          </template>
           <Button v-if="canManage" variant="outline" size="sm" @click="goSettings">
             <IconSettings class="mr-1 size-4" />频道设置
           </Button>

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import type { AppNotification } from '@/types/api'
 import { toast } from 'vue-sonner'
 import {
   IconBell,
@@ -20,6 +22,7 @@ import { useNotificationStore } from '@/stores/notification'
 
 const store = useNotificationStore()
 const open = ref(false)
+const router = useRouter()
 
 const unreadLabel = computed(() => (store.unread > 99 ? '99+' : String(store.unread)))
 
@@ -45,12 +48,23 @@ async function handleReadAll(): Promise<void> {
   }
 }
 
+function openChannel(item: AppNotification) {
+  const payload = item.payload as Record<string, any> | undefined
+  if (item.type !== 'CHANNEL_NOTIFICATION' || !payload?.channelSlug)
+    return
+  const owner = payload.ownerSlug
+  if (owner)
+    void router.push(`/${owner}/${payload.channelSlug}`)
+}
+
 function typeLabel(type: string): string {
   switch (type) {
     case 'DOCUMENT_TIMEOUT':
       return '文档超时'
     case 'TASK_FAILED':
       return '任务失败'
+    case 'CHANNEL_NOTIFICATION':
+      return '频道通知'
     default:
       return '通知'
   }
@@ -105,7 +119,7 @@ function typeLabel(type: string): string {
             type="button"
             class="flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-muted/50"
             :class="item.read ? 'opacity-70' : ''"
-            @click="handleRead(item.id)"
+            @click="handleRead(item.id); openChannel(item)"
           >
             <div class="flex items-center gap-2">
               <Badge variant="outline" class="h-5 shrink-0 px-1.5 text-[10px]">
