@@ -6,6 +6,7 @@ public record PublicChatModel(
         String model,
         String name,
         boolean supportsTools,
-        boolean thinking
+        boolean thinking,
+        boolean supportsVision
 ) {
 }

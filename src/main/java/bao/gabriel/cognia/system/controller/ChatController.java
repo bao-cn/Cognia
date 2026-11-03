@@ -8,6 +8,7 @@ import bao.gabriel.cognia.system.dto.chat.PublicChatModel;
 import bao.gabriel.cognia.system.dto.model.PublicModelResponse;
 import bao.gabriel.cognia.system.service.ChatConversationService;
 import bao.gabriel.cognia.system.service.ModelConfigService;
+import bao.gabriel.cognia.system.service.RagSettingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/chat")
@@ -31,6 +33,17 @@ public class ChatController {
     private final ModelConfigService modelConfigService;
     private final ChatService chatService;
     private final ChatConversationService conversationService;
+    private final RagSettingService ragSettingService;
+
+    @GetMapping("/capabilities")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<Map<String, Object>> capabilities() {
+        boolean enabled = ragSettingService.webSearchEnabled();
+        return ApiResponse.success(Map.of(
+                "webSearchEnabled", enabled,
+                "allowUserWebSearch", ragSettingService.allowUserWebSearch(),
+                "webSearchAvailable", enabled));
+    }
 
     @GetMapping("/models")
     @PreAuthorize("isAuthenticated()")
@@ -67,6 +80,6 @@ public class ChatController {
 
     private PublicChatModel toChatModel(PublicModelResponse model) {
         return new PublicChatModel(model.id(), model.providerName(), model.modelId(),
-                model.displayName(), model.supportsTools(), model.thinkingEnabled());
+                model.displayName(), model.supportsTools(), model.thinkingEnabled(), model.supportsVision());
     }
 }

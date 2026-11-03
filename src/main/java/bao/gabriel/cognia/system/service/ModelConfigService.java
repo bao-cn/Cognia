@@ -49,9 +49,17 @@ public interface ModelConfigService {
             String modelType,
             boolean supportsTools,
             boolean thinkingEnabled,
+            boolean supportsVision,
             String reasoningEffort,
             String extraBody,
-            Integer dimension
+            Integer dimension,
+            Integer contextWindow
     ) {
+        /**
+         * Effective context window used for token budgeting; never zero.
+         */
+        public int contextWindowOrDefault() {
+            return contextWindow == null || contextWindow < 1000 ? 32000 : contextWindow;
+        }
     }
 }

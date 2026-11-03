@@ -14,8 +14,10 @@ public record SaveModelConfigRequest(
         Boolean visible,
         Boolean supportsTools,
         Boolean thinkingEnabled,
+        Boolean supportsVision,
         @Size(max = 16) String reasoningEffort,
         @Size(max = 4000) String extraBody,
-        @Min(1) @Max(65536) Integer dimension
+        @Min(1) @Max(65536) Integer dimension,
+        @Min(1000) @Max(2000000) Integer contextWindow
 ) {
 }

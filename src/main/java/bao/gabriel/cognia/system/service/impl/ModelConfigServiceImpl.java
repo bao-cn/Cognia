@@ -189,6 +189,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
             model.setVisible(true);
             model.setSupportsTools(false);
             model.setThinkingEnabled(false);
+            model.setSupportsVision(false);
+            model.setContextWindow(ModelConfig.DEFAULT_CONTEXT_WINDOW);
             model.setCreateTime(LocalDateTime.now());
         }
         if (request.displayName() != null) {
@@ -209,6 +211,9 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         if (request.thinkingEnabled() != null) {
             model.setThinkingEnabled(request.thinkingEnabled());
         }
+        if (request.supportsVision() != null) {
+            model.setSupportsVision(request.supportsVision());
+        }
         if (request.reasoningEffort() != null) {
             model.setReasoningEffort(normalizeEffort(request.reasoningEffort()));
         }
@@ -226,6 +231,12 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         }
         if (request.dimension() != null) {
             model.setDimension(request.dimension());
+        }
+        if (request.contextWindow() != null) {
+            model.setContextWindow(request.contextWindow());
+        }
+        if (model.getContextWindow() == null) {
+            model.setContextWindow(ModelConfig.DEFAULT_CONTEXT_WINDOW);
         }
         model.setUpdateTime(LocalDateTime.now());
         if (created) {
@@ -264,7 +275,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
             }
             result.add(new PublicModelResponse(model.getId(), provider.getId(), provider.getName(),
                     model.getModelId(), displayName(model), model.getModelType(),
-                    model.supportsTools(), model.thinkingEnabled()));
+                    model.supportsTools(), model.thinkingEnabled(), model.supportsVision()));
         }
         return result;
     }
@@ -338,8 +349,9 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         ModelProvider provider = requireProvider(model.getProviderId());
         return new ResolvedModel(model.getId(), provider.getId(), provider.getName(), provider.getVendor(),
                 provider.getBaseUrl(), cryptoService.decrypt(provider.getApiKey()), model.getModelId(),
-                model.getModelType(), model.supportsTools(), model.thinkingEnabled(),
-                model.getReasoningEffort(), model.getExtraBody(), model.getDimension());
+                model.getModelType(), model.supportsTools(), model.thinkingEnabled(), model.supportsVision(),
+                model.getReasoningEffort(), model.getExtraBody(), model.getDimension(),
+                model.contextWindow());
     }
 
     private ModelProvider requireProvider(Long id) {
@@ -369,8 +381,9 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         return new ModelConfigResponse(model.getId(), model.getProviderId(),
                 provider == null ? "" : provider.getName(), model.getModelId(), displayName(model),
                 model.getModelType(), model.enabled(), model.visible(), model.supportsTools(),
-                model.thinkingEnabled(), model.getReasoningEffort(), model.getExtraBody(),
-                model.getDimension(), siteSettingService.formatDateTime(model.getUpdateTime()));
+                model.thinkingEnabled(), model.supportsVision(), model.getReasoningEffort(), model.getExtraBody(),
+                model.getDimension(), model.getContextWindow(),
+                siteSettingService.formatDateTime(model.getUpdateTime()));
     }
 
     private String displayName(ModelConfig model) {

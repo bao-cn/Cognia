@@ -1,6 +1,8 @@
 package bao.gabriel.cognia.system.service.impl;
 
+import bao.gabriel.cognia.common.document.DocumentTextExtractor;
 import bao.gabriel.cognia.rag.service.EmbeddingService;
+import bao.gabriel.cognia.rag.service.RagCacheService;
 import bao.gabriel.cognia.system.entity.KbDocument;
 import bao.gabriel.cognia.system.entity.RagSetting;
 import bao.gabriel.cognia.system.mapper.KbDocumentMapper;
@@ -64,6 +66,8 @@ public class DocumentIngestionServiceImpl implements DocumentIngestionService {
     private final RagSettingService ragSettingService;
     private final EmbeddingService embeddingService;
     private final JdbcTemplate jdbcTemplate;
+    private final RagCacheService ragCacheService;
+    private final DocumentTextExtractor documentTextExtractor;
 
     @Override
     public void ingest(Long documentId) {
@@ -87,6 +91,7 @@ public class DocumentIngestionServiceImpl implements DocumentIngestionService {
             }
             List<EmbeddingService.EmbeddedText> embeddings = embeddingService.embedAll(chunks);
             jdbcTemplate.update("DELETE FROM document_chunk WHERE document_id = ?", document.getId());
+            invalidateRetrievalCache(document.getId());
             LocalDateTime now = LocalDateTime.now();
             for (int index = 0; index < chunks.size(); index++) {
                 String chunk = chunks.get(index);
@@ -153,32 +158,7 @@ public class DocumentIngestionServiceImpl implements DocumentIngestionService {
     }
 
     private String extractText(KbDocument document, byte[] bytes) {
-        String name = document.getName() == null ? "" : document.getName().toLowerCase(Locale.ROOT);
-        try {
-            if (name.endsWith(".pdf")) {
-                return extractPdf(bytes);
-            }
-            if (name.endsWith(".docx")) {
-                return extractDocx(bytes);
-            }
-            if (name.endsWith(".xlsx")) {
-                return extractXlsx(bytes);
-            }
-            if (name.endsWith(".pptx")) {
-                return extractPptx(bytes);
-            }
-            if (name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".markdown")
-                    || name.endsWith(".html") || name.endsWith(".htm") || name.endsWith(".csv")
-                    || name.endsWith(".json")) {
-                String text = new String(bytes, StandardCharsets.UTF_8);
-                return name.endsWith(".html") || name.endsWith(".htm") ? text.replaceAll("<[^>]+>", " ") : text;
-            }
-            throw new IllegalStateException("暂不支持该文件类型的自动解析");
-        } catch (IllegalStateException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new IllegalStateException("文档解析失败：" + ex.getMessage(), ex);
-        }
+        return documentTextExtractor.extract(document.getName(), bytes);
     }
 
     private String extractPdf(byte[] bytes) throws Exception {
@@ -288,6 +268,18 @@ public class DocumentIngestionServiceImpl implements DocumentIngestionService {
             builder.append(vector[i]);
         }
         return builder.append(']').toString();
+    }
+
+    /**
+     * Re-ingestion replaces the document's chunks, so cached retrieval results
+     * for this document must go; semantic answers are intentionally kept.
+     */
+    private void invalidateRetrievalCache(Long documentId) {
+        try {
+            ragCacheService.invalidateDocument(documentId);
+        } catch (Exception ex) {
+            log.warn("Unable to invalidate retrieval cache for document {}: {}", documentId, ex.getMessage());
+        }
     }
 
     private String truncate(String value, int max) {

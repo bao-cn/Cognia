@@ -8,6 +8,7 @@ public record PublicModelResponse(
         String displayName,
         String modelType,
         boolean supportsTools,
-        boolean thinkingEnabled
+        boolean thinkingEnabled,
+        boolean supportsVision
 ) {
 }

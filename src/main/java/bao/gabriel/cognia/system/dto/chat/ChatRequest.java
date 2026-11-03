@@ -11,6 +11,9 @@ public record ChatRequest(
         List<Long> channelIds,
         String effort,
         Boolean thinking,
-        String conversationId
+        String conversationId,
+        Boolean webSearch,
+        Boolean temporary,
+        @Size(max = 6) List<ChatAttachmentRequest> attachments
 ) {
 }

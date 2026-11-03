@@ -29,14 +29,22 @@ public class ModelConfig {
     private Boolean visible;
     private Boolean supportsTools;
     private Boolean thinkingEnabled;
+    private Boolean supportsVision;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String reasoningEffort;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String extraBody;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Integer dimension;
+    private Integer contextWindow;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    public static final int DEFAULT_CONTEXT_WINDOW = 32000;
+
+    public int contextWindow() {
+        return contextWindow == null || contextWindow < 1000 ? DEFAULT_CONTEXT_WINDOW : contextWindow;
+    }
 
     public boolean enabled() {
         return Boolean.TRUE.equals(enabled);
@@ -52,5 +60,9 @@ public class ModelConfig {
 
     public boolean thinkingEnabled() {
         return Boolean.TRUE.equals(thinkingEnabled);
+    }
+
+    public boolean supportsVision() {
+        return Boolean.TRUE.equals(supportsVision);
     }
 }

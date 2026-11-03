@@ -11,9 +11,11 @@ public record ModelConfigResponse(
         boolean visible,
         boolean supportsTools,
         boolean thinkingEnabled,
+        boolean supportsVision,
         String reasoningEffort,
         String extraBody,
         Integer dimension,
+        Integer contextWindow,
         String updatedAt
 ) {
 }
