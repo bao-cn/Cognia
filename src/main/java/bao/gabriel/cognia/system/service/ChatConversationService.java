@@ -17,4 +17,6 @@ public interface ChatConversationService {
     void append(String conversationId, Long userId, String role, String content, String reasoning);
 
     void delete(String conversationId, Long userId);
+
+    void generateTitleAsync(String conversationId, Long modelId, String userMessage, String assistantMessage);
 }

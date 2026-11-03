@@ -1,6 +1,7 @@
 package bao.gabriel.cognia.system.service;
 
 import bao.gabriel.cognia.common.exception.BusinessException;
+import bao.gabriel.cognia.rag.service.RagCacheService;
 import bao.gabriel.cognia.system.entity.KbDocument;
 import bao.gabriel.cognia.system.entity.RecycleBin;
 import bao.gabriel.cognia.system.mapper.KbDocumentMapper;
@@ -32,6 +33,7 @@ public class FileDeletionService {
     private final VectorStoreCleanupService vectorCleanupService;
     private final DocumentStateMachine stateMachine;
     private final SiteSettingService siteSettingService;
+    private final RagCacheService ragCacheService;
 
     @Transactional
     public void logicalDelete(KbDocument document, Long operatorId) {
@@ -60,6 +62,7 @@ public class FileDeletionService {
 
         stateMachine.transition(document, DocumentStateMachine.DocumentStatus.DELETED, null);
         documentMapper.updateById(document);
+        invalidateRetrievalCache(document.getId());
     }
 
     @Transactional
@@ -75,6 +78,18 @@ public class FileDeletionService {
         recycleBinMapper.delete(new LambdaQueryWrapper<RecycleBin>()
                 .eq(RecycleBin::getDocumentId, document.getId()));
         documentMapper.deleteById(document.getId());
+        invalidateRetrievalCache(document.getId());
+    }
+
+    /**
+     * Only the retrieval layer is document-bound; semantic answers are kept.
+     */
+    private void invalidateRetrievalCache(Long documentId) {
+        try {
+            ragCacheService.invalidateDocument(documentId);
+        } catch (Exception ex) {
+            log.warn("Unable to invalidate retrieval cache for document {}: {}", documentId, ex.getMessage());
+        }
     }
 
     public void deleteObjectQuietly(String key) {

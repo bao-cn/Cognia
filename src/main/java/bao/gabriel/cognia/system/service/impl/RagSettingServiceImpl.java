@@ -37,10 +37,32 @@ public class RagSettingServiceImpl implements RagSettingService {
             setting.setRetrievalTopK(20);
             setting.setRetrievalTopN(5);
             setting.setRerankEnabled(false);
+            setting.setWebSearchEnabled(true);
+            setting.setAllowUserWebSearch(true);
+            setting.setContextCompressionThreshold(80);
+            setting.setCompressionPrompt(RagSetting.DEFAULT_COMPRESSION_PROMPT);
+            setting.setSemanticCacheEnabled(true);
+            setting.setRetrievalCacheEnabled(true);
+            setting.setSemanticCacheThreshold(0.92);
+            setting.setSemanticCacheTtlMinutes(60);
+            setting.setSemanticCacheMaxEntries(500);
+            setting.setRetrievalCacheTtlMinutes(1440);
+            setting.setRetrievalCacheMaxEntries(1000);
+            setting.setTitleGenerationEnabled(true);
             setting.setUpdateTime(LocalDateTime.now());
             mapper.insert(setting);
         }
         return setting;
+    }
+
+    @Override
+    public boolean webSearchEnabled() {
+        return getSetting().webSearchEnabled();
+    }
+
+    @Override
+    public boolean allowUserWebSearch() {
+        return getSetting().allowUserWebSearch();
     }
 
     @Override
@@ -92,6 +114,43 @@ public class RagSettingServiceImpl implements RagSettingService {
         if (Boolean.TRUE.equals(request.clearWebSearchApiKey())) {
             setting.setWebSearchApiKey(null);
         }
+        if (request.webSearchEnabled() != null) {
+            setting.setWebSearchEnabled(request.webSearchEnabled());
+        }
+        if (request.allowUserWebSearch() != null) {
+            setting.setAllowUserWebSearch(request.allowUserWebSearch());
+        }
+        if (request.contextCompressionThreshold() != null) {
+            setting.setContextCompressionThreshold(request.contextCompressionThreshold());
+        }
+        if (request.compressionPrompt() != null) {
+            setting.setCompressionPrompt(request.compressionPrompt().isBlank()
+                    ? RagSetting.DEFAULT_COMPRESSION_PROMPT : request.compressionPrompt().trim());
+        }
+        if (request.semanticCacheEnabled() != null) {
+            setting.setSemanticCacheEnabled(request.semanticCacheEnabled());
+        }
+        if (request.retrievalCacheEnabled() != null) {
+            setting.setRetrievalCacheEnabled(request.retrievalCacheEnabled());
+        }
+        if (request.semanticCacheThreshold() != null) {
+            setting.setSemanticCacheThreshold(request.semanticCacheThreshold());
+        }
+        if (request.semanticCacheTtlMinutes() != null) {
+            setting.setSemanticCacheTtlMinutes(request.semanticCacheTtlMinutes());
+        }
+        if (request.semanticCacheMaxEntries() != null) {
+            setting.setSemanticCacheMaxEntries(request.semanticCacheMaxEntries());
+        }
+        if (request.retrievalCacheTtlMinutes() != null) {
+            setting.setRetrievalCacheTtlMinutes(request.retrievalCacheTtlMinutes());
+        }
+        if (request.retrievalCacheMaxEntries() != null) {
+            setting.setRetrievalCacheMaxEntries(request.retrievalCacheMaxEntries());
+        }
+        if (request.titleGenerationEnabled() != null) {
+            setting.setTitleGenerationEnabled(request.titleGenerationEnabled());
+        }
         validate(setting);
         setting.setUpdatedBy(operatorId);
         setting.setUpdateTime(LocalDateTime.now());
@@ -113,6 +172,26 @@ public class RagSettingServiceImpl implements RagSettingService {
         if (setting.rerankEnabled() && setting.getRerankModelId() == null) {
             throw BusinessException.badRequest("启用重排后必须选择重排模型");
         }
+        if (setting.getContextCompressionThreshold() != null
+                && (setting.getContextCompressionThreshold() < 1 || setting.getContextCompressionThreshold() > 100)) {
+            throw BusinessException.badRequest("上下文压缩阈值必须在 1 到 100 之间");
+        }
+        if (setting.getSemanticCacheThreshold() != null
+                && (setting.getSemanticCacheThreshold() < 0.5 || setting.getSemanticCacheThreshold() > 1.0)) {
+            throw BusinessException.badRequest("语义缓存相似度阈值必须在 0.5 到 1.0 之间");
+        }
+        if (setting.getSemanticCacheTtlMinutes() != null && setting.getSemanticCacheTtlMinutes() < 1) {
+            throw BusinessException.badRequest("语义缓存 TTL 必须大于 0");
+        }
+        if (setting.getRetrievalCacheTtlMinutes() != null && setting.getRetrievalCacheTtlMinutes() < 1) {
+            throw BusinessException.badRequest("检索缓存 TTL 必须大于 0");
+        }
+        if (setting.getSemanticCacheMaxEntries() != null && setting.getSemanticCacheMaxEntries() < 1) {
+            throw BusinessException.badRequest("语义缓存条目上限必须大于 0");
+        }
+        if (setting.getRetrievalCacheMaxEntries() != null && setting.getRetrievalCacheMaxEntries() < 1) {
+            throw BusinessException.badRequest("检索缓存条目上限必须大于 0");
+        }
     }
 
     private void assertModelType(Long modelId, String type, String label) {
@@ -127,6 +206,12 @@ public class RagSettingServiceImpl implements RagSettingService {
                 setting.rerankEnabled(), setting.getRerankModelId(), setting.chunkSize(),
                 setting.chunkOverlap(), setting.retrievalTopK(), setting.retrievalTopN(),
                 setting.getWebSearchEndpoint(), StringUtils.hasText(setting.getWebSearchApiKey()),
-                siteSettingService.formatDateTime(setting.getUpdateTime()));
+                siteSettingService.formatDateTime(setting.getUpdateTime()),
+                setting.webSearchEnabled(), setting.allowUserWebSearch(),
+                setting.contextCompressionThreshold(), setting.compressionPrompt(),
+                setting.semanticCacheEnabled(), setting.retrievalCacheEnabled(),
+                setting.semanticCacheThreshold(), setting.semanticCacheTtlMinutes(),
+                setting.semanticCacheMaxEntries(), setting.retrievalCacheTtlMinutes(),
+                setting.retrievalCacheMaxEntries(), setting.titleGenerationEnabled());
     }
 }

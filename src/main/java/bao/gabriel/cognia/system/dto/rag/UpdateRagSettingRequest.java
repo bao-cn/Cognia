@@ -1,5 +1,7 @@
 package bao.gabriel.cognia.system.dto.rag;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -15,6 +17,18 @@ public record UpdateRagSettingRequest(
         @Min(1) @Max(50) Integer retrievalTopN,
         @Size(max = 512) String webSearchEndpoint,
         @Size(max = 2048) String webSearchApiKey,
-        Boolean clearWebSearchApiKey
+        Boolean clearWebSearchApiKey,
+        Boolean webSearchEnabled,
+        Boolean allowUserWebSearch,
+        @Min(1) @Max(100) Integer contextCompressionThreshold,
+        @Size(max = 8000) String compressionPrompt,
+        Boolean semanticCacheEnabled,
+        Boolean retrievalCacheEnabled,
+        @DecimalMin("0.5") @DecimalMax("1.0") Double semanticCacheThreshold,
+        @Min(1) @Max(10080) Integer semanticCacheTtlMinutes,
+        @Min(1) @Max(100000) Integer semanticCacheMaxEntries,
+        @Min(1) @Max(10080) Integer retrievalCacheTtlMinutes,
+        @Min(1) @Max(100000) Integer retrievalCacheMaxEntries,
+        Boolean titleGenerationEnabled
 ) {
 }

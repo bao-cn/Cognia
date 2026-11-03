@@ -11,6 +11,18 @@ public record RagSettingResponse(
         int retrievalTopN,
         String webSearchEndpoint,
         boolean webSearchApiKeyConfigured,
-        String updatedAt
+        String updatedAt,
+        boolean webSearchEnabled,
+        boolean allowUserWebSearch,
+        int contextCompressionThreshold,
+        String compressionPrompt,
+        boolean semanticCacheEnabled,
+        boolean retrievalCacheEnabled,
+        double semanticCacheThreshold,
+        int semanticCacheTtlMinutes,
+        int semanticCacheMaxEntries,
+        int retrievalCacheTtlMinutes,
+        int retrievalCacheMaxEntries,
+        boolean titleGenerationEnabled
 ) {
 }

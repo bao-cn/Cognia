@@ -45,11 +45,19 @@ public class RetrievalServiceImpl implements RetrievalService {
         if (!StringUtils.hasText(query)) {
             return List.of();
         }
+        EmbeddingService.EmbeddedText embedded = embeddingService.embed(query);
+        return retrieve(query, embedded.vector(), viewerId, channelIds);
+    }
+
+    @Override
+    public List<RetrievedChunk> retrieve(String query, float[] queryVector, Long viewerId, List<Long> channelIds) {
+        if (!StringUtils.hasText(query) || queryVector == null || queryVector.length == 0) {
+            return List.of();
+        }
         RagSetting setting = ragSettingService.getSetting();
         int topK = Math.max(setting.retrievalTopK(), setting.retrievalTopN());
         int topN = Math.max(1, setting.retrievalTopN());
-        EmbeddingService.EmbeddedText embedded = embeddingService.embed(query);
-        String vector = toVector(embedded.vector());
+        String vector = toVector(queryVector);
 
         StringBuilder sql = new StringBuilder("""
                 SELECT dc.id, dc.document_id, dc.chunk_text, dc.chunk_index, dc.page_number,
