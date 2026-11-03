@@ -44,10 +44,22 @@ public class Channel {
     private String agentTags;
     private Boolean pinned;
     private Integer pinnedOrder;
+    private Boolean featured;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime featuredTime;
+    private Boolean webSearchEnabled;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
     public boolean isPublic() {
         return Boolean.TRUE.equals(isPublic);
+    }
+
+    public boolean featured() {
+        return Boolean.TRUE.equals(featured);
+    }
+
+    public boolean webSearchEnabled() {
+        return !Boolean.FALSE.equals(webSearchEnabled);
     }
 }

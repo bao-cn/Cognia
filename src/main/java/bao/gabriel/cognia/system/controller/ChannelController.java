@@ -3,6 +3,7 @@ package bao.gabriel.cognia.system.controller;
 import bao.gabriel.cognia.common.api.ApiResponse;
 import bao.gabriel.cognia.security.SecurityUtils;
 import bao.gabriel.cognia.system.dto.channel.*;
+import bao.gabriel.cognia.system.service.ChannelNotificationService;
 import bao.gabriel.cognia.system.service.ChannelService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ import java.util.List;
 public class ChannelController {
 
     private final ChannelService channelService;
+    private final ChannelNotificationService channelNotificationService;
 
     @GetMapping("/owner/{ownerType}/{ownerId}")
     public ApiResponse<List<ChannelSummaryResponse>> list(@PathVariable String ownerType,
@@ -112,5 +114,18 @@ public class ChannelController {
     public ApiResponse<ChannelSummaryResponse> updateAgent(@PathVariable Long id,
                                                            @Valid @RequestBody UpdateAgentMetaRequest request) {
         return ApiResponse.success(channelService.updateAgentMeta(SecurityUtils.getUserId(), id, request));
+    }
+
+    @PutMapping("/{id}/web-search")
+    public ApiResponse<ChannelSummaryResponse> setWebSearch(@PathVariable Long id,
+                                                            @RequestParam boolean enabled) {
+        return ApiResponse.success(channelService.setWebSearchEnabled(SecurityUtils.getUserId(), id, enabled));
+    }
+
+    @PostMapping("/{id}/notifications")
+    public ApiResponse<ChannelNotificationResponse> sendNotification(
+            @PathVariable Long id,
+            @Valid @RequestBody ChannelNotificationRequest request) {
+        return ApiResponse.success(channelNotificationService.send(id, SecurityUtils.getUserId(), request));
     }
 }

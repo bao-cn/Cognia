@@ -7,6 +7,7 @@ public record ChannelDetailResponse(
         List<FolderResponse> folders,
         List<ChannelDocumentResponse> documents,
         boolean canWrite,
-        boolean canManage
+        boolean canManage,
+        boolean canNotify
 ) {
 }

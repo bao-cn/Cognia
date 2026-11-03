@@ -17,6 +17,9 @@ public record ChannelSummaryResponse(
         String agentName,
         String agentDescription,
         String agentTags,
-        String updateTime
+        String updateTime,
+        boolean webSearchEnabled,
+        boolean featured,
+        boolean subscribed
 ) {
 }

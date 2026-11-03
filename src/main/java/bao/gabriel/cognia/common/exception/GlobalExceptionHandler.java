@@ -19,6 +19,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -133,5 +134,11 @@ public class GlobalExceptionHandler {
     private ResponseEntity<ApiResponse<Void>> badRequest(String message) {
         return ResponseEntity.status(ResultCode.BAD_REQUEST.getHttpStatus())
                 .body(ApiResponse.error(ResultCode.BAD_REQUEST, message));
+    }
+
+    /** The client closed an SSE/async response before the error could be written. */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncConnectionClosed(AsyncRequestNotUsableException ex) {
+        log.debug("Async response is no longer usable: {}", ex.getMessage());
     }
 }

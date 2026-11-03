@@ -65,7 +65,9 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("model:read", "查看模型配置", "API", "/api/v1/admin/models", "GET", 65),
             new PermissionSeed("model:update", "修改模型配置", "API", "/api/v1/admin/models", "PUT", 66),
             new PermissionSeed("rag:read", "查看检索参数", "API", "/api/v1/admin/rag", "GET", 67),
-            new PermissionSeed("rag:update", "修改检索参数", "API", "/api/v1/admin/rag", "PUT", 68)
+            new PermissionSeed("rag:update", "修改检索参数", "API", "/api/v1/admin/rag", "PUT", 68),
+            new PermissionSeed("discover:read", "查看发现广场", "API", "/api/v1/discover", "GET", 69),
+            new PermissionSeed("discover:update", "管理精选频道", "API", "/api/v1/discover", "PUT", 70)
     );
 
     private final InitProperties initProperties;

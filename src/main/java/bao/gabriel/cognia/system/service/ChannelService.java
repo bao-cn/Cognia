@@ -44,4 +44,25 @@ public interface ChannelService {
     ChannelSummaryResponse updateAgentMeta(Long userId, Long channelId, UpdateAgentMetaRequest request);
 
     void retryDocument(Long userId, Long channelId, Long documentId);
+
+    /**
+     * Whether the channel allows chat requests to use web search tools.
+     */
+    boolean webSearchEnabled(Long channelId);
+
+    /**
+     * AGENT.md knowledge for the given channels, restricted to channels visible
+     * to the viewer. Returns an empty string when nothing is available.
+     */
+    String agentPrompt(List<Long> channelIds, Long viewerId);
+
+    /**
+     * Write access mirrors document upload rights: personal owner or team
+     * OWNER/MANAGER/EDITOR/MAINTAINER.
+     */
+    boolean hasWriteAccess(Long channelId, Long userId);
+
+    boolean hasNotificationAccess(Long channelId, Long userId);
+
+    ChannelSummaryResponse setWebSearchEnabled(Long userId, Long channelId, boolean enabled);
 }

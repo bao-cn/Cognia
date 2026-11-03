@@ -12,12 +12,14 @@ import bao.gabriel.cognia.system.dto.channel.FolderResponse;
 import bao.gabriel.cognia.system.dto.channel.UpdateAgentMetaRequest;
 import bao.gabriel.cognia.system.dto.channel.UpdateChannelRequest;
 import bao.gabriel.cognia.system.entity.Channel;
+import bao.gabriel.cognia.system.entity.ChannelSubscription;
 import bao.gabriel.cognia.system.entity.Folder;
 import bao.gabriel.cognia.system.entity.KbDocument;
 import bao.gabriel.cognia.system.entity.Team;
 import bao.gabriel.cognia.system.entity.TeamMember;
 import bao.gabriel.cognia.system.entity.User;
 import bao.gabriel.cognia.system.mapper.ChannelMapper;
+import bao.gabriel.cognia.system.mapper.ChannelSubscriptionMapper;
 import bao.gabriel.cognia.system.mapper.FolderMapper;
 import bao.gabriel.cognia.system.mapper.KbDocumentMapper;
 import bao.gabriel.cognia.system.mapper.TeamMapper;
@@ -59,6 +61,7 @@ public class ChannelServiceImpl implements ChannelService {
             "MAINTAINER");
 
     private final ChannelMapper channelMapper;
+    private final ChannelSubscriptionMapper subscriptionMapper;
     private final FolderMapper folderMapper;
     private final KbDocumentMapper documentMapper;
     private final UserMapper userMapper;
@@ -84,7 +87,7 @@ public class ChannelServiceImpl implements ChannelService {
                         .orderByDesc(Channel::getPinned)
                         .orderByAsc(Channel::getPinnedOrder)
                         .orderByDesc(Channel::getUpdateTime))
-                .stream().map(this::toSummary).toList();
+                .stream().map(channel -> toSummary(channel, viewerId)).toList();
     }
 
     @Override
@@ -99,8 +102,8 @@ public class ChannelServiceImpl implements ChannelService {
                         .orderByAsc(Folder::getDepth).orderByAsc(Folder::getId))
                 .stream().map(this::toFolder).toList();
         List<ChannelDocumentResponse> documents = documents(channelId, viewerId, null);
-        return new ChannelDetailResponse(toSummary(channel), folders, documents,
-                access.write(), access.manage());
+        return new ChannelDetailResponse(toSummary(channel, viewerId), folders, documents,
+                access.write(), access.manage(), access.member() || access.write());
     }
 
     @Override
@@ -138,6 +141,8 @@ public class ChannelServiceImpl implements ChannelService {
         channel.setIsPublic(Boolean.TRUE.equals(request.isPublic()));
         channel.setPinned(false);
         channel.setPinnedOrder(0);
+        channel.setFeatured(false);
+        channel.setWebSearchEnabled(true);
         channel.setCreateTime(now);
         channel.setUpdateTime(now);
         channelMapper.insert(channel);
@@ -156,6 +161,9 @@ public class ChannelServiceImpl implements ChannelService {
         channel.setDescription(trimToNull(request.description()));
         if (request.isPublic() != null) {
             channel.setIsPublic(request.isPublic());
+        }
+        if (request.webSearchEnabled() != null) {
+            channel.setWebSearchEnabled(request.webSearchEnabled());
         }
         channel.setUpdateTime(LocalDateTime.now());
         channelMapper.updateById(channel);
@@ -365,16 +373,113 @@ public class ChannelServiceImpl implements ChannelService {
             throw BusinessException.notFound("频道不存在");
         }
         boolean agent = "AGENT".equalsIgnoreCase(kind);
-        String key = agent ? channel.getAgentKey() : channel.getReadmeKey();
+        return readMarkdownContent(channel, agent);
+    }
+
+    @Override
+    public boolean webSearchEnabled(Long channelId) {
+        Channel channel = channelMapper.selectById(channelId);
+        return channel == null || channel.webSearchEnabled();
+    }
+
+    @Override
+    public String agentPrompt(List<Long> channelIds, Long viewerId) {
+        if (channelIds == null || channelIds.isEmpty()) {
+            return "";
+        }
+        StringBuilder prompt = new StringBuilder();
+        for (Long channelId : channelIds) {
+            if (channelId == null) {
+                continue;
+            }
+            Channel channel = channelMapper.selectById(channelId);
+            if (channel == null || !access(channel, viewerId).read()) {
+                continue;
+            }
+            String content = readMarkdownContent(channel, true);
+            if (!StringUtils.hasText(content)) {
+                continue;
+            }
+            int remaining = 12000 - prompt.length();
+            if (remaining <= 0) {
+                break;
+            }
+            String block = "## 频道 " + channel.getName() + " (" + channel.getSlug() + ")\n" + content.trim();
+            if (prompt.length() > 0) {
+                block = "\n\n" + block;
+            }
+            if (block.length() > remaining) {
+                block = block.substring(0, remaining);
+            }
+            prompt.append(block);
+        }
+        return prompt.toString();
+    }
+
+    @Override
+    public boolean hasWriteAccess(Long channelId, Long userId) {
+        Channel channel = channelMapper.selectById(channelId);
+        return channel != null && access(channel, userId).write();
+    }
+
+    @Override
+    public boolean hasNotificationAccess(Long channelId, Long userId) {
+        Channel channel = channelMapper.selectById(channelId);
+        if (channel == null) {
+            return false;
+        }
+        Access access = access(channel, userId);
+        return access.member() || access.write();
+    }
+
+    @Override
+    @Transactional
+    public ChannelSummaryResponse setWebSearchEnabled(Long userId, Long channelId, boolean enabled) {
+        Channel channel = requireChannel(channelId);
+        Access access = access(channel, userId);
+        if (!access.manage()) {
+            throw BusinessException.forbidden("你没有管理该频道网络搜索开关的权限");
+        }
+        channel.setWebSearchEnabled(enabled);
+        channel.setUpdateTime(LocalDateTime.now());
+        channelMapper.updateById(channel);
+        return toSummary(channel, userId);
+    }
+
+    private String readMarkdownContent(Channel channel, boolean agent) {
+        KbDocument rootDocument = findRootMarkdown(channel.getId(), agent);
+        String key = rootDocument != null && StringUtils.hasText(rootDocument.getObjectKey())
+                ? rootDocument.getObjectKey()
+                : (agent ? channel.getAgentKey() : channel.getReadmeKey());
         if (!StringUtils.hasText(key)) {
             return "";
         }
         try {
             return new String(storageService.readObject(key), StandardCharsets.UTF_8);
         } catch (RuntimeException ex) {
-            log.warn("Unable to read channel markdown {} for channel {}: {}", kind, channelId, ex.getMessage());
+            log.warn("Unable to read channel markdown for channel {}: {}", channel.getId(), ex.getMessage());
             return "";
         }
+    }
+
+    /**
+     * Root-folder markdown documents named readme(.md)/agent(.md) override the
+     * key stored on the channel row.
+     */
+    private KbDocument findRootMarkdown(Long channelId, boolean agent) {
+        String statusDeleted = DocumentStateMachine.DocumentStatus.DELETED.name();
+        List<KbDocument> candidates = documentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
+                .eq(KbDocument::getChannelId, channelId)
+                .isNull(KbDocument::getFolderId)
+                .ne(KbDocument::getStatus, statusDeleted)
+                .apply("LOWER(name) IN ('readme', 'readme.md', 'agent', 'agent.md')")
+                .orderByAsc(KbDocument::getId));
+        List<String> names = agent ? List.of("agent", "agent.md") : List.of("readme", "readme.md");
+        return candidates.stream()
+                .filter(doc -> doc.getName() != null
+                        && names.contains(doc.getName().trim().toLowerCase(Locale.ROOT)))
+                .findFirst()
+                .orElse(null);
     }
 
     @Override
@@ -486,9 +591,17 @@ public class ChannelServiceImpl implements ChannelService {
     }
 
     private ChannelSummaryResponse toSummary(Channel channel) {
+        return toSummary(channel, null);
+    }
+
+    private ChannelSummaryResponse toSummary(Channel channel, Long viewerId) {
         long documents = documentMapper.selectCount(new LambdaQueryWrapper<KbDocument>()
                 .eq(KbDocument::getChannelId, channel.getId())
                 .ne(KbDocument::getStatus, DocumentStateMachine.DocumentStatus.DELETED.name()));
+        boolean subscribed = viewerId != null && subscriptionMapper.selectCount(
+                new LambdaQueryWrapper<ChannelSubscription>()
+                        .eq(ChannelSubscription::getChannelId, channel.getId())
+                        .eq(ChannelSubscription::getUserId, viewerId)) > 0;
         return new ChannelSummaryResponse(
                 String.valueOf(channel.getId()), channel.getOwnerType(),
                 String.valueOf(channel.getOwnerId()), ownerDisplayName(channel),
@@ -497,7 +610,8 @@ public class ChannelServiceImpl implements ChannelService {
                 channel.getPinnedOrder() == null ? 0 : channel.getPinnedOrder(), documents,
                 channel.getReadmeKey(), channel.getAgentKey(), channel.getAgentName(),
                 channel.getAgentDescription(), channel.getAgentTags(),
-                siteSettingService.formatDateTime(channel.getUpdateTime()));
+                siteSettingService.formatDateTime(channel.getUpdateTime()),
+                channel.webSearchEnabled(), channel.featured(), subscribed);
     }
 
     private FolderResponse toFolder(Folder folder) {
