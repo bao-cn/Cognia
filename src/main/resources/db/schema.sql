@@ -814,9 +814,12 @@ CREATE TABLE IF NOT EXISTS sys_model_config
     reasoning_effort VARCHAR(16),
     extra_body       TEXT,
     dimension        INTEGER,
+    context_window   INTEGER      NOT NULL DEFAULT 32000,
     create_time      TIMESTAMP    NOT NULL DEFAULT NOW(),
     update_time      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+ALTER TABLE sys_model_config ADD COLUMN IF NOT EXISTS context_window INTEGER NOT NULL DEFAULT 32000;
+ALTER TABLE sys_model_config ADD COLUMN IF NOT EXISTS supports_vision BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_model_config_provider_model
     ON sys_model_config (provider_id, model_id, model_type);
 CREATE INDEX IF NOT EXISTS idx_model_config_type ON sys_model_config (model_type, enabled, visible);
@@ -835,6 +838,15 @@ CREATE TABLE IF NOT EXISTS sys_rag_setting
     retrieval_top_n       INTEGER NOT NULL DEFAULT 5,
     web_search_endpoint   VARCHAR(512),
     web_search_api_key    VARCHAR(2048),
+    context_compression_threshold INTEGER NOT NULL DEFAULT 80,
+    compression_prompt    TEXT,
+    semantic_cache_enabled        BOOLEAN NOT NULL DEFAULT TRUE,
+    retrieval_cache_enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    semantic_cache_threshold      DOUBLE PRECISION NOT NULL DEFAULT 0.92,
+    semantic_cache_ttl_minutes    INTEGER NOT NULL DEFAULT 60,
+    semantic_cache_max_entries    INTEGER NOT NULL DEFAULT 500,
+    retrieval_cache_ttl_minutes   INTEGER NOT NULL DEFAULT 1440,
+    retrieval_cache_max_entries   INTEGER NOT NULL DEFAULT 1000,
     updated_by            BIGINT,
     update_time           TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -928,3 +940,136 @@ WHERE public_id IS NULL;
 ALTER TABLE chat_conversation ALTER COLUMN public_id SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_conversation_public_id
     ON chat_conversation (public_id);
+
+-- ---------------------------------------------------------------------------
+-- Discover plaza: featured channels, subscriptions and channel broadcasts.
+-- ---------------------------------------------------------------------------
+ALTER TABLE kb_channel ADD COLUMN IF NOT EXISTS featured BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE kb_channel ADD COLUMN IF NOT EXISTS featured_time TIMESTAMP;
+ALTER TABLE kb_channel ADD COLUMN IF NOT EXISTS web_search_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_kb_channel_featured
+    ON kb_channel (featured_time DESC, id DESC) WHERE featured = TRUE;
+CREATE INDEX IF NOT EXISTS idx_kb_channel_public_updated
+    ON kb_channel (is_public, update_time DESC);
+
+-- A user following a public channel (drives the hot ranking and "我的订阅").
+CREATE TABLE IF NOT EXISTS kb_channel_subscription
+(
+    id          BIGSERIAL PRIMARY KEY,
+    channel_id  BIGINT    NOT NULL,
+    user_id     BIGINT    NOT NULL,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_channel_subscription
+    ON kb_channel_subscription (channel_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_kb_channel_subscription_user
+    ON kb_channel_subscription (user_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_channel_subscription_channel
+    ON kb_channel_subscription (channel_id, create_time DESC);
+
+-- Opt-in list for channel broadcast notifications (distinct from follow).
+CREATE TABLE IF NOT EXISTS kb_channel_notify_subscription
+(
+    id          BIGSERIAL PRIMARY KEY,
+    channel_id  BIGINT    NOT NULL,
+    user_id     BIGINT    NOT NULL,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_channel_notify_subscription
+    ON kb_channel_notify_subscription (channel_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_kb_channel_notify_subscription_user
+    ON kb_channel_notify_subscription (user_id, create_time DESC);
+
+-- Broadcast messages sent by a channel owner (one per channel per day).
+CREATE TABLE IF NOT EXISTS kb_channel_notification
+(
+    id            BIGSERIAL PRIMARY KEY,
+    channel_id    BIGINT       NOT NULL,
+    sender_id     BIGINT       NOT NULL,
+    title         VARCHAR(200) NOT NULL,
+    content       TEXT,
+    create_time   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    notified_date DATE
+);
+CREATE INDEX IF NOT EXISTS idx_kb_channel_notification_channel
+    ON kb_channel_notification (channel_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_kb_channel_notification_date
+    ON kb_channel_notification (channel_id, notified_date);
+
+-- Global web-search switches for RAG.
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS web_search_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS allow_user_web_search BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Context-window compression + two-layer cache configuration.
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS context_compression_threshold INTEGER NOT NULL DEFAULT 80;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS compression_prompt TEXT;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS semantic_cache_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS retrieval_cache_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS semantic_cache_threshold DOUBLE PRECISION NOT NULL DEFAULT 0.92;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS semantic_cache_ttl_minutes INTEGER NOT NULL DEFAULT 60;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS semantic_cache_max_entries INTEGER NOT NULL DEFAULT 500;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS retrieval_cache_ttl_minutes INTEGER NOT NULL DEFAULT 1440;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS retrieval_cache_max_entries INTEGER NOT NULL DEFAULT 1000;
+
+UPDATE sys_rag_setting
+SET compression_prompt = $$请把下面的多轮对话历史压缩成一段简洁的中文摘要，要求：
+1. 保留用户的核心目标、关键事实、数字、约束条件与偏好；
+2. 保留已经确认的结论、做出的决定以及尚未完成的事项；
+3. 删除寒暄、重复表达和无关内容，不要编造历史中不存在的信息；
+4. 只输出摘要正文，不要添加标题或解释。$$
+WHERE compression_prompt IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- Two-layer chat cache.
+--
+-- sys_semantic_cache stores (query embedding -> answer) scoped by viewer and
+-- the selected channel set so answers never leak across users. The embedding
+-- column intentionally has no fixed dimension: it follows the configured
+-- embedding model, and the row keeps its own dimension for safety.
+--
+-- sys_retrieval_cache stores the serialized RetrievedChunk list for a
+-- normalized query, so a repeated question skips embedding + vector search.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_semantic_cache
+(
+    id                   BIGSERIAL PRIMARY KEY,
+    scope_hash           VARCHAR(64) NOT NULL,
+    query                TEXT        NOT NULL,
+    answer               TEXT,
+    context_json         TEXT,
+    embedding            VECTOR,
+    dimension            INTEGER,
+    similarity_threshold REAL,
+    create_time          TIMESTAMP   NOT NULL DEFAULT NOW(),
+    last_access_time     TIMESTAMP   NOT NULL DEFAULT NOW(),
+    hits                 BIGINT      NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_semantic_cache_scope
+    ON sys_semantic_cache (scope_hash, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_semantic_cache_last_access
+    ON sys_semantic_cache (last_access_time DESC);
+
+CREATE TABLE IF NOT EXISTS sys_retrieval_cache
+(
+    id               BIGSERIAL PRIMARY KEY,
+    scope_hash       VARCHAR(64) NOT NULL,
+    query_hash       VARCHAR(64) NOT NULL,
+    normalized_query TEXT        NOT NULL,
+    chunks_json      TEXT,
+    document_ids     TEXT,
+    create_time      TIMESTAMP   NOT NULL DEFAULT NOW(),
+    last_access_time TIMESTAMP   NOT NULL DEFAULT NOW(),
+    hits             BIGINT      NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_retrieval_cache_scope_query
+    ON sys_retrieval_cache (scope_hash, query_hash);
+CREATE INDEX IF NOT EXISTS idx_retrieval_cache_last_access
+    ON sys_retrieval_cache (last_access_time DESC);
+
+-- A channel may broadcast at most one notification per calendar day.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_channel_notification_day
+    ON kb_channel_notification (channel_id, notified_date)
+    WHERE notified_date IS NOT NULL;
+
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS title_generation_enabled BOOLEAN NOT NULL DEFAULT TRUE;
