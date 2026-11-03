@@ -5,6 +5,7 @@ export { settingsApi } from './settings'
 export { legalApi } from './legal'
 export { teamApi } from './team'
 export { storageApi } from './storage'
+export { discoverApi } from './discover'
 export { recycleApi } from './recycle'
 export { auditApi } from './audit'
 export { taskApi } from './task'
@@ -15,6 +16,7 @@ export { modelApi } from './model'
 export { ragApi } from './rag'
 export { promptApi } from './prompt'
 export { chatApi } from './chat'
+export { searchApi } from './search'
 export { ApiError, http, httpClient } from './http'
 
 import { authApi } from './auth'
@@ -34,6 +36,9 @@ import { modelApi } from './model'
 import { ragApi } from './rag'
 import { promptApi } from './prompt'
 import { chatApi } from './chat'
+import { searchApi } from './search'
+
+import { discoverApi } from './discover'
 
 export const api = {
   auth: authApi,
@@ -54,4 +59,6 @@ export const api = {
   rag: ragApi,
   prompt: promptApi,
   chat: chatApi,
+  search: searchApi,
+  discover: discoverApi,
 }

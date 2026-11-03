@@ -581,6 +581,24 @@ export interface ChannelCard {
   pinnedOrder: number
   documentCount: number
   updateTime: string
+  featured?: boolean
+  webSearchEnabled?: boolean
+}
+
+export interface DiscoverChannel extends ChannelCard {
+  ownerType: 'USER' | 'TEAM'
+  ownerId: string
+  ownerName: string
+  ownerSlug: string
+  subscriberCount: number
+  subscribed: boolean
+  notifySubscribed: boolean
+}
+
+export interface ChatCapabilities {
+  webSearchEnabled: boolean
+  allowUserWebSearch: boolean
+  webSearchAvailable: boolean
 }
 
 export interface OwnerProfile {
@@ -657,6 +675,7 @@ export interface ChannelDetail {
   documents: ChannelDocument[]
   canWrite: boolean
   canManage: boolean
+  canNotify: boolean
 }
 
 export interface CreateChannelPayload {
@@ -672,6 +691,7 @@ export interface UpdateChannelPayload {
   name: string
   description?: string
   isPublic: boolean
+  webSearchEnabled?: boolean
 }
 
 export interface RecycleBinEntry {
@@ -728,9 +748,11 @@ export interface ModelConfig {
   visible: boolean
   supportsTools: boolean
   thinkingEnabled: boolean
+  supportsVision?: boolean
   reasoningEffort?: string
   extraBody?: string
   dimension?: number
+  contextWindow?: number
   updatedAt?: string
 }
 
@@ -743,9 +765,11 @@ export interface SaveModelConfigPayload {
   visible?: boolean
   supportsTools?: boolean
   thinkingEnabled?: boolean
+  supportsVision?: boolean
   reasoningEffort?: string
   extraBody?: string
   dimension?: number
+  contextWindow?: number
 }
 
 export interface PublicChatModel {
@@ -755,6 +779,7 @@ export interface PublicChatModel {
   name: string
   supportsTools: boolean
   thinking: boolean
+  supportsVision?: boolean
 }
 
 export interface RagSettings {
@@ -768,6 +793,18 @@ export interface RagSettings {
   retrievalTopN: number
   webSearchEndpoint?: string
   webSearchApiKeyConfigured: boolean
+  webSearchEnabled: boolean
+  allowUserWebSearch: boolean
+  semanticCacheEnabled: boolean
+  retrievalCacheEnabled: boolean
+  semanticCacheThreshold: number
+  semanticCacheTtlMinutes: number
+  semanticCacheMaxEntries: number
+  retrievalCacheTtlMinutes: number
+  retrievalCacheMaxEntries: number
+  titleGenerationEnabled: boolean
+  contextCompressionThreshold: number
+  compressionPrompt?: string
   updatedAt?: string
 }
 
@@ -783,6 +820,18 @@ export interface UpdateRagSettingsPayload {
   webSearchEndpoint?: string
   webSearchApiKey?: string
   clearWebSearchApiKey?: boolean
+  webSearchEnabled?: boolean
+  allowUserWebSearch?: boolean
+  semanticCacheEnabled?: boolean
+  retrievalCacheEnabled?: boolean
+  semanticCacheThreshold?: number
+  semanticCacheTtlMinutes?: number
+  semanticCacheMaxEntries?: number
+  retrievalCacheTtlMinutes?: number
+  retrievalCacheMaxEntries?: number
+  titleGenerationEnabled?: boolean
+  contextCompressionThreshold?: number
+  compressionPrompt?: string
 }
 
 export interface PromptSettings {
@@ -818,4 +867,32 @@ export interface ChatConversationMessage {
 
 export interface ChatConversationDetail extends ChatConversation {
   messages: ChatConversationMessage[]
+}
+
+export interface SearchChannelHit {
+  id: number
+  name: string
+  slug: string
+  description?: string
+  ownerType: 'USER' | 'TEAM'
+  ownerSlug: string
+}
+
+export interface SearchUserHit {
+  id: number
+  username: string
+  nickname?: string
+  avatar?: string
+}
+
+export interface SearchConversationHit {
+  id: string
+  title: string
+  updateTime?: string
+}
+
+export interface GlobalSearchResult {
+  channels: SearchChannelHit[]
+  users: SearchUserHit[]
+  conversations: SearchConversationHit[]
 }

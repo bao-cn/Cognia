@@ -1,4 +1,4 @@
-import type { ChatConversation, ChatConversationDetail, PublicChatModel } from '@/types/api'
+import type { ChatCapabilities, ChatConversation, ChatConversationDetail, PublicChatModel } from '@/types/api'
 import { http } from './http'
 import { getAccessToken } from '@/utils/token'
 
@@ -9,6 +9,19 @@ export interface ChatMessagePayload {
   content: string
 }
 
+export interface ChatAttachmentPayload {
+  type: 'IMAGE' | 'TEXT'
+  name: string
+  mimeType?: string
+  dataUrl?: string
+  text?: string
+}
+
+export interface ChatAttachmentResult extends ChatAttachmentPayload {
+  kind: 'IMAGE' | 'TEXT'
+  size: number
+}
+
 export interface ChatStreamPayload {
   modelId?: number
   messages: ChatMessagePayload[]
@@ -16,10 +29,33 @@ export interface ChatStreamPayload {
   effort?: string
   thinking?: boolean
   conversationId?: string
+  temporary?: boolean
+  webSearch?: boolean
+  attachments?: ChatAttachmentPayload[]
+}
+
+export interface ChatCacheInfo {
+  hitType: 'SEMANTIC' | 'RETRIEVAL' | 'NONE'
+  similarity?: number
+  cacheKey?: string
+  hits?: number
+  requests?: number
+  hitRate?: number
+}
+
+export interface ChatContextInfo {
+  usedTokens: number
+  maxTokens: number
+  percent: number
+  compressionThreshold?: number
+  compressed?: boolean
+  droppedMessages?: number
 }
 
 export interface ChatStreamHandlers {
-  onStart?: (data: { model: string, provider: string, supportsTools: boolean, conversationId?: string }) => void
+  onStart?: (data: { model: string, provider: string, supportsTools: boolean, supportsVision?: boolean, conversationId?: string }) => void
+  onCache?: (data: ChatCacheInfo) => void
+  onContext?: (data: ChatContextInfo) => void
   onReasoning?: (delta: string) => void
   onText?: (delta: string) => void
   onTool?: (data: { id?: string, name: string, status: string, arguments?: string, output?: string }) => void
@@ -30,6 +66,19 @@ export interface ChatStreamHandlers {
 export const chatApi = {
   models(): Promise<PublicChatModel[]> {
     return http.get<PublicChatModel[]>('/chat/models')
+  },
+
+  uploadAttachment(file: File): Promise<ChatAttachmentResult> {
+    const form = new FormData()
+    form.append('file', file)
+    return http.post<ChatAttachmentResult>('/chat/attachments', form, {
+      timeout: 180000,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  capabilities(): Promise<ChatCapabilities> {
+    return http.get<ChatCapabilities>('/chat/capabilities')
   },
 
   conversations(): Promise<ChatConversation[]> {
@@ -87,6 +136,8 @@ export const chatApi = {
         }
         switch (event.type) {
           case 'start': handlers.onStart?.(event); break
+          case 'cache': handlers.onCache?.(event); break
+          case 'context': handlers.onContext?.(event); break
           case 'reasoning': handlers.onReasoning?.(event.delta ?? ''); break
           case 'text': handlers.onText?.(event.delta ?? ''); break
           case 'tool': handlers.onTool?.(event); break

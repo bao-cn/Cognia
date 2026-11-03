@@ -79,6 +79,9 @@ export const channelApi = {
   retryDocument(channelId: string, documentId: string): Promise<ChannelDocument> {
     return http.post<ChannelDocument>(`/channels/${channelId}/documents/${documentId}/retry`)
   },
+  sendNotification(channelId: string, payload: { title: string; content: string }): Promise<void> {
+    return http.post<void>(`/channels/${channelId}/notifications`, payload)
+  },
   updateAgent(
     channelId: string,
     payload: { name?: string; description?: string; tags?: string },
