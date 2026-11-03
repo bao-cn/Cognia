@@ -123,12 +123,78 @@
 
         <section class="rounded-xl border bg-card">
           <header class="flex flex-col gap-1 border-b px-4 py-3">
+            <h2 class="text-sm font-semibold">上下文窗口与压缩</h2>
+            <p class="text-xs text-muted-foreground">按模型最大上下文长度维护滑动窗口；达到阈值时先压缩历史对话再回答。</p>
+          </header>
+          <div class="border-b px-4 py-3">
+            <SettingSwitchRow title="使用 LLM 生成对话标题" description="首轮回答完成后由聊天模型生成简短标题；关闭后使用用户首条消息截断"
+              :model-value="form.titleGenerationEnabled" @update:model-value="form.titleGenerationEnabled = $event" />
+          </div>
+          <div class="grid gap-4 p-4 md:grid-cols-2">
+            <div class="grid gap-2">
+              <Label for="compression-threshold">压缩触发阈值（%）</Label>
+              <Input id="compression-threshold" v-model.number="form.contextCompressionThreshold" type="number" min="50" max="95" />
+              <p class="text-xs text-muted-foreground">上下文占用达到模型窗口的该比例时触发压缩，默认 80%。</p>
+            </div>
+          </div>
+          <div class="grid gap-2 border-t p-4">
+            <Label for="compression-prompt">上下文压缩提示词</Label>
+            <Textarea id="compression-prompt" v-model="form.compressionPrompt" rows="5"
+              placeholder="请将以下对话压缩为简洁摘要，保留事实、决定、未完成事项与用户偏好……" />
+            <p class="text-xs text-muted-foreground">留空时使用系统默认压缩提示词。</p>
+          </div>
+        </section>
+
+        <section class="rounded-xl border bg-card">
+          <header class="flex flex-col gap-1 border-b px-4 py-3">
+            <h2 class="text-sm font-semibold">两层检索缓存</h2>
+            <p class="text-xs text-muted-foreground">执行顺序：语义缓存 → 检索缓存 → 原生 RAG。缓存写入异步执行，不阻塞回答。</p>
+          </header>
+          <div class="flex flex-col divide-y">
+            <SettingSwitchRow title="启用语义缓存" description="按 query embedding 相似度直接复用历史回答；知识库变更不局部失效"
+              :model-value="form.semanticCacheEnabled" @update:model-value="form.semanticCacheEnabled = $event" />
+            <SettingSwitchRow title="启用检索缓存" description="按归一化 query 哈希复用召回片段，跳过 embedding 与向量检索"
+              :model-value="form.retrievalCacheEnabled" @update:model-value="form.retrievalCacheEnabled = $event" />
+          </div>
+          <div class="grid gap-4 border-t p-4 md:grid-cols-2">
+            <div class="grid gap-2">
+              <Label for="semantic-threshold">语义命中相似度</Label>
+              <Input id="semantic-threshold" v-model.number="form.semanticCacheThreshold" type="number" min="0.5" max="0.999" step="0.01" />
+              <p class="text-xs text-muted-foreground">0.92 表示余弦相似度至少 92% 才命中。</p>
+            </div>
+            <div class="grid gap-2">
+              <Label for="semantic-ttl">语义缓存 TTL（分钟）</Label>
+              <Input id="semantic-ttl" v-model.number="form.semanticCacheTtlMinutes" type="number" min="1" max="10080" />
+            </div>
+            <div class="grid gap-2">
+              <Label for="semantic-max">语义缓存最大条数</Label>
+              <Input id="semantic-max" v-model.number="form.semanticCacheMaxEntries" type="number" min="10" max="10000" />
+            </div>
+            <div class="grid gap-2">
+              <Label for="retrieval-ttl">检索缓存 TTL（分钟）</Label>
+              <Input id="retrieval-ttl" v-model.number="form.retrievalCacheTtlMinutes" type="number" min="1" max="10080" />
+            </div>
+            <div class="grid gap-2">
+              <Label for="retrieval-max">检索缓存最大条数</Label>
+              <Input id="retrieval-max" v-model.number="form.retrievalCacheMaxEntries" type="number" min="10" max="10000" />
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-xl border bg-card">
+          <header class="flex flex-col gap-1 border-b px-4 py-3">
             <h2 class="text-sm font-semibold">网页工具</h2>
             <p class="text-xs text-muted-foreground">
               web_search / web_fetch 使用 OpenAI function calling 协议；这里配置搜索服务端点与密钥。
             </p>
           </header>
-          <div class="grid gap-4 p-4 md:grid-cols-2">
+          <div class="flex flex-col divide-y">
+            <SettingSwitchRow title="联网搜索总开关" description="关闭后所有用户和频道都无法调用 web_search / web_fetch"
+              :model-value="form.webSearchEnabled" @update:model-value="form.webSearchEnabled = $event" />
+            <SettingSwitchRow title="允许用户自由控制联网搜索" description="关闭时由频道与总开关决定，用户不能自行切换"
+              :model-value="form.allowUserWebSearch" @update:model-value="form.allowUserWebSearch = $event" />
+          </div>
+          <div class="grid gap-4 border-t p-4 md:grid-cols-2">
             <div class="grid gap-2">
               <Label for="search-endpoint">搜索端点</Label>
               <Input id="search-endpoint" v-model="form.webSearchEndpoint"
@@ -161,6 +227,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import SettingSwitchRow from '@/components/console/SettingSwitchRow.vue'
@@ -174,12 +241,20 @@ const error = ref('')
 const settings = reactive<RagSettings>({
   chatModelId: undefined, embeddingModelId: undefined, rerankEnabled: false, rerankModelId: undefined,
   chunkSize: 1200, chunkOverlap: 120, retrievalTopK: 20, retrievalTopN: 5,
-  webSearchEndpoint: '', webSearchApiKeyConfigured: false,
+  webSearchEndpoint: '', webSearchApiKeyConfigured: false, webSearchEnabled: true, allowUserWebSearch: true,
+  semanticCacheEnabled: true, retrievalCacheEnabled: true, semanticCacheThreshold: 0.92,
+  semanticCacheTtlMinutes: 60, semanticCacheMaxEntries: 500,
+  retrievalCacheTtlMinutes: 1440, retrievalCacheMaxEntries: 1000, titleGenerationEnabled: true,
+  contextCompressionThreshold: 80, compressionPrompt: '',
 })
 const form = reactive({
   chatModelId: '', embeddingModelId: '', rerankEnabled: false, rerankModelId: '',
   chunkSize: 1200, chunkOverlap: 120, retrievalTopK: 20, retrievalTopN: 5,
-  webSearchEndpoint: '', webSearchApiKey: '',
+  webSearchEndpoint: '', webSearchApiKey: '', webSearchEnabled: true, allowUserWebSearch: true,
+  semanticCacheEnabled: true, retrievalCacheEnabled: true, semanticCacheThreshold: 0.92,
+  semanticCacheTtlMinutes: 60, semanticCacheMaxEntries: 500,
+  retrievalCacheTtlMinutes: 1440, retrievalCacheMaxEntries: 1000, titleGenerationEnabled: true,
+  contextCompressionThreshold: 80, compressionPrompt: '',
 })
 const models = ref<ModelConfig[]>([])
 const snapshot = ref('')
@@ -201,6 +276,18 @@ function apply(value: RagSettings) {
   form.retrievalTopN = value.retrievalTopN
   form.webSearchEndpoint = value.webSearchEndpoint ?? ''
   form.webSearchApiKey = ''
+  form.webSearchEnabled = value.webSearchEnabled ?? true
+  form.allowUserWebSearch = value.allowUserWebSearch ?? true
+  form.semanticCacheEnabled = value.semanticCacheEnabled ?? true
+  form.retrievalCacheEnabled = value.retrievalCacheEnabled ?? true
+  form.semanticCacheThreshold = value.semanticCacheThreshold ?? 0.92
+  form.semanticCacheTtlMinutes = value.semanticCacheTtlMinutes ?? 60
+  form.semanticCacheMaxEntries = value.semanticCacheMaxEntries ?? 500
+  form.retrievalCacheTtlMinutes = value.retrievalCacheTtlMinutes ?? 1440
+  form.retrievalCacheMaxEntries = value.retrievalCacheMaxEntries ?? 1000
+  form.titleGenerationEnabled = value.titleGenerationEnabled ?? true
+  form.contextCompressionThreshold = value.contextCompressionThreshold ?? 80
+  form.compressionPrompt = value.compressionPrompt ?? ''
   snapshot.value = JSON.stringify(buildPayload())
 }
 
@@ -216,6 +303,18 @@ function buildPayload(): UpdateRagSettingsPayload {
     retrievalTopN: form.retrievalTopN,
     webSearchEndpoint: form.webSearchEndpoint.trim() || undefined,
     webSearchApiKey: form.webSearchApiKey.trim() || undefined,
+    webSearchEnabled: form.webSearchEnabled,
+    allowUserWebSearch: form.allowUserWebSearch,
+    semanticCacheEnabled: form.semanticCacheEnabled,
+    retrievalCacheEnabled: form.retrievalCacheEnabled,
+    semanticCacheThreshold: form.semanticCacheThreshold,
+    semanticCacheTtlMinutes: form.semanticCacheTtlMinutes,
+    semanticCacheMaxEntries: form.semanticCacheMaxEntries,
+    retrievalCacheTtlMinutes: form.retrievalCacheTtlMinutes,
+    retrievalCacheMaxEntries: form.retrievalCacheMaxEntries,
+    titleGenerationEnabled: form.titleGenerationEnabled,
+    contextCompressionThreshold: form.contextCompressionThreshold,
+    compressionPrompt: form.compressionPrompt.trim() || undefined,
   }
 }
 

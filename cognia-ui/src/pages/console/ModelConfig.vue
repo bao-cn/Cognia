@@ -282,6 +282,11 @@
             </div>
           </div>
           <div class="grid gap-2">
+            <Label>最大上下文长度（tokens）</Label>
+            <Input v-model.number="modelForm.contextWindow" type="number" min="1000" max="2000000" placeholder="32000" />
+            <p class="text-xs text-muted-foreground">用于滑动窗口裁剪与上下文压缩阈值计算，聊天模型必填。</p>
+          </div>
+          <div class="grid gap-2">
             <Label>推理强度</Label>
             <Select v-model="modelForm.reasoningEffort">
               <SelectTrigger class="w-full"><SelectValue placeholder="不设置" /></SelectTrigger>
@@ -306,6 +311,9 @@
             @update:model-value="modelForm.supportsTools = $event" />
           <SettingSwitchRow title="默认开启思考" :model-value="modelForm.thinkingEnabled"
             @update:model-value="modelForm.thinkingEnabled = $event" />
+          <SettingSwitchRow title="支持图片输入（视觉）" description="仅视觉模型允许在对话中上传图片"
+            :model-value="modelForm.supportsVision"
+            @update:model-value="modelForm.supportsVision = $event" />
         </div>
         <DialogFooter>
           <Button variant="outline" @click="modelDialogOpen = false">取消</Button>
@@ -373,7 +381,8 @@ const modelDialogOpen = ref(false)
 const editingModel = ref<ModelConfig | null>(null)
 const modelForm = reactive({
   displayName: '', modelType: 'CHAT' as ModelType, dimension: undefined as number | undefined,
-  reasoningEffort: '', extraBody: '', enabled: true, visible: true, supportsTools: false, thinkingEnabled: false,
+  contextWindow: 32000 as number | undefined,
+  reasoningEffort: '', extraBody: '', enabled: true, visible: true, supportsTools: false, thinkingEnabled: false, supportsVision: false,
 })
 
 const existingModelIds = computed(() => new Set(configs.value.map(item => item.modelId)))
@@ -510,12 +519,14 @@ function openModelDialog(model: ModelConfig) {
   modelForm.displayName = model.displayName
   modelForm.modelType = model.modelType
   modelForm.dimension = model.dimension
+  modelForm.contextWindow = model.contextWindow ?? 32000
   modelForm.reasoningEffort = model.reasoningEffort ?? ''
   modelForm.extraBody = model.extraBody ?? ''
   modelForm.enabled = model.enabled
   modelForm.visible = model.visible
   modelForm.supportsTools = model.supportsTools
   modelForm.thinkingEnabled = model.thinkingEnabled
+  modelForm.supportsVision = !!model.supportsVision
   modelDialogOpen.value = true
 }
 
@@ -533,9 +544,11 @@ async function saveModel() {
       visible: modelForm.visible,
       supportsTools: modelForm.supportsTools,
       thinkingEnabled: modelForm.thinkingEnabled,
+      supportsVision: modelForm.supportsVision,
       reasoningEffort: modelForm.reasoningEffort || undefined,
       extraBody: modelForm.extraBody.trim() || undefined,
       dimension: modelForm.dimension,
+      contextWindow: modelForm.contextWindow,
     })
     toast.success('模型已更新')
     modelDialogOpen.value = false
