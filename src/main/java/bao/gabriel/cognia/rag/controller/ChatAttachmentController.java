@@ -20,7 +20,9 @@ public class ChatAttachmentController {
 
     @PostMapping("/attachments")
     @PreAuthorize("isAuthenticated()")
-    public ApiResponse<ChatAttachmentResponse> upload(@RequestParam("file") MultipartFile file) {
-        return ApiResponse.success(chatAttachmentService.prepare(file));
+    public ApiResponse<ChatAttachmentResponse> upload(@RequestParam("file") MultipartFile file,
+                                                       @RequestParam(value = "conversationId", required = false) String conversationId) {
+        return ApiResponse.success(chatAttachmentService.prepare(
+                bao.gabriel.cognia.security.SecurityUtils.getUserId(), conversationId, file));
     }
 }

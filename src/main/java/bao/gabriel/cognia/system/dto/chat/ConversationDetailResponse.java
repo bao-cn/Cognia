@@ -9,6 +9,7 @@ public record ConversationDetailResponse(
         List<Long> channelIds,
         List<ConversationMessageResponse> messages,
         String createTime,
-        String updateTime
+        String updateTime,
+        boolean archived
 ) {
 }

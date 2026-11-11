@@ -17,6 +17,8 @@ import bao.gabriel.cognia.system.dto.team.UpdateTeamMemberRoleRequest;
 import bao.gabriel.cognia.system.dto.team.UpdateTeamReadmeRequest;
 import bao.gabriel.cognia.system.dto.team.TeamUserSearchResponse;
 import bao.gabriel.cognia.system.service.TeamService;
+import bao.gabriel.cognia.system.service.TwoFactorService;
+import bao.gabriel.cognia.system.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -39,6 +41,8 @@ import java.util.List;
 public class TeamController {
 
     private final TeamService teamService;
+    private final TwoFactorService twoFactorService;
+    private final UserService userService;
 
     @GetMapping("/mine")
     public ApiResponse<List<TeamSummaryResponse>> mine() {
@@ -131,6 +135,11 @@ public class TeamController {
                                                        @Valid @RequestBody PinChannelRequest request) {
         return ApiResponse.success(teamService.pinChannel(
                 SecurityUtils.getUserId(), id, channelId, Boolean.TRUE.equals(request.pinned())));
+    }
+
+    @PostMapping("/{id}/logo")
+    public ApiResponse<String> uploadLogo(@PathVariable Long id, @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        return ApiResponse.success(teamService.updateLogo(SecurityUtils.getUserId(), id, file));
     }
 
     @PutMapping("/{id}")

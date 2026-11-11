@@ -11,6 +11,7 @@ import {
   IconDownload,
   IconArrowUpRight,
   IconUser,
+  IconArchive,
 } from "@tabler/icons-vue"
 
 import {
@@ -110,6 +111,10 @@ async function handleLogout(): Promise<void> {
             <DropdownMenuItem @click="router.push('/favorites')">
               <IconBookmark />
               我的收藏
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="router.push('/archive')">
+              <IconArchive />
+              归档对话
             </DropdownMenuItem>
             <DropdownMenuItem @click="toast.info('帮助中心即将上线')">
               <IconHelp />

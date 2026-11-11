@@ -15,6 +15,9 @@ public record UserResponse(
         String lastLoginTime,
         String lastLoginIp,
         String createTime,
-        String remark
+        String remark,
+        boolean autoWebSearch,
+        boolean twoFactorEnabled,
+        boolean hasPassword
 ) {
 }

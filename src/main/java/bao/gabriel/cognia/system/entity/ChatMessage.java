@@ -19,5 +19,7 @@ public class ChatMessage {
     private String role;
     private String content;
     private String reasoning;
+    private String citationsJson;
+    private String attachmentsJson;
     private LocalDateTime createTime;
 }

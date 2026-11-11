@@ -66,7 +66,8 @@ public class ModelAdminController {
     @PostMapping("/providers/fetch")
     @PreAuthorize("hasAnyAuthority('model:update', 'settings:update')")
     public ApiResponse<List<RemoteModelResponse>> fetchAdHoc(@RequestBody java.util.Map<String, String> body) {
-        return ApiResponse.success(modelConfigService.fetchRemoteModels(body.get("baseUrl"), body.get("apiKey")));
+        return ApiResponse.success(modelConfigService.fetchRemoteModels(body.get("baseUrl"), body.get("apiKey"),
+                body.get("protocol")));
     }
 
     @GetMapping("/configs")

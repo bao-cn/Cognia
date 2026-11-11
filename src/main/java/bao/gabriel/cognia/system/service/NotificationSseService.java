@@ -15,4 +15,6 @@ public interface NotificationSseService {
     boolean sendUnreadCount(Long userId, long unreadCount);
 
     boolean isOnline(Long userId);
+
+    long onlineCount();
 }

@@ -16,6 +16,7 @@ import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -60,6 +61,34 @@ public class DatabaseEmailService implements EmailService {
                 "year", String.valueOf(LocalDate.now().getYear())
         ));
         send(config, email, mail.subject(), mail.content());
+    }
+
+    @Override
+    public void sendEmailChangeCode(String email, String code, long ttlMinutes) {
+        SmtpConfig config = settingService.getSmtpConfig();
+        if (!config.usable()) {
+            log.warn("""
+
+                    ==================== DEV MAIL (SMTP disabled) ====================
+                    To      : {}
+                    Subject : 邮箱变更验证码
+                    Code    : {}
+                    Expires : {} minutes
+                    ==================================================================
+                    """, email, code, ttlMinutes);
+            return;
+        }
+        String site = HtmlUtils.htmlEscape(siteName());
+        String safeEmail = HtmlUtils.htmlEscape(email);
+        String content = """
+                <h1 style="margin:0 0 16px;font-size:22px;line-height:1.35;color:#111827;">验证您的新邮箱</h1>
+                <p style="margin:0 0 16px;">您好！</p>
+                <p style="margin:0 0 16px;">您正在将 %s 账户的邮箱变更为 %s，本次验证码为：</p>
+                <div style="margin:24px 0;padding:16px 20px;background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;text-align:center;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:28px;font-weight:700;letter-spacing:8px;color:#111827;">%s</div>
+                <p style="margin:0 0 16px;">验证码 %d 分钟内有效。如非本人操作，请忽略本邮件。</p>
+                <p style="margin:0;">—— %s 团队</p>
+                """.formatted(site, safeEmail, code, ttlMinutes, site);
+        send(config, email, "【" + siteName() + "】邮箱变更验证码", content);
     }
 
     @Override

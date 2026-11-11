@@ -8,6 +8,10 @@ import bao.gabriel.cognia.system.dto.storage.PresignedUrlResponse;
 import bao.gabriel.cognia.system.dto.storage.StorageConnectionTestResponse;
 import bao.gabriel.cognia.system.dto.storage.StoredObjectResponse;
 import bao.gabriel.cognia.system.dto.storage.UpdateStorageSettingRequest;
+import bao.gabriel.cognia.system.entity.Team;
+import bao.gabriel.cognia.system.entity.User;
+import bao.gabriel.cognia.system.mapper.TeamMapper;
+import bao.gabriel.cognia.system.mapper.UserMapper;
 import bao.gabriel.cognia.system.service.MinioStorageService;
 import bao.gabriel.cognia.system.service.ObjectStorageService;
 import jakarta.validation.Valid;
@@ -26,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.util.StringUtils;
 
 import java.net.URI;
 import java.util.concurrent.TimeUnit;
@@ -40,6 +45,8 @@ public class StorageController {
 
     private final ObjectStorageService objectStorageService;
     private final MinioStorageService minioStorageService;
+    private final UserMapper userMapper;
+    private final TeamMapper teamMapper;
 
     @GetMapping("/settings")
     @PreAuthorize("hasAnyAuthority('storage:read', 'settings:read')")
@@ -94,7 +101,16 @@ public class StorageController {
      */
     @GetMapping("/avatar/{ownerId}")
     public ResponseEntity<Void> avatar(@PathVariable Long ownerId) {
-        String url = objectStorageService.presignedUrl("avatar/" + ownerId + ".webp", 3600).url();
+        User user = userMapper.selectById(ownerId);
+        String key = user != null && StringUtils.hasText(user.getUsername())
+                ? "avatar/" + user.getUsername() + "/avatar.webp"
+                : "avatar/" + ownerId + ".webp";
+        String url;
+        try {
+            url = objectStorageService.presignedUrl(key, 3600).url();
+        } catch (RuntimeException ex) {
+            url = objectStorageService.presignedUrl("avatar/" + ownerId + ".webp", 3600).url();
+        }
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create(url))
                 .cacheControl(CacheControl.maxAge(5, TimeUnit.MINUTES).cachePublic())
@@ -114,5 +130,15 @@ public class StorageController {
             @RequestParam("key") String key,
             @RequestParam(value = "expiresInSeconds", required = false) Integer expiresInSeconds) {
         return ApiResponse.success(objectStorageService.presignedUrl(key, expiresInSeconds));
+    }
+
+    @GetMapping("/avatar/team/{teamId}")
+    public ResponseEntity<Void> teamAvatar(@PathVariable Long teamId) {
+        Team team = teamMapper.selectById(teamId);
+        if (team == null) {
+            return ResponseEntity.notFound().build();
+        }
+        String url = objectStorageService.presignedUrl("avatar/" + teamId + "/avatar.webp", 3600).url();
+        return ResponseEntity.status(HttpStatus.FOUND).location(java.net.URI.create(url)).build();
     }
 }

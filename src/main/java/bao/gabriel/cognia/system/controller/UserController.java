@@ -10,6 +10,17 @@ import bao.gabriel.cognia.system.dto.user.ChangePasswordRequest;
 import bao.gabriel.cognia.system.dto.user.ProfileUpdateRequest;
 import bao.gabriel.cognia.system.dto.user.ResetPasswordRequest;
 import bao.gabriel.cognia.system.dto.user.UpdateStatusRequest;
+import bao.gabriel.cognia.system.dto.user.UpdatePreferencesRequest;
+import bao.gabriel.cognia.system.dto.user.SetPasswordRequest;
+import bao.gabriel.cognia.system.dto.user.DeleteAccountRequest;
+import bao.gabriel.cognia.system.dto.user.UpdateEmailRequest;
+import bao.gabriel.cognia.system.dto.user.SendEmailChangeCodeRequest;
+import bao.gabriel.cognia.system.service.VerificationCodeService;
+import bao.gabriel.cognia.system.dto.auth.SendCodeResponse;
+import bao.gabriel.cognia.system.dto.twofactor.TwoFactorCodeRequest;
+import bao.gabriel.cognia.system.dto.twofactor.TwoFactorSetupResponse;
+import bao.gabriel.cognia.system.entity.User;
+import bao.gabriel.cognia.system.service.TwoFactorService;
 import bao.gabriel.cognia.system.dto.user.UserCreateRequest;
 import bao.gabriel.cognia.system.dto.user.UserResponse;
 import bao.gabriel.cognia.system.dto.user.UserUpdateRequest;
@@ -47,6 +58,8 @@ import java.net.URI;
 public class UserController {
 
     private final UserService userService;
+    private final TwoFactorService twoFactorService;
+    private final VerificationCodeService verificationCodeService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('user:read')")
@@ -78,7 +91,73 @@ public class UserController {
 
     @PutMapping("/me/password")
     public ResponseEntity<Void> changeMyPassword(@Valid @RequestBody ChangePasswordRequest request) {
+        User user = userService.requireUser(SecurityUtils.getUserId());
+        twoFactorService.require(user, request.twoFactorCode());
         userService.changePassword(SecurityUtils.getUserId(), request.oldPassword(), request.newPassword());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/me/password/set")
+    public ApiResponse<UserResponse> setMyPassword(@Valid @RequestBody SetPasswordRequest request) {
+        User user = userService.requireUser(SecurityUtils.getUserId());
+        if (user.getPassword() != null && !user.getPassword().isBlank()) {
+            throw BusinessException.badRequest("当前账户已设置密码，请使用修改密码");
+        }
+        twoFactorService.require(user, request.twoFactorCode());
+        userService.setPassword(SecurityUtils.getUserId(), request.newPassword());
+        return ApiResponse.success(userService.getProfile(SecurityUtils.getUserId()));
+    }
+
+    @PutMapping("/me/preferences")
+    public ApiResponse<UserResponse> updatePreferences(@RequestBody UpdatePreferencesRequest request) {
+        return ApiResponse.success(userService.updatePreferences(SecurityUtils.getUserId(),
+                Boolean.TRUE.equals(request.autoWebSearch())));
+    }
+
+    @PostMapping("/me/two-factor/setup")
+    public ApiResponse<TwoFactorSetupResponse> setupTwoFactor() {
+        return ApiResponse.success(twoFactorService.setup(userService.requireUser(SecurityUtils.getUserId())));
+    }
+
+    @PostMapping("/me/two-factor/enable")
+    public ApiResponse<UserResponse> enableTwoFactor(@Valid @RequestBody TwoFactorCodeRequest request) {
+        User user = userService.requireUser(SecurityUtils.getUserId());
+        twoFactorService.enable(user, request.code());
+        return ApiResponse.success(userService.getProfile(SecurityUtils.getUserId()));
+    }
+
+    @PostMapping("/me/two-factor/disable")
+    public ApiResponse<UserResponse> disableTwoFactor(@Valid @RequestBody TwoFactorCodeRequest request) {
+        User user = userService.requireUser(SecurityUtils.getUserId());
+        twoFactorService.disable(user, request.code());
+        return ApiResponse.success(userService.getProfile(SecurityUtils.getUserId()));
+    }
+
+    @PostMapping("/me/email/code")
+    public ApiResponse<SendCodeResponse> sendEmailChangeCode(@Valid @RequestBody SendEmailChangeCodeRequest request) {
+        return ApiResponse.success(verificationCodeService.sendEmailChangeCode(SecurityUtils.getUserId(), request.email()));
+    }
+
+    @PutMapping("/me/email")
+    public ApiResponse<UserResponse> updateEmail(@Valid @RequestBody UpdateEmailRequest request) {
+        User user = userService.requireUser(SecurityUtils.getUserId());
+        verificationCodeService.verifyEmailChangeCode(request.email(), request.code());
+        twoFactorService.require(user, request.twoFactorCode());
+        return ApiResponse.success(userService.updateEmail(SecurityUtils.getUserId(), request.email()));
+    }
+
+    @PostMapping("/me/delete")
+    public ResponseEntity<Void> deleteMe(@RequestBody(required = false) DeleteAccountRequest request) {
+        Long userId = SecurityUtils.getUserId();
+        User user = userService.requireUser(userId);
+        if (user.getPassword() != null && !user.getPassword().isBlank()) {
+            if (request == null || request.password() == null
+                    || !userService.matchesPassword(userId, request.password())) {
+                throw BusinessException.badRequest("密码不正确");
+            }
+        }
+        twoFactorService.require(user, request == null ? null : request.twoFactorCode());
+        userService.deleteSelf(userId);
         return ResponseEntity.noContent().build();
     }
 

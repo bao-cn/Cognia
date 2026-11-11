@@ -36,7 +36,8 @@ public record SearchResponse(
     public record ConversationHit(
             String id,
             String title,
-            String updateTime
+            String updateTime,
+            boolean archived
     ) {
     }
 }

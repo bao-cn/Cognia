@@ -4,6 +4,7 @@ import bao.gabriel.cognia.common.api.ApiResponse;
 import bao.gabriel.cognia.rag.service.ChatService;
 import bao.gabriel.cognia.security.SecurityUtils;
 import bao.gabriel.cognia.system.dto.chat.ChatRequest;
+import bao.gabriel.cognia.system.dto.chat.ForkConversationRequest;
 import bao.gabriel.cognia.system.dto.chat.PublicChatModel;
 import bao.gabriel.cognia.system.dto.model.PublicModelResponse;
 import bao.gabriel.cognia.system.service.ChatConversationService;
@@ -13,11 +14,12 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -60,8 +62,9 @@ public class ChatController {
 
     @GetMapping("/conversations")
     @PreAuthorize("isAuthenticated()")
-    public ApiResponse<List<bao.gabriel.cognia.system.dto.chat.ConversationSummaryResponse>> conversations() {
-        return ApiResponse.success(conversationService.list(SecurityUtils.getUserId()));
+    public ApiResponse<List<bao.gabriel.cognia.system.dto.chat.ConversationSummaryResponse>> conversations(
+            @RequestParam(defaultValue = "false") boolean archived) {
+        return ApiResponse.success(conversationService.list(SecurityUtils.getUserId(), archived));
     }
 
     @GetMapping("/conversations/{id}")
@@ -71,10 +74,27 @@ public class ChatController {
         return ApiResponse.success(conversationService.detail(id, SecurityUtils.getUserId()));
     }
 
-    @DeleteMapping("/conversations/{id}")
+    @PostMapping("/conversations/{id}/fork")
     @PreAuthorize("isAuthenticated()")
-    public ApiResponse<Void> deleteConversation(@PathVariable String id) {
-        conversationService.delete(id, SecurityUtils.getUserId());
+    public ApiResponse<bao.gabriel.cognia.system.dto.chat.ConversationDetailResponse> forkConversation(
+            @PathVariable String id, @Valid @RequestBody ForkConversationRequest request) {
+        return ApiResponse.success(conversationService.fork(id, SecurityUtils.getUserId(), request.messageIndex()));
+    }
+
+    @PutMapping("/conversations/{id}/pin")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<Void> pinConversation(@PathVariable String id,
+                                             @Valid @RequestBody bao.gabriel.cognia.system.dto.chat.PinConversationRequest request) {
+        conversationService.setPinned(id, SecurityUtils.getUserId(), Boolean.TRUE.equals(request.pinned()));
+        return ApiResponse.success();
+    }
+
+    @PutMapping("/conversations/{id}/archive")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<Void> archiveConversation(@PathVariable String id,
+                                                 @RequestBody(required = false) bao.gabriel.cognia.system.dto.chat.ArchiveConversationRequest request) {
+        boolean archived = request == null || request.archived() == null || request.archived();
+        conversationService.archive(id, SecurityUtils.getUserId(), archived);
         return ApiResponse.success();
     }
 

@@ -15,6 +15,12 @@ import bao.gabriel.cognia.system.entity.Team;
 import bao.gabriel.cognia.system.entity.User;
 import bao.gabriel.cognia.system.entity.UserConsent;
 import bao.gabriel.cognia.system.entity.UserRole;
+import bao.gabriel.cognia.system.entity.ChatConversation;
+import bao.gabriel.cognia.system.entity.ChatMessage;
+import bao.gabriel.cognia.system.entity.Favorite;
+import bao.gabriel.cognia.system.mapper.ChatConversationMapper;
+import bao.gabriel.cognia.system.mapper.ChatMessageMapper;
+import bao.gabriel.cognia.system.mapper.FavoriteMapper;
 import bao.gabriel.cognia.system.mapper.UserConsentMapper;
 import bao.gabriel.cognia.system.mapper.TeamMapper;
 import bao.gabriel.cognia.system.mapper.UserMapper;
@@ -57,6 +63,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private final MinioStorageService minioStorageService;
     private final TokenService tokenService;
     private final PasswordEncoder passwordEncoder;
+    private final ChatConversationMapper chatConversationMapper;
+    private final ChatMessageMapper chatMessageMapper;
+    private final FavoriteMapper favoriteMapper;
 
     @Override
     public User findByAccount(String account) {
@@ -144,7 +153,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         User user = new User();
         user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(request.password()));
+        user.setPassword(StringUtils.hasText(request.password()) ? passwordEncoder.encode(request.password()) : null);
         user.setNickname(StringUtils.hasText(request.nickname()) ? request.nickname().trim() : username);
         user.setEmail(email);
         user.setPhone(request.phone());
@@ -211,9 +220,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Transactional
     public void deleteUser(Long userId, Long operatorId) {
         User user = requireUser(userId);
-        if (userId.equals(operatorId)) {
-            throw BusinessException.badRequest("不能删除当前登录账户");
-        }
         assertNotLastEnabledAdmin(user);
         Long ownedTeams = teamMapper.selectCount(new LambdaQueryWrapper<Team>()
                 .eq(Team::getOwnerId, userId)
@@ -224,6 +230,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
         userRoleMapper.delete(new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, userId));
         userConsentMapper.delete(new LambdaQueryWrapper<UserConsent>().eq(UserConsent::getUserId, userId));
+        List<Long> conversationIds = chatConversationMapper.selectList(new LambdaQueryWrapper<ChatConversation>()
+                        .eq(ChatConversation::getUserId, userId))
+                .stream().map(ChatConversation::getId).toList();
+        if (!conversationIds.isEmpty()) {
+            chatMessageMapper.delete(new LambdaQueryWrapper<ChatMessage>()
+                    .in(ChatMessage::getConversationId, conversationIds));
+            favoriteMapper.delete(new LambdaQueryWrapper<Favorite>()
+                    .in(Favorite::getConversationId, conversationIds));
+        }
+        favoriteMapper.delete(new LambdaQueryWrapper<Favorite>().eq(Favorite::getUserId, userId));
+        chatConversationMapper.delete(new LambdaQueryWrapper<ChatConversation>()
+                .eq(ChatConversation::getUserId, userId));
         removeById(userId);
         tokenService.revokeAll(userId);
         log.info("User deleted: {} ({})", user.getUsername(), userId);
@@ -301,6 +319,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     public UserResponse updateProfile(Long userId, ProfileUpdateRequest request) {
         User user = requireUser(userId);
         boolean changed = false;
+        if (request.username() != null && !request.username().trim().equals(user.getUsername())) {
+            String username = request.username().trim();
+            assertUsernameAvailable(username, userId);
+            user.setUsername(username);
+            changed = true;
+        }
         if (request.nickname() != null) {
             user.setNickname(request.nickname().trim());
             changed = true;
@@ -318,10 +342,59 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     public UserResponse updateAvatar(Long userId, org.springframework.web.multipart.MultipartFile file) {
         User user = requireUser(userId);
-        String url = minioStorageService.uploadAvatar(userId, file).url();
+        String url = minioStorageService.uploadAvatar(user.getUsername(), userId, file).url();
         user.setAvatar(url);
         updateById(user);
         return toResponse(requireUser(userId), true);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse updatePreferences(Long userId, boolean autoWebSearch) {
+        User update = new User();
+        update.setId(userId);
+        update.setAutoWebSearch(autoWebSearch);
+        updateById(update);
+        return toResponse(requireUser(userId), true);
+    }
+
+    @Override
+    @Transactional
+    public void setPassword(Long userId, String newPassword) {
+        User user = requireUser(userId);
+        if (StringUtils.hasText(user.getPassword()) && passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw BusinessException.badRequest("新密码不能与原密码相同");
+        }
+        User update = new User();
+        update.setId(userId);
+        update.setPassword(passwordEncoder.encode(newPassword));
+        updateById(update);
+        tokenService.revokeAll(userId);
+        log.info("Password set for user {}", userId);
+    }
+
+    @Override
+    @Transactional
+    public void deleteSelf(Long userId) {
+        deleteUser(userId, userId);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse updateEmail(Long userId, String email) {
+        User user = requireUser(userId);
+        String normalized = normalizeEmail(email);
+        assertEmailAvailable(normalized, userId);
+        user.setEmail(normalized);
+        updateById(user);
+        tokenService.revokeAll(userId);
+        return toResponse(requireUser(userId), true);
+    }
+
+    @Override
+    public boolean matchesPassword(Long userId, String rawPassword) {
+        User user = requireUser(userId);
+        return user.getPassword() != null && passwordEncoder.matches(rawPassword, user.getPassword());
     }
 
     @Override
@@ -416,7 +489,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 format(user.getLastLoginTime()),
                 user.getLastLoginIp(),
                 format(user.getCreateTime()),
-                user.getRemark()
+                user.getRemark(),
+                Boolean.TRUE.equals(user.getAutoWebSearch()),
+                Boolean.TRUE.equals(user.getTwoFactorEnabled()),
+                StringUtils.hasText(user.getPassword())
         );
     }
 

@@ -48,6 +48,8 @@ public interface TeamService {
 
     TeamDetailResponse updateTeam(Long userId, Long teamId, UpdateTeamRequest request);
 
+    String updateLogo(Long userId, Long teamId, org.springframework.web.multipart.MultipartFile file);
+
     void deleteTeam(Long userId, Long teamId);
 
     TeamDetailResponse transferOwnership(Long userId, Long teamId, Long targetUserId);

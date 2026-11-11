@@ -16,7 +16,13 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { defineEmits, defineProps } from 'vue'
 
-const emit = defineEmits<{ 'newChat': []; 'temporaryChat': []; 'deleteConversation': [item: { id: string, name: string }] }>()
+const emit = defineEmits<{
+  'newChat': []
+  'temporaryChat': []
+  'archiveConversation': [item: { id: string, name: string }]
+  'pinConversation': [item: { id: string, name: string, pinned?: boolean }]
+  'favoriteConversation': [item: { id: string, name: string, favorited?: boolean }]
+}>()
 
 defineProps({
   logo: {
@@ -69,7 +75,9 @@ defineProps({
       <ConsoleNavMain v-if="isAdmin" :items="data?.navMain" />
       <NavChannel v-if="!isAdmin" :items="data?.channels" />
       <NavHistory v-if="!isAdmin" :items="data?.documents" @new="emit('newChat')"
-        @delete="emit('deleteConversation', $event)" />
+        @archive="emit('archiveConversation', $event)"
+        @pin="emit('pinConversation', $event)"
+        @favorite="emit('favoriteConversation', $event)" />
     </SidebarContent>
     <SidebarFooter>
       <NavUser />

@@ -2,7 +2,6 @@ package bao.gabriel.cognia.rag.service.impl;
 
 import bao.gabriel.cognia.common.ai.OpenAiCompatibleClient;
 import bao.gabriel.cognia.common.util.TokenEstimator;
-import bao.gabriel.cognia.system.entity.RagSetting;
 import bao.gabriel.cognia.system.service.ModelConfigService.ResolvedModel;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,11 +50,11 @@ public class ContextWindowManager {
     /**
      * Compresses (if needed) and trims {@code messages} in place.
      */
-    public Prepared prepare(ArrayNode messages, ResolvedModel model, RagSetting setting) {
+    public Prepared prepare(ArrayNode messages, ResolvedModel model, int thresholdPercent, String compressionPrompt) {
         int maxTokens = model.contextWindowOrDefault();
         int inputBudget = Math.max(MIN_INPUT_BUDGET,
                 (int) Math.floor(maxTokens * (1.0 - OUTPUT_RESERVE_RATIO)));
-        double threshold = Math.min(100, Math.max(1, setting.contextCompressionThreshold())) / 100.0;
+        double threshold = Math.min(100, Math.max(1, thresholdPercent)) / 100.0;
 
         int used = TokenEstimator.estimateMessages(messages);
         boolean compressed = false;
@@ -63,7 +62,7 @@ public class ContextWindowManager {
 
         // Note: threshold is relative to the full window, budget to the input share.
         if (used >= (int) Math.ceil(maxTokens * threshold) && messages.size() > 1) {
-            CompressionResult result = compress(messages, model, setting.compressionPrompt());
+            CompressionResult result = compress(messages, model, compressionPrompt);
             if (result.summary() != null) {
                 compressed = true;
                 dropped += result.dropped();

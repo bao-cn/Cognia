@@ -64,7 +64,10 @@ public class SecurityConfig {
                                 "/api/v1/settings/downloads/public",
                                 "/api/v1/legal/documents",
                                 "/api/v1/profiles/owner/*",
-                                "/api/v1/storage/avatar/**").permitAll()
+                                "/api/v1/storage/avatar/**",
+                                "/api/v1/auth/oauth/providers",
+                                "/api/v1/auth/oauth/*/authorize-url",
+                                "/api/v1/auth/oauth/*/callback").permitAll()
                         .requestMatchers("/api/v1/public/**", "/error", "/favicon.ico").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

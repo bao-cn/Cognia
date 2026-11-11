@@ -47,6 +47,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redis;
     private final LoginProperties loginProperties;
+    private final TwoFactorService twoFactorService;
 
     public SendCodeResponse sendRegisterCode(SendCodeRequest request, String clientIp) {
         return verificationCodeService.sendRegisterCode(request.email(), clientIp, request.turnstileToken());
@@ -96,6 +97,9 @@ public class AuthService {
         assertNotLocked(failKey);
 
         User user = userService.findByAccount(account);
+        if (user != null && !StringUtils.hasText(user.getPassword())) {
+            throw BusinessException.badRequest("该账户使用第三方登录，请使用对应登录方式");
+        }
         if (user == null || !passwordEncoder.matches(request.password(), user.getPassword())) {
             int failures = recordFailure(failKey);
             int remaining = Math.max(0, loginProperties.getMaxFailures() - failures);
@@ -109,6 +113,15 @@ public class AuthService {
 
         if (!user.isEnabled()) {
             throw new BusinessException(ResultCode.ACCOUNT_DISABLED);
+        }
+
+        if (Boolean.TRUE.equals(user.getTwoFactorEnabled())) {
+            if (!StringUtils.hasText(request.twoFactorCode())) {
+                throw BusinessException.badRequest("请输入两步验证码");
+            }
+            if (!twoFactorService.verify(user, request.twoFactorCode())) {
+                throw new BusinessException(ResultCode.BAD_CREDENTIALS, "两步验证码不正确");
+            }
         }
 
         redis.delete(failKey);

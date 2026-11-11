@@ -55,13 +55,13 @@ public class DeletedOwnerCleanupHandler implements TaskHandler {
         int users = 0;
         int teams = 0;
         for (User user : userMapper.selectDeletedPendingFileCleanup(limit)) {
-            if (cleanupOwner("USER", user.getId())) {
+            if (cleanupOwner("USER", user.getId(), user.getUsername())) {
                 userMapper.markFilesCleaned(user.getId(), LocalDateTime.now());
                 users++;
             }
         }
         for (Team team : teamMapper.selectDeletedPendingFileCleanup(limit)) {
-            if (cleanupOwner("TEAM", team.getId())) {
+            if (cleanupOwner("TEAM", team.getId(), null)) {
                 teamMapper.markFilesCleaned(team.getId(), LocalDateTime.now());
                 teams++;
             }
@@ -69,13 +69,20 @@ public class DeletedOwnerCleanupHandler implements TaskHandler {
         return TaskResult.success("清理已注销用户 " + users + " 个、团队 " + teams + " 个");
     }
 
-    private boolean cleanupOwner(String ownerType, Long ownerId) {
+    private boolean cleanupOwner(String ownerType, Long ownerId, String username) {
         if (ownerId == null) {
             return false;
         }
         try {
             // The logical directory owns all channel documents for this owner.
             objectStorageService.deletePrefix("kb/" + ownerId + "/");
+            if (username != null && !username.isBlank()) {
+                objectStorageService.deletePrefix("conv/" + username.replaceAll("[^a-zA-Z0-9._-]", "_") + "/");
+            }
+            if (username != null && !username.isBlank()) {
+                objectStorageService.deletePrefix("avatar/" + username.replaceAll("[^a-zA-Z0-9._-]", "_") + "/");
+            }
+            // Legacy flat avatar keys created before the username-directory layout.
             deleteIfPresent("avatar/" + ownerId + ".webp");
             deleteIfPresent("avatar/" + ownerId + "_thumb.webp");
 

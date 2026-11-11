@@ -37,10 +37,16 @@ public class ModelConfig {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Integer dimension;
     private Integer contextWindow;
+    private Integer maxOutputTokens;
+    private Boolean supportsText;
+    /** JSON array of {"label":"low","value":"low"} reasoning presets. */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String reasoningLevels;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
     public static final int DEFAULT_CONTEXT_WINDOW = 32000;
+    public static final int DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
     public int contextWindow() {
         return contextWindow == null || contextWindow < 1000 ? DEFAULT_CONTEXT_WINDOW : contextWindow;
@@ -64,5 +70,13 @@ public class ModelConfig {
 
     public boolean supportsVision() {
         return Boolean.TRUE.equals(supportsVision);
+    }
+
+    public boolean supportsText() {
+        return !Boolean.FALSE.equals(supportsText);
+    }
+
+    public int maxOutputTokensOrDefault() {
+        return maxOutputTokens == null || maxOutputTokens < 1 ? DEFAULT_MAX_OUTPUT_TOKENS : maxOutputTokens;
     }
 }

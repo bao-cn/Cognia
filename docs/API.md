@@ -806,6 +806,7 @@ Authorization: Bearer <accessToken>
 | `POST` | `/channels/{id}/markdown?kind=README\|AGENT` | 所有者/管理者/编辑 | 上传/替换 README.md 或 AGENT.md |
 | `GET` | `/channels/{id}/markdown/{kind}` | 已登录 | 读取 README/AGENT Markdown 原文 |
 | `PUT` | `/channels/{id}/agent` | 所有者/管理者/编辑 | 更新 AGENT.md frontmatter 元信息 |
+| `GET` | `/documents/{id}/raw` | 频道可读成员 | 原始文档字节，供引用预览；PDF/图片可内联，Markdown/Word 由前端渲染 |
 | `POST` | `/channels/{id}/documents/{documentId}/retry` | 所有者/管理者/编辑 | 重新解析与向量化失败文档 |
 | `DELETE` | `/channels/{id}/documents/{documentId}` | 所有者/管理者/编辑 | 逻辑删除文档并写入回收站 |
 
@@ -881,11 +882,14 @@ Authorization: Bearer <accessToken>
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
 | `GET` | `/chat/models` | 已登录 | 管理员开放给当前用户的 Chat 模型；`supportsVision=true` 的模型允许上传图片 |
-| `POST` | `/chat/attachments` | 已登录 | 上传对话附件；图片返回 data URL，PDF/Office 返回解析后的文本（图片 PDF 自动 OCR） |
+| `POST` | `/chat/attachments` | 已登录 | 上传对话附件；图片返回 data URL 与对象存储 `url`/`key`，PDF/Office 返回解析后的文本（图片 PDF 自动 OCR）。可选 `conversationId`，图片存到 `conv/{username}/{conversationId}`，新对话未创建时存 `conv/{username}/draft` |
 | `POST` | `/chat/stream` | 已登录 | SSE 流式对话；请求体包含 `modelId`、`messages`、`attachments`、可选 `channelIds`、`conversationId`、`effort`、`webSearch`、`temporary`；图片仅支持 JPEG/GIF/PNG/WebP，文档会先解析为文本 |
 | `GET` | `/chat/conversations` | 已登录 | 当前用户会话列表 |
 | `GET` | `/chat/conversations/{id}` | 已登录 | 会话详情与消息；`id` 为随机 `publicId` |
+| `PUT` | `/chat/conversations/{id}/pin` | 已登录 | 置顶/取消置顶，请求体 `{pinned: boolean}`；每个用户最多置顶 5 个会话 |
 | `DELETE` | `/chat/conversations/{id}` | 已登录 | 删除会话 |
+
+回答正文中的 `[1]`、`[2]` 等标记与 `citations` 事件/历史消息 `citations` 字段中的 `index` 对应；历史消息会持久化引用来源。文档来源按 `documentId` 合并，网页来源按 `url` 合并；前端默认展示 5 条，可展开全部，点击标记会自动展开并定位。引用列表在助手回答流式结束后才显示，并按每条助手消息独立渲染。
 
 首轮回答完成后，后端可异步调用聊天模型生成简短对话标题并更新会话；由 `sys_rag_setting.title_generation_enabled` 控制，默认开启。关闭时标题使用用户首条消息截断。
 
@@ -897,12 +901,26 @@ Authorization: Bearer <accessToken>
 | `reasoning` | 思考过程增量 |
 | `tool` | 工具调用状态，含 `name`、`status`、`input`/`output` |
 | `text` | 正文增量 |
+| `citations` | 引用来源列表，`sources[]` 含 `index`、`kind`（`DOCUMENT`/`WEB`）、`documentId`、`channelId`、`channelName`、`fileName`、`title`、`documentType`、`pageNumber`、`snippet`、`url`；正文中的 `[n]` 与 `index` 对应 |
 | `cache` | 缓存命中标记：`hitType` 为 `SEMANTIC`/`RETRIEVAL`/`NONE`，含 `similarity`、`cacheKey`、`hits`、`requests`、`hitRate` |
 | `context` | 上下文占用：`usedTokens`、`maxTokens`、`percent`、`compressionThreshold`、`compressed`、`droppedMessages` |
+| `truncated` | 后端主动截断（如工具调用重复/超轮次），前端应终止本轮并移除助手内容 |
 | `error` | 错误消息 |
-| `done` | 结束，含本次 `hitType`/`similarity`/`cacheKey` |
+| `done` | 结束，含本次 `hitType`/`similarity`/`cacheKey`/`assistantMessageId` |
 
-### 5.9.9 全局搜索
+### 5.9.9 收藏
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/favorites` | 已登录 | 当前用户的收藏对话与收藏消息 |
+| `PUT` | `/favorites/conversations/{conversationId}` | 已登录 | 收藏对话 |
+| `DELETE` | `/favorites/conversations/{conversationId}` | 已登录 | 取消收藏对话 |
+| `PUT` | `/favorites/messages/{messageId}` | 已登录 | 收藏消息 |
+| `DELETE` | `/favorites/messages/{messageId}` | 已登录 | 取消收藏消息 |
+
+用户消息中的图片附件会持久化到 `chat_message.attachments_json`，历史详情返回时重新生成预签名 `url`。新对话在会话创建前先上传到 `conv/{username}/draft/`，首轮对话创建会话后由后端复制到 `conv/{username}/{conversationId}/` 并持久化新 `key`；后续轮次会把历史图片以内联 data URL 重新送入模型，保证多轮视觉上下文；用户注销的清理任务会一并删除 `conv/{username}/` 目录。
+
+### 5.9.10 全局搜索
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |

@@ -91,15 +91,15 @@ function iconFor(code: string) {
 function scheduleHint(code: string): string {
   switch (code) {
     case 'DOCUMENT_TIMEOUT_SCAN':
-      return '扫描处于「待处理 / 处理中」且长时间未更新的文档，超时后标记为失败并通知上传者手动重试。'
+      return '检查长时间未完成处理的文档，超时后判定为失败并通知上传者重试。'
     case 'MULTIPART_CLEANUP':
-      return '清理对象存储 kb/ 前缀下超过阈值仍未完成的分片上传，避免残留分片长期占用空间。'
+      return '清理未完成上传留下的临时数据，避免长期占用存储空间。'
     case 'RECYCLE_BIN_CLEANUP':
-      return '永久清理回收站中超过保留天数的文件，同时删除对象、文档记录、向量与回收站记录。'
+      return '永久删除回收站中超过保留期的文件，并清除相关数据。'
     case 'DELETED_OWNER_CLEANUP':
-      return '清理已注销用户或已解散团队遗留的对象存储文件，全部完成后写入清理标记。'
+      return '删除已注销用户或已解散团队遗留的文件，并记录处理结果。'
     case 'STORAGE_LIFECYCLE_SYNC':
-      return '将临时目录 tmp/ 的过期天数同步为桶生命周期规则，由对象存储自动清理临时文件。'
+      return '自动删除超过保留期的临时文件。'
     default:
       return ''
   }
@@ -131,7 +131,7 @@ function validate(task: ScheduledTask): string | null {
     return '超时阈值必须大于 0 分钟'
   }
   if (task.code === 'MULTIPART_CLEANUP' && (!task.olderThanHours || task.olderThanHours < 1)) {
-    return '残留分片超时时间必须大于 0 小时'
+    return '未完成上传保留时长必须大于 0 小时'
   }
   if ((task.code === 'RECYCLE_BIN_CLEANUP' || task.code === 'STORAGE_LIFECYCLE_SYNC')
     && (!task.retentionDays || task.retentionDays < 1)) {
@@ -215,7 +215,7 @@ onMounted(() => {
           计划任务
         </h1>
         <p class="text-sm text-muted-foreground">
-          预设的系统巡检与清理任务。任务由系统提供，管理员可调整启用状态、执行周期与阈值参数。
+          预设的系统维护任务。管理员可调整启用状态、执行时间与阈值参数。
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -230,7 +230,7 @@ onMounted(() => {
     <Alert>
       <IconInfoCircle class="size-4" />
       <AlertDescription>
-        仅支持以下预设任务，不提供自定义任务。Cron 表达式为 6 段格式（秒 分 时 日 月 周），修改后由调度器在 30 秒内生效。
+        仅支持以下预设任务，不提供自定义任务。修改后会自动生效。
       </AlertDescription>
     </Alert>
 
@@ -298,7 +298,7 @@ onMounted(() => {
             </div>
 
             <div v-if="task.code === 'MULTIPART_CLEANUP'" class="grid gap-2">
-              <Label :for="`older-${task.code}`">残留分片超时（小时）</Label>
+              <Label :for="`older-${task.code}`">未完成上传保留时长（小时）</Label>
               <Input
                 :id="`older-${task.code}`"
                 v-model.number="task.olderThanHours"
@@ -306,7 +306,7 @@ onMounted(() => {
                 min="1"
                 max="8760"
               />
-              <p class="text-xs text-muted-foreground">仅清理初始化时间早于该阈值的未完成分片上传。</p>
+              <p class="text-xs text-muted-foreground">超过该时长仍未完成的上传将被清理。</p>
             </div>
 
             <div
@@ -324,7 +324,7 @@ onMounted(() => {
               <p class="text-xs text-muted-foreground">
                 {{ task.code === 'RECYCLE_BIN_CLEANUP'
                   ? '回收站中的文件超过该天数后永久删除。'
-                  : '同步为 tmp/ 前缀的生命周期过期天数，由对象存储自动清理。' }}
+                  : '临时文件超过该天数后将自动删除。' }}
               </p>
             </div>
 

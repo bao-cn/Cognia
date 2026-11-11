@@ -592,7 +592,7 @@ onMounted(() => {
           <DialogTitle>删除用户</DialogTitle>
           <DialogDescription>
             确认删除用户 <span class="font-medium text-foreground">{{ deleteTarget?.username }}</span> 吗？
-            该操作会同时撤销其登录状态，且不可恢复。
+            该用户会被强制退出登录，且此操作不可恢复。
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

@@ -18,6 +18,7 @@ import {
   IconSettings, IconTrash,
 } from '@tabler/icons-vue'
 
+const props = defineProps<{ embedded?: boolean }>()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
@@ -198,7 +199,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 md:p-6">
+  <div :class="props.embedded ? 'flex flex-col gap-4' : 'mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 md:p-6'">
     <div v-if="loading" class="flex h-64 items-center justify-center rounded-xl border">
       <Spinner class="size-6" />
     </div>
@@ -209,7 +210,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
     </div>
 
     <template v-else-if="channel">
-      <div class="flex flex-wrap items-start justify-between gap-3">
+      <div v-if="!props.embedded" class="flex flex-wrap items-start justify-between gap-3">
         <div class="flex min-w-0 flex-col gap-1">
           <router-link :to="channelPath" class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <IconArrowLeft class="size-3.5" />返回 {{ channel.name }}
@@ -323,7 +324,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
         <section class="rounded-xl border bg-card">
           <header class="flex flex-col gap-1 border-b px-4 py-3">
             <h2 class="flex items-center gap-2 text-sm font-semibold"><IconCode class="size-4" />AGENT.md 元信息</h2>
-            <p class="text-xs text-muted-foreground">保存后会写入 AGENT.md 的 frontmatter，供检索系统优先读取。</p>
+            <p class="text-xs text-muted-foreground">保存后会更新频道的 Agent 说明，聊天时会优先参考这些信息。</p>
           </header>
           <div class="grid gap-4 p-4 md:grid-cols-2">
             <div class="grid gap-2">
@@ -373,7 +374,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             <h2 class="flex items-center gap-2 text-sm font-semibold text-destructive">
               <IconAlertTriangle class="size-4" />危险操作
             </h2>
-            <p class="text-xs text-muted-foreground">删除后频道不可恢复，其中的文档会进入回收流程。</p>
+            <p class="text-xs text-muted-foreground">删除后频道不可恢复；频道中的文档会移入文档回收站，可在保留期内恢复或永久删除。</p>
           </header>
           <div class="flex flex-wrap items-center justify-between gap-3 p-4">
             <div>
@@ -391,7 +392,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
         <DialogContent class="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>删除频道</DialogTitle>
-            <DialogDescription>确定删除「{{ channel.name }}」？频道中的文档会进入回收流程。</DialogDescription>
+            <DialogDescription>确定删除「{{ channel.name }}」？频道不可恢复，其中的文档会移入文档回收站。</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" :disabled="deleting" @click="deleteOpen = false">取消</Button>

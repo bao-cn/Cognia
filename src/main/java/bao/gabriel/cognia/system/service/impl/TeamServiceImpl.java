@@ -24,6 +24,7 @@ import bao.gabriel.cognia.system.mapper.TeamChannelMapper;
 import bao.gabriel.cognia.system.mapper.TeamMapper;
 import bao.gabriel.cognia.system.mapper.TeamMemberMapper;
 import bao.gabriel.cognia.system.mapper.UserMapper;
+import bao.gabriel.cognia.system.service.MinioStorageService;
 import bao.gabriel.cognia.system.service.SiteSettingService;
 import bao.gabriel.cognia.system.service.TeamService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -58,6 +59,7 @@ public class TeamServiceImpl implements TeamService {
     private final TeamInvitationMapper invitationMapper;
     private final UserMapper userMapper;
     private final SiteSettingService settingService;
+    private final MinioStorageService minioStorageService;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -532,6 +534,18 @@ public class TeamServiceImpl implements TeamService {
         channel.setUpdateTime(LocalDateTime.now());
         channelMapper.updateById(channel);
         return toChannel(channel, userMapper.selectById(channel.getCreatedBy()));
+    }
+
+    @Override
+    @Transactional
+    public String updateLogo(Long userId, Long teamId, org.springframework.web.multipart.MultipartFile file) {
+        Team team = requireTeamById(String.valueOf(teamId));
+        requireOwner(team, userId);
+        minioStorageService.uploadAvatar(String.valueOf(teamId), teamId, file);
+        String url = "/api/v1/storage/avatar/team/" + teamId;
+        team.setLogoUrl(url);
+        teamMapper.updateById(team);
+        return url;
     }
 
     @Override

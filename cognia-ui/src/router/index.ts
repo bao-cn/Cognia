@@ -47,6 +47,12 @@ const routes: Array<RouteRecordRaw> = [
         meta: { title: '我的频道' },
       },
       {
+        name: 'Archive',
+        path: 'archive',
+        component: () => import('@/pages/Archive.vue'),
+        meta: { title: '归档对话' },
+      },
+      {
         name: 'ChatTemporary',
         path: 'chat/temporary',
         component: () => import('@/pages/Chat.vue'),
@@ -104,6 +110,12 @@ const routes: Array<RouteRecordRaw> = [
     ],
   },
   {
+    name: 'OAuthCallback',
+    path: '/oauth/callback',
+    component: () => import('@/pages/OAuthCallback.vue'),
+    meta: { title: '登录回调', public: true },
+  },
+  {
     name: 'Sign',
     path: '/sign',
     redirect: '/sign/',
@@ -147,13 +159,22 @@ const routes: Array<RouteRecordRaw> = [
   {
     name: 'Console',
     path: '/console',
-    redirect: '/console/org/user',
+    redirect: '/console/dashboard',
     component: () => import('@/views/Admin.vue'),
     meta: {
       title: '控制台',
       permissions: ['console:access'],
     },
     children: [
+      {
+        name: 'ConsoleDashboard',
+        path: 'dashboard',
+        component: () => import('@/pages/console/AdminDashboard.vue'),
+        meta: {
+          title: '运营看板',
+          permissions: ['dashboard:read', 'user:read', 'settings:read'],
+        },
+      },
       {
         name: 'ConsoleDepartment',
         path: 'org/tree',
@@ -200,6 +221,12 @@ const routes: Array<RouteRecordRaw> = [
         },
       },
       {
+        name: 'ConsoleOAuth',
+        path: 'system/oauth',
+        component: () => import('@/pages/console/OAuthConfig.vue'),
+        meta: { title: '登录方式', permissions: ['settings:read'] },
+      },
+      {
         name: 'ConsoleObjectStorage',
         path: 'system/object-storage',
         component: () => import('@/pages/console/ObjectStorage.vue'),
@@ -243,6 +270,15 @@ const routes: Array<RouteRecordRaw> = [
         meta: {
           title: 'Prompt 配置',
           permissions: ['rag:read', 'settings:read'],
+        },
+      },
+      {
+        name: 'ConsoleDevTrace',
+        path: 'system/dev',
+        component: () => import('@/pages/console/DevTrace.vue'),
+        meta: {
+          title: '开发调试',
+          permissions: ['trace:read', 'settings:read'],
         },
       },
       {

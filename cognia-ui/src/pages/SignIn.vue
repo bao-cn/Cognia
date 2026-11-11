@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from "vue"
-import { computed, reactive, ref } from "vue"
+import { computed, onMounted, reactive, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { toast } from "vue-sonner"
 import { cn } from "cn"
 import { useUserStore } from "@/stores/user"
+import { oauthApi, type PublicOAuthProvider } from '@/api/oauth'
 import { useSiteStore } from "@/stores/site"
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { Button } from '@/components/ui/button'
@@ -46,6 +47,7 @@ const form = reactive({
   account: typeof route.query.account === 'string' ? route.query.account : '',
   password: '',
   rememberMe: false,
+  twoFactorCode: '',
 })
 
 const errors = reactive<{ account?: string; password?: string }>({})
@@ -53,6 +55,22 @@ const submitting = ref(false)
 const turnstileToken = ref('')
 const turnstileError = ref('')
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+const twoFactorRequired = ref(false)
+const oauthProviders = ref<PublicOAuthProvider[]>([])
+
+onMounted(async () => {
+  try { oauthProviders.value = await oauthApi.providers() } catch { oauthProviders.value = [] }
+})
+
+async function startOAuth(provider: PublicOAuthProvider): Promise<void> {
+  try {
+    const redirectUri = `${window.location.origin}/oauth/callback?provider=${provider.code}`
+    const url = await oauthApi.authorizeUrl(provider.code, redirectUri)
+    window.location.href = url
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '无法启动第三方登录')
+  }
+}
 
 const loginCaptchaRequired = computed(() => siteStore.loginCaptchaEnabled
   && siteStore.turnstileConfigured
@@ -60,6 +78,7 @@ const loginCaptchaRequired = computed(() => siteStore.loginCaptchaEnabled
 
 const canSubmit = computed(() => Boolean(form.account.trim())
   && Boolean(form.password)
+  && (!twoFactorRequired.value || form.twoFactorCode.length === 6)
   && !submitting.value
   && (!loginCaptchaRequired.value || Boolean(turnstileToken.value)))
 
@@ -109,11 +128,14 @@ async function handleSubmit(): Promise<void> {
       password: form.password,
       turnstileToken: loginCaptchaRequired.value ? turnstileToken.value : undefined,
       rememberMe: form.rememberMe,
+      twoFactorCode: form.twoFactorCode || undefined,
     })
     toast.success(`欢迎回来，${user.nickname || user.username}`)
     await router.replace(resolveRedirect())
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : '登录失败，请稍后重试')
+    const message = error instanceof Error ? error.message : '登录失败，请稍后重试'
+    if (message.includes('两步验证码')) twoFactorRequired.value = true
+    toast.error(message)
     // A Turnstile token is single-use; require a fresh challenge on retry.
     resetTurnstile()
   } finally {
@@ -121,9 +143,7 @@ async function handleSubmit(): Promise<void> {
   }
 }
 
-function notImplemented(provider: string): void {
-  toast.info(`${provider} 登录尚未配置，请使用账号密码登录`)
-}
+
 </script>
 
 <template>
@@ -140,43 +160,16 @@ function notImplemented(provider: string): void {
       <CardContent>
         <form @submit.prevent="handleSubmit">
           <FieldGroup class="gap-2">
-            <Field v-if="siteStore.appleLoginEnabled || siteStore.googleLoginEnabled">
-              <Button
-                v-if="siteStore.appleLoginEnabled"
-                variant="outline"
-                type="button"
-                class="cursor-pointer"
-                @click="notImplemented('Apple')"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                  <path
-                    d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"
-                    fill="currentColor" />
-                </svg>
-                使用 Apple 登录
-              </Button>
-              <Button
-                v-if="siteStore.googleLoginEnabled"
-                variant="outline"
-                type="button"
-                class="cursor-pointer"
-                @click="notImplemented('Google')"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                  <path
-                    d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"
-                    fill="currentColor" />
-                </svg>
-                使用 Google 登录
-              </Button>
+            <Field v-if="oauthProviders.length">
+              <div class="grid gap-2">
+                <Button v-for="provider in oauthProviders" :key="provider.code" variant="outline" type="button" class="cursor-pointer" @click="startOAuth(provider)">
+                  使用 {{ provider.name }} 登录
+                </Button>
+              </div>
             </Field>
-            <FieldSeparator
-              v-if="siteStore.appleLoginEnabled || siteStore.googleLoginEnabled"
-              class="*:data-[slot=field-separator-content]:bg-card"
-            >
-              Or
+            <FieldSeparator v-if="oauthProviders.length" class="*:data-[slot=field-separator-content]:bg-card">
+              或
             </FieldSeparator>
-
 
             <Field :data-invalid="Boolean(errors.account)">
               <FieldLabel for="account">
@@ -221,6 +214,11 @@ function notImplemented(provider: string): void {
                 required
               />
               <FieldError :errors="[errors.password]" />
+            </Field>
+            <Field v-if="twoFactorRequired">
+              <FieldLabel for="two-factor-code">两步验证码</FieldLabel>
+              <Input id="two-factor-code" v-model="form.twoFactorCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位验证码" />
+              <FieldDescription>打开你的 TOTP 验证器并输入当前验证码。</FieldDescription>
             </Field>
             <Field orientation="horizontal" class="items-center">
               <Checkbox id="remember-me" v-model="form.rememberMe" />

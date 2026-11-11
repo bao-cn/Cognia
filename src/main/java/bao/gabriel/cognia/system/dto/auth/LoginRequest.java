@@ -15,6 +15,9 @@ public record LoginRequest(
         @Size(max = 2048, message = "Turnstile 令牌过长")
         String turnstileToken,
 
+        @Size(max = 12)
+        String twoFactorCode,
+
         Boolean rememberMe
 ) {
 }

@@ -2,9 +2,9 @@ package bao.gabriel.cognia.rag.service;
 
 import bao.gabriel.cognia.common.ai.OpenAiCompatibleClient;
 import bao.gabriel.cognia.common.exception.BusinessException;
-import bao.gabriel.cognia.system.entity.RagSetting;
-import bao.gabriel.cognia.system.service.RagSettingService;
 import bao.gabriel.cognia.security.SecurityCryptoService;
+import bao.gabriel.cognia.system.entity.ToolSetting;
+import bao.gabriel.cognia.system.service.ToolSettingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -36,7 +36,7 @@ public class WebToolService {
     private static final Pattern ENTITY = Pattern.compile("&(amp|lt|gt|quot|#39|nbsp);");
 
     private final OpenAiCompatibleClient client;
-    private final RagSettingService ragSettingService;
+    private final ToolSettingService toolSettingService;
     private final SecurityCryptoService cryptoService;
     private final ObjectMapper mapper = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder()
@@ -44,19 +44,30 @@ public class WebToolService {
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
 
+    /**
+     * Declares only the tools that are actually usable. web_search requires a
+     * configured endpoint: there is no implicit third-party fallback.
+     */
     public ArrayNode toolDefinitions() {
         ArrayNode tools = mapper.createArrayNode();
-        ObjectNode search = tools.addObject();
-        search.put("type", "function");
-        ObjectNode searchFn = search.putObject("function");
-        searchFn.put("name", "web_search");
-        searchFn.put("description", "Search the web for up-to-date information. Use concise keywords and cite the returned URLs.");
-        ObjectNode searchParams = searchFn.putObject("parameters");
-        searchParams.put("type", "object");
-        ObjectNode searchProps = searchParams.putObject("properties");
-        searchProps.putObject("query").put("type", "string").put("description", "Search keywords");
-        searchProps.putObject("max_results").put("type", "integer").put("description", "1-10, default 5");
-        searchParams.putArray("required").add("query");
+        ToolSetting setting = toolSettingService.getSetting();
+        if (setting.webSearchUsable()) {
+            ObjectNode search = tools.addObject();
+            search.put("type", "function");
+            ObjectNode searchFn = search.putObject("function");
+            searchFn.put("name", "web_search");
+            searchFn.put("description", "Search the web for up-to-date information. Use concise keywords and cite the returned URLs.");
+            ObjectNode searchParams = searchFn.putObject("parameters");
+            searchParams.put("type", "object");
+            ObjectNode searchProps = searchParams.putObject("properties");
+            searchProps.putObject("query").put("type", "string").put("description", "Search keywords");
+            searchProps.putObject("max_results").put("type", "integer")
+                    .put("description", "1-10, default " + setting.maxResultsOr(5));
+            searchParams.putArray("required").add("query");
+        }
+        if (!setting.webFetchEnabled()) {
+            return tools;
+        }
 
         ObjectNode fetch = tools.addObject();
         fetch.put("type", "function");
@@ -92,73 +103,48 @@ public class WebToolService {
         if (!StringUtils.hasText(query)) {
             return "搜索关键词为空";
         }
+        ToolSetting setting = toolSettingService.getSetting();
+        if (!setting.webSearchUsable()) {
+            return "联网搜索未配置，本次未执行搜索";
+        }
         int limit = Math.max(1, Math.min(10, maxResults));
-        RagSetting setting = ragSettingService.getSetting();
         String endpoint = setting.getWebSearchEndpoint();
         String key = clientKey(setting, fallbackApiKey);
         try {
-            if (StringUtils.hasText(endpoint)) {
-                HttpResponse<String> response;
-                if (endpoint.contains("deepseek.com")) {
-                    ObjectNode payload = mapper.createObjectNode();
-                    payload.put("query", query);
-                    payload.put("max_results", limit);
-                    HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(endpoint))
-                            .timeout(Duration.ofSeconds(20))
-                            .header("Content-Type", "application/json")
-                            .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload)));
-                    if (StringUtils.hasText(key)) {
-                        builder.header("Authorization", "Bearer " + key);
-                    }
-                    response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-                } else {
-                    String url = endpoint.contains("{query}")
-                            ? endpoint.replace("{query}", URLEncoder.encode(query, StandardCharsets.UTF_8))
-                            : endpoint + (endpoint.contains("?") ? "&" : "?") + "q="
-                            + URLEncoder.encode(query, StandardCharsets.UTF_8) + "&limit=" + limit;
-                    HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-                            .timeout(Duration.ofSeconds(20)).GET();
-                    if (StringUtils.hasText(key)) {
-                        builder.header("Authorization", "Bearer " + key);
-                    }
-                    response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response;
+            if (endpoint.contains("deepseek.com")) {
+                ObjectNode payload = mapper.createObjectNode();
+                payload.put("query", query);
+                payload.put("max_results", limit);
+                HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(endpoint))
+                        .timeout(Duration.ofSeconds(20))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload)));
+                if (StringUtils.hasText(key)) {
+                    builder.header("Authorization", "Bearer " + key);
                 }
-                if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                    return truncate(response.body(), MAX_FETCH_CHARS);
+                response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            } else {
+                String url = endpoint.contains("{query}")
+                        ? endpoint.replace("{query}", URLEncoder.encode(query, StandardCharsets.UTF_8))
+                        : endpoint + (endpoint.contains("?") ? "&" : "?") + "q="
+                        + URLEncoder.encode(query, StandardCharsets.UTF_8) + "&limit=" + limit;
+                HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
+                        .timeout(Duration.ofSeconds(20)).GET();
+                if (StringUtils.hasText(key)) {
+                    builder.header("Authorization", "Bearer " + key);
                 }
-                log.warn("Configured web_search endpoint returned HTTP {}", response.statusCode());
+                response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             }
-            return duckDuckGo(query, limit);
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return truncate(response.body(), MAX_FETCH_CHARS);
+            }
+            log.warn("Configured web_search endpoint returned HTTP {}", response.statusCode());
+            return "搜索服务不可用（HTTP " + response.statusCode() + "）";
         } catch (Exception ex) {
             log.warn("web_search failed: {}", ex.getMessage());
             return "搜索失败：" + ex.getMessage();
         }
-    }
-
-    private String duckDuckGo(String query, int limit) throws Exception {
-        String url = "https://html.duckduckgo.com/html/?q=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
-        HttpResponse<String> response = http.send(HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(20))
-                .header("User-Agent", "Mozilla/5.0 (compatible; Cognia/1.0)")
-                .GET().build(), HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            return "搜索服务不可用（HTTP " + response.statusCode() + "）";
-        }
-        String html = response.body();
-        StringBuilder out = new StringBuilder("Search results for: ").append(query).append("\n\n");
-        Matcher result = Pattern.compile("(?is)<a[^>]+class=\"[^\"]*result__a[^\"]*\"[^>]+href=\"([^\"]+)\"[^>]*>(.*?)</a>")
-                .matcher(html);
-        int count = 0;
-        while (result.find() && count < limit) {
-            String link = result.group(1);
-            String title = stripTags(result.group(2));
-            out.append("- ").append(title).append("\n  ").append(link).append("\n");
-            count++;
-        }
-        if (count == 0) {
-            out.append(stripTags(html));
-        }
-        return truncate(out.toString(), MAX_FETCH_CHARS);
     }
 
     public String webFetch(String url) {
@@ -211,7 +197,7 @@ public class WebToolService {
                 .replaceAll(" ").replaceAll("\\s+", " ").trim();
     }
 
-    private String clientKey(RagSetting setting, String fallbackApiKey) {
+    private String clientKey(ToolSetting setting, String fallbackApiKey) {
         if (StringUtils.hasText(setting.getWebSearchApiKey())) {
             String decrypted = cryptoService.decrypt(setting.getWebSearchApiKey());
             if (StringUtils.hasText(decrypted)) {

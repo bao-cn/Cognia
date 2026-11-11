@@ -4,22 +4,11 @@
     <div class="flex w-full max-w-lg flex-col gap-2">
       <h3 class="text-lg font-bold">{{ $t('settings.account.title') }}</h3>
       <div class="bg-muted rounded-2xl overflow-hidden">
-        <button type="button" class="flex h-12 w-full items-center gap-2 px-3 text-left transition hover:bg-muted/70" @click="openAvatarEditor">
+        <button type="button" class="flex h-12 w-full items-center gap-2 px-3 text-left transition hover:bg-muted/70" @click="router.push(`/${userStore.profile?.username}`)">
           <ColorfulIcon :icon="IconUserCircle" color="#6366F1" class="size-6" />
-          <span class="text-sm font-medium">头像</span>
+          <span class="text-sm font-medium">个人主页</span>
           <div class="flex-1"></div>
-          <Avatar class="size-7 rounded-lg">
-            <AvatarImage :src="avatar" :alt="displayName" class="object-cover" />
-            <AvatarFallback class="rounded-lg">{{ initials }}</AvatarFallback>
-          </Avatar>
-          <IconChevronRight class="size-4 text-muted-foreground" />
-        </button>
-        <div class="border-t border-border"></div>
-        <button type="button" class="flex h-12 w-full items-center gap-2 px-3 text-left transition hover:bg-muted/70" @click="openNicknameEditor">
-          <ColorfulIcon :icon="IconUser" color="#8B5CF6" class="size-6" />
-          <span class="text-sm font-medium">昵称</span>
-          <div class="flex-1"></div>
-          <span class="max-w-[50%] truncate text-xs text-gray-500 dark:text-gray-300">{{ userStore.profile?.nickname || userStore.profile?.username || '未设置' }}</span>
+          <span class="max-w-[50%] truncate text-xs text-gray-500 dark:text-gray-300">@{{ userStore.profile?.username }}</span>
           <IconChevronRight class="size-4 text-muted-foreground" />
         </button>
         <div class="border-t border-border"></div>
@@ -28,7 +17,7 @@
           <span class="text-sm font-medium">{{ $t('settings.account.phone') }}</span>
           <div class="flex-1"></div>
           <span class="text-xs text-gray-500 dark:text-gray-300">{{ userStore.profile?.phone || '未绑定' }}</span>
-          <span class="text-[11px] text-muted-foreground" title="手机号需通过短信验证码绑定，该功能暂未开放">暂未开放</span>
+          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="toast.info('手机号绑定功能暂未开放')">绑定</Button>
         </div>
         <div class="border-t border-border"></div>
         <div class="flex items-center px-3 h-12 gap-2">
@@ -50,29 +39,29 @@
           <span class="text-sm font-medium">{{ $t('settings.account.email') }}</span>
           <div class="flex-1"></div>
           <span class="text-xs text-gray-500 dark:text-gray-300">{{ userStore.profile?.email || '未绑定' }}</span>
-          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600">{{ $t('settings.other.change') }}</Button>
+          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="openSecurity('email')">{{ $t('settings.other.change') }}</Button>
         </div>
         <div class="border-t border-border"></div>
         <div class="flex items-center px-3 h-12 gap-2">
           <ColorfulIcon :icon="IconKey" color="#F97316" class="size-6" />
           <span class="text-sm font-medium">{{ $t('settings.account.password') }}</span>
           <div class="flex-1"></div>
-          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="toast.warning('暂不可用，管理员未配置密码设置功能')">{{ $t('settings.other.set_password') }}</Button>
+          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="openSecurity('password')">{{ userStore.profile?.hasPassword ? '修改密码' : '设置密码' }}</Button>
         </div>
         <div class="border-t border-border"></div>
         <div class="flex items-center px-3 h-12 gap-2">
           <ColorfulIcon :icon="IconShieldCheck" color="#22C55E" class="size-6" />
           <span class="text-sm font-medium">{{ $t('settings.account.2fa') }}</span>
           <div class="flex-1"></div>
-          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="toast.warning('暂不可用，管理员未配置 2FA 功能')">{{ $t('settings.other.turn_on') }}</Button>
+          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="openSecurity('twofa')">{{ userStore.profile?.twoFactorEnabled ? '管理' : '开启' }}</Button>
         </div>
         <div class="border-t border-border"></div>
-        <div class="flex items-center px-3 h-12 gap-2">
-          <ColorfulIcon :icon="IconLock" color="#8B5CF6" class="size-6" />
-          <span class="text-sm font-medium">{{ $t('settings.account.oauth2') }}</span>
+        <button type="button" class="flex h-12 w-full items-center gap-2 px-3 text-left text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/20" @click="openSecurity('delete')">
+          <ColorfulIcon :icon="IconUserX" color="#EF4444" class="size-6" />
+          <span class="text-sm font-medium">注销账户</span>
           <div class="flex-1"></div>
-          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="toast.warning('暂不可用，管理员未配置 OAuth2 功能')">{{ $t('settings.other.manage') }}</Button>
-        </div>
+          <IconChevronRight class="size-4" />
+        </button>
       </div>
     </div>
     <!-- 团队设置 -->
@@ -133,7 +122,7 @@
           <ColorfulIcon :icon="IconWorldSearch" color="#F59E0B" class="size-6" />
           <span class="text-sm font-medium">{{ $t('settings.preferences.auto_websearch') }}</span>
           <div class="flex-1"></div>
-          <Switch />
+          <Switch :model-value="autoWebSearch" :disabled="savingPreference" @update:model-value="changeAutoWebSearch" />
         </div>
       </div>
     </div>
@@ -315,6 +304,7 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <AccountSecurityDialog v-model:open="securityOpen" :mode="securityMode" @updated="onProfileUpdated" />
   </div>
 </template>
 
@@ -346,7 +336,6 @@ import {
   IconMail,
   IconKey,
   IconShieldCheck,
-  IconLock,
   IconBrain,
   IconHelp,
   IconMessageDots,
@@ -355,12 +344,13 @@ import {
   IconCode,
   IconLogout,
   IconChevronRight,
-  IconUser,
   IconUserCircle,
   IconArrowsShuffle,
   IconCheck,
-  IconUpload
+  IconUpload,
+  IconUserX
 } from "@tabler/icons-vue"
+import AccountSecurityDialog from '@/components/AccountSecurityDialog.vue'
 import { useConfigStore, THEMES, LocaleType } from '@/stores/config'
 import { useRouter } from 'vue-router'
 import type { AcceptableValue } from 'reka-ui'
@@ -384,12 +374,6 @@ const editorError = ref('')
 const draft = reactive({ avatar: '' })
 const avatarFileInput = ref<HTMLInputElement | null>(null)
 const avatarUploading = ref(false)
-
-function openAvatarEditor(): void {
-  draft.avatar = userStore.profile?.avatar || ''
-  editorError.value = ''
-  editorOpen.value = true
-}
 
 function chooseAvatar(file: string): void {
   draft.avatar = avatarPath(file)
@@ -478,12 +462,6 @@ const nicknameSaving = ref(false)
 const nicknameError = ref('')
 const nicknameDraft = ref('')
 
-function openNicknameEditor(): void {
-  nicknameDraft.value = userStore.profile?.nickname || userStore.profile?.username || ''
-  nicknameError.value = ''
-  nicknameEditorOpen.value = true
-}
-
 async function saveNickname(): Promise<void> {
   const nickname = nicknameDraft.value.trim()
   if (!nickname) {
@@ -501,6 +479,33 @@ async function saveNickname(): Promise<void> {
     nicknameError.value = error instanceof Error ? error.message : '昵称保存失败'
   } finally {
     nicknameSaving.value = false
+  }
+}
+
+const securityOpen = ref(false)
+const securityMode = ref<'password' | 'twofa' | 'email' | 'delete' | 'models'>('password')
+const autoWebSearch = computed(() => Boolean(userStore.profile?.autoWebSearch))
+const savingPreference = ref(false)
+
+function openSecurity(mode: typeof securityMode.value) {
+  securityMode.value = mode
+  securityOpen.value = true
+}
+
+function onProfileUpdated(profile: any) {
+  userStore.setProfile(profile)
+}
+
+async function changeAutoWebSearch(value: boolean) {
+  savingPreference.value = true
+  try {
+    const profile = await userApi.updatePreferences({ autoWebSearch: value })
+    userStore.setProfile(profile)
+    toast.success(value ? '已开启默认联网搜索' : '已关闭默认联网搜索')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '保存设置失败')
+  } finally {
+    savingPreference.value = false
   }
 }
 
@@ -522,7 +527,7 @@ function handleMyTeams() {
   void router.push('/settings/teams')
 }
 function handleModelList() {
-  toast.warning('暂不可用，管理员未配置模型列表功能')
+  openSecurity('models')
 }
 function handleHelp() {
   toast.warning('暂不可用，管理员未配置使用帮助功能')

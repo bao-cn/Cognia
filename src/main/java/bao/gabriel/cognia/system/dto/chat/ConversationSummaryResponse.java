@@ -8,6 +8,9 @@ public record ConversationSummaryResponse(
         Long modelId,
         List<Long> channelIds,
         String createTime,
-        String updateTime
+        String updateTime,
+        boolean pinned,
+        boolean favorited,
+        boolean archived
 ) {
 }

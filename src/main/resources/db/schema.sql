@@ -1073,3 +1073,197 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_channel_notification_day
     WHERE notified_date IS NOT NULL;
 
 ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS title_generation_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Citation sources persisted with assistant messages so history keeps references.
+ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS citations_json TEXT;
+
+-- ---------------------------------------------------------------------------
+-- Conversation pinning and favorites (pinned chats sort above history).
+-- ---------------------------------------------------------------------------
+ALTER TABLE chat_conversation ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE chat_conversation ADD COLUMN IF NOT EXISTS pinned_time TIMESTAMP WITHOUT TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_chat_conversation_pinned
+    ON chat_conversation (user_id, pinned DESC, pinned_time DESC, update_time DESC);
+
+CREATE TABLE IF NOT EXISTS sys_favorite
+(
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT       NOT NULL,
+    item_type       VARCHAR(16)  NOT NULL,
+    conversation_id BIGINT       NOT NULL,
+    message_id      BIGINT,
+    title           VARCHAR(255),
+    content         TEXT,
+    create_time     TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_favorite_conversation
+    ON sys_favorite (user_id, conversation_id) WHERE item_type = 'CONVERSATION';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sys_favorite_message
+    ON sys_favorite (user_id, message_id) WHERE item_type = 'MESSAGE';
+CREATE INDEX IF NOT EXISTS idx_sys_favorite_user
+    ON sys_favorite (user_id, create_time DESC);
+
+ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS attachments_json TEXT;
+
+-- ---------------------------------------------------------------------------
+-- Config convergence: prompt compression belongs to prompts, web search
+-- credentials belong to tools; neither belongs to retrieval parameters.
+-- ---------------------------------------------------------------------------
+ALTER TABLE sys_prompt_setting ADD COLUMN IF NOT EXISTS compression_prompt TEXT;
+UPDATE sys_prompt_setting
+   SET compression_prompt = (SELECT compression_prompt FROM sys_rag_setting WHERE id = 1)
+ WHERE id = 1
+   AND (compression_prompt IS NULL OR compression_prompt = '')
+   AND EXISTS (SELECT 1 FROM sys_rag_setting WHERE id = 1 AND compression_prompt IS NOT NULL);
+
+CREATE TABLE IF NOT EXISTS sys_tool_setting
+(
+    id                  BIGINT PRIMARY KEY,
+    web_search_enabled  BOOLEAN   NOT NULL DEFAULT TRUE,
+    web_search_endpoint VARCHAR(512),
+    web_search_api_key  VARCHAR(2048),
+    web_fetch_enabled   BOOLEAN   NOT NULL DEFAULT TRUE,
+    max_results         INTEGER   NOT NULL DEFAULT 5,
+    updated_by          BIGINT,
+    update_time         TIMESTAMP NOT NULL DEFAULT NOW()
+);
+INSERT INTO sys_tool_setting (id, web_search_enabled, web_fetch_enabled, max_results)
+VALUES (1, TRUE, TRUE, 5)
+ON CONFLICT (id) DO NOTHING;
+UPDATE sys_tool_setting t
+   SET web_search_endpoint = r.web_search_endpoint,
+       web_search_api_key  = r.web_search_api_key
+  FROM sys_rag_setting r
+ WHERE t.id = 1
+   AND r.id = 1
+   AND t.web_search_endpoint IS NULL
+   AND (r.web_search_endpoint IS NOT NULL OR r.web_search_api_key IS NOT NULL);
+
+-- Provider protocol: OpenAI Chat Completions / OpenAI Responses / Anthropic Messages.
+ALTER TABLE sys_model_provider ADD COLUMN IF NOT EXISTS protocol VARCHAR(32) NOT NULL DEFAULT 'OPENAI_CHAT';
+
+ALTER TABLE sys_model_config ADD COLUMN IF NOT EXISTS max_output_tokens INTEGER NOT NULL DEFAULT 4096;
+ALTER TABLE sys_model_config ADD COLUMN IF NOT EXISTS supports_text BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE sys_model_config ADD COLUMN IF NOT EXISTS reasoning_levels TEXT;
+
+-- Per-request chain trace for the admin dev console.
+CREATE TABLE IF NOT EXISTS chat_trace
+(
+    id              BIGSERIAL PRIMARY KEY,
+    trace_id        VARCHAR(40)  NOT NULL,
+    conversation_id VARCHAR(32),
+    user_id         BIGINT,
+    model_id        BIGINT,
+    model_name      VARCHAR(255),
+    protocol        VARCHAR(32),
+    question        TEXT,
+    answer          TEXT,
+    status          VARCHAR(16)  NOT NULL DEFAULT 'RUNNING',
+    duration_ms     BIGINT,
+    trace_json      TEXT,
+    create_time     TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_trace_trace_id ON chat_trace (trace_id);
+CREATE INDEX IF NOT EXISTS idx_chat_trace_create ON chat_trace (create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_trace_user ON chat_trace (user_id, create_time DESC);
+
+-- ============================================================
+-- 开发模式（全局开关；仅对硬编码管理员记录全量对话链路）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sys_debug_setting (
+    id                 BIGINT PRIMARY KEY,
+    enabled            BOOLEAN NOT NULL DEFAULT FALSE,
+    hardcoded_username VARCHAR(64) NOT NULL DEFAULT 'admin',
+    updated_by         BIGINT,
+    updated_at         TIMESTAMP,
+    create_time        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO sys_debug_setting (id, enabled, hardcoded_username)
+VALUES (1, FALSE, 'admin')
+ON CONFLICT (id) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Dashboard metrics
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_metric_event (
+    id BIGSERIAL PRIMARY KEY,
+    event_type VARCHAR(24) NOT NULL,
+    user_id BIGINT,
+    channel_id BIGINT,
+    conversation_id BIGINT,
+    model_id BIGINT,
+    model_name VARCHAR(160),
+    status VARCHAR(16) NOT NULL DEFAULT 'SUCCESS',
+    error_type VARCHAR(32),
+    duration_ms INTEGER,
+    retrieval_used BOOLEAN NOT NULL DEFAULT FALSE,
+    retrieval_hit BOOLEAN NOT NULL DEFAULT FALSE,
+    rerank_used BOOLEAN NOT NULL DEFAULT FALSE,
+    citation_count INTEGER NOT NULL DEFAULT 0,
+    llm_rounds INTEGER NOT NULL DEFAULT 0,
+    refused BOOLEAN NOT NULL DEFAULT FALSE,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    embedding_tokens INTEGER NOT NULL DEFAULT 0,
+    retrieval_duration_ms INTEGER NOT NULL DEFAULT 0,
+    rerank_duration_ms INTEGER NOT NULL DEFAULT 0,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_metric_event_type_time ON sys_metric_event(event_type, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_metric_event_user ON sys_metric_event(user_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_metric_event_channel ON sys_metric_event(channel_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_metric_event_model ON sys_metric_event(model_name, create_time DESC);
+
+-- Conversation archive (no hard deletion from UI; archive instead)
+ALTER TABLE chat_conversation ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE chat_conversation ADD COLUMN IF NOT EXISTS archived_time TIMESTAMP WITHOUT TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_chat_conversation_user_archived
+    ON chat_conversation (user_id, archived, update_time DESC);
+
+-- User preferences and TOTP two-factor authentication
+ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS auto_web_search BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS two_factor_secret VARCHAR(512);
+ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- External identity providers (OIDC / OAuth2) --------------------------------
+CREATE TABLE IF NOT EXISTS sys_oauth_provider (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(32) NOT NULL UNIQUE,
+    name VARCHAR(64) NOT NULL,
+    provider_type VARCHAR(16) NOT NULL DEFAULT 'OIDC',
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    client_id VARCHAR(255),
+    client_secret VARCHAR(2048),
+    issuer VARCHAR(512),
+    authorization_uri VARCHAR(512),
+    token_uri VARCHAR(512),
+    userinfo_uri VARCHAR(512),
+    scopes VARCHAR(512) NOT NULL DEFAULT 'openid email profile',
+    redirect_uri VARCHAR(512),
+    username_claim VARCHAR(64) NOT NULL DEFAULT 'email',
+    email_claim VARCHAR(64) NOT NULL DEFAULT 'email',
+    name_claim VARCHAR(64) NOT NULL DEFAULT 'name',
+    auto_create BOOLEAN NOT NULL DEFAULT TRUE,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sys_user_oauth (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES sys_user(id) ON DELETE CASCADE,
+    provider VARCHAR(32) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    email VARCHAR(128),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_user_oauth_subject UNIQUE (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS idx_user_oauth_user ON sys_user_oauth(user_id);
+
+INSERT INTO sys_oauth_provider (code, name, provider_type, enabled, issuer, authorization_uri, token_uri, userinfo_uri, scopes, username_claim, email_claim, name_claim)
+VALUES
+ ('GOOGLE', 'Google', 'OIDC', FALSE, 'https://accounts.google.com', 'https://accounts.google.com/o/oauth2/v2/auth', 'https://oauth2.googleapis.com/token', 'https://openidconnect.googleapis.com/v1/userinfo', 'openid email profile', 'email', 'email', 'name'),
+ ('APPLE', 'Apple', 'OIDC', FALSE, 'https://appleid.apple.com', 'https://appleid.apple.com/auth/authorize', 'https://appleid.apple.com/auth/token', '', 'openid email name', 'email', 'email', 'name'),
+ ('GITHUB', 'GitHub', 'OAUTH2', FALSE, '', 'https://github.com/login/oauth/authorize', 'https://github.com/login/oauth/access_token', 'https://api.github.com/user', 'read:user user:email', 'login', 'email', 'name'),
+ ('OIDC', '统一身份认证', 'OIDC', FALSE, '', '', '', '', 'openid email profile', 'email', 'email', 'name')
+ON CONFLICT (code) DO NOTHING;

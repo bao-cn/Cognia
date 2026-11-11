@@ -104,7 +104,7 @@ app:
   mail:
     # Development helper only: return the email verification code in the API
     # response. SMTP parameters are stored in sys_site_setting (console).
-    expose-code: ${MAIL_EXPOSE_CODE:true}
+    expose-code: ${MAIL_EXPOSE_CODE:false}
   login:
     max-failures: 5
     lock-duration: 15m

@@ -107,7 +107,7 @@ onMounted(fetchTeams)
     </div>
 
     <Alert v-if="!canUpdate">
-      <AlertDescription>当前账户只有查看团队的权限，解散团队需要 team:update 权限。</AlertDescription>
+      <AlertDescription>当前账户只有查看团队的权限，解散团队需要团队管理权限。</AlertDescription>
     </Alert>
 
     <section class="rounded-xl border bg-card">
@@ -184,7 +184,7 @@ onMounted(fetchTeams)
         <DialogHeader>
           <DialogTitle>解散团队</DialogTitle>
           <DialogDescription>
-            确定解散「{{ deleteTarget?.name }}」？团队频道和成员关系会被移除，文件将由计划任务清理。
+            确定解散「{{ deleteTarget?.name }}」？团队频道和成员关系将被移除，团队文件也将被永久删除，且无法恢复。
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

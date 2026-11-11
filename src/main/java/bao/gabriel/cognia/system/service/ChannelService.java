@@ -14,6 +14,9 @@ import java.util.List;
 
 public interface ChannelService {
 
+    record DocumentContent(String fileName, String contentType, byte[] bytes) {
+    }
+
     List<ChannelSummaryResponse> list(String ownerType, Long ownerId, Long viewerId);
 
     ChannelDetailResponse detail(Long channelId, Long viewerId);
@@ -40,6 +43,12 @@ public interface ChannelService {
     List<ChannelDocumentResponse> documents(Long channelId, Long viewerId, Long folderId);
 
     void deleteDocument(Long userId, Long channelId, Long documentId);
+
+    /**
+     * Raw document bytes for the in-app citation preview. Access follows the
+     * same read rules as the channel itself.
+     */
+    DocumentContent documentContent(Long documentId, Long viewerId);
 
     ChannelSummaryResponse updateAgentMeta(Long userId, Long channelId, UpdateAgentMetaRequest request);
 

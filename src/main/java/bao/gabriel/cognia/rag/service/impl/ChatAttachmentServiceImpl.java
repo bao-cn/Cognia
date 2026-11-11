@@ -1,9 +1,17 @@
 package bao.gabriel.cognia.rag.service.impl;
 
 import bao.gabriel.cognia.common.document.DocumentTextExtractor;
+import bao.gabriel.cognia.common.storage.UploadProgressListener;
 import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.rag.service.ChatAttachmentService;
+import bao.gabriel.cognia.system.entity.ChatConversation;
+import bao.gabriel.cognia.system.entity.User;
 import bao.gabriel.cognia.system.dto.chat.ChatAttachmentResponse;
+import bao.gabriel.cognia.system.dto.storage.StoredObjectResponse;
+import bao.gabriel.cognia.system.mapper.ChatConversationMapper;
+import bao.gabriel.cognia.system.mapper.UserMapper;
+import bao.gabriel.cognia.system.service.MinioStorageService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -13,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -26,9 +35,12 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
             "image/jpeg", "image/gif", "image/png", "image/webp");
 
     private final DocumentTextExtractor textExtractor;
+    private final MinioStorageService minioStorageService;
+    private final UserMapper userMapper;
+    private final ChatConversationMapper conversationMapper;
 
     @Override
-    public ChatAttachmentResponse prepare(MultipartFile file) {
+    public ChatAttachmentResponse prepare(Long userId, String conversationId, MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw BusinessException.badRequest("文件为空");
         }
@@ -56,7 +68,31 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
                 throw BusinessException.badRequest("图片不能超过 10 MB");
             }
             String dataUrl = "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(bytes);
-            return new ChatAttachmentResponse("IMAGE", name, mime, bytes.length, dataUrl, null);
+            User user = userId == null ? null : userMapper.selectById(userId);
+            if (user == null) {
+                throw BusinessException.badRequest("用户不存在");
+            }
+            String directory = StringUtils.hasText(conversationId) && conversationId.matches("[a-zA-Z0-9_-]{1,40}")
+                    ? conversationId : "draft";
+            ChatConversation conversation = conversationMapper.selectOne(new LambdaQueryWrapper<ChatConversation>()
+                    .eq(ChatConversation::getPublicId, directory)
+                    .eq(ChatConversation::getUserId, userId));
+            if (conversation == null && !"draft".equals(directory)) {
+                throw BusinessException.badRequest("对话不存在");
+            }
+            String extension = switch (mime) {
+                case "image/jpeg" -> "jpg";
+                case "image/gif" -> "gif";
+                case "image/webp" -> "webp";
+                default -> "png";
+            };
+            String owner = user.getUsername() == null ? String.valueOf(userId)
+                    : user.getUsername().replaceAll("[^a-zA-Z0-9._-]", "_");
+            String key = "conv/" + owner + "/" + directory + "/" + UUID.randomUUID().toString().replace("-", "")
+                    + "." + extension;
+            StoredObjectResponse stored = minioStorageService.uploadChatImage(file, key, UploadProgressListener.NOOP);
+            return new ChatAttachmentResponse("IMAGE", name, mime, bytes.length, dataUrl, null,
+                    stored.url(), stored.key());
         }
         if (bytes.length > MAX_DOCUMENT_BYTES) {
             throw BusinessException.badRequest("文档不能超过 25 MB");
@@ -74,7 +110,7 @@ public class ChatAttachmentServiceImpl implements ChatAttachmentService {
         if (trimmed.length() > MAX_TEXT_CHARS) {
             trimmed = trimmed.substring(0, MAX_TEXT_CHARS);
         }
-        return new ChatAttachmentResponse("TEXT", name, mime, bytes.length, null, trimmed);
+        return new ChatAttachmentResponse("TEXT", name, mime, bytes.length, null, trimmed, null, null);
     }
 
     private String guessMime(String name) {

@@ -10,12 +10,15 @@ public record ModelConfigResponse(
         boolean enabled,
         boolean visible,
         boolean supportsTools,
+        boolean supportsText,
         boolean thinkingEnabled,
         boolean supportsVision,
         String reasoningEffort,
+        String reasoningLevels,
         String extraBody,
         Integer dimension,
         Integer contextWindow,
+        Integer maxOutputTokens,
         String updatedAt
 ) {
 }

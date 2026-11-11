@@ -101,19 +101,6 @@ public class RagSettingServiceImpl implements RagSettingService {
         if (request.retrievalTopN() != null) {
             setting.setRetrievalTopN(request.retrievalTopN());
         }
-        if (request.webSearchEndpoint() != null) {
-            String endpoint = request.webSearchEndpoint().trim();
-            if (!endpoint.isEmpty() && !endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
-                throw BusinessException.badRequest("搜索接口地址必须以 http:// 或 https:// 开头");
-            }
-            setting.setWebSearchEndpoint(endpoint.isEmpty() ? null : endpoint);
-        }
-        if (StringUtils.hasText(request.webSearchApiKey())) {
-            setting.setWebSearchApiKey(cryptoService.encrypt(request.webSearchApiKey().trim()));
-        }
-        if (Boolean.TRUE.equals(request.clearWebSearchApiKey())) {
-            setting.setWebSearchApiKey(null);
-        }
         if (request.webSearchEnabled() != null) {
             setting.setWebSearchEnabled(request.webSearchEnabled());
         }
@@ -122,10 +109,6 @@ public class RagSettingServiceImpl implements RagSettingService {
         }
         if (request.contextCompressionThreshold() != null) {
             setting.setContextCompressionThreshold(request.contextCompressionThreshold());
-        }
-        if (request.compressionPrompt() != null) {
-            setting.setCompressionPrompt(request.compressionPrompt().isBlank()
-                    ? RagSetting.DEFAULT_COMPRESSION_PROMPT : request.compressionPrompt().trim());
         }
         if (request.semanticCacheEnabled() != null) {
             setting.setSemanticCacheEnabled(request.semanticCacheEnabled());
@@ -205,10 +188,9 @@ public class RagSettingServiceImpl implements RagSettingService {
         return new RagSettingResponse(setting.getChatModelId(), setting.getEmbeddingModelId(),
                 setting.rerankEnabled(), setting.getRerankModelId(), setting.chunkSize(),
                 setting.chunkOverlap(), setting.retrievalTopK(), setting.retrievalTopN(),
-                setting.getWebSearchEndpoint(), StringUtils.hasText(setting.getWebSearchApiKey()),
                 siteSettingService.formatDateTime(setting.getUpdateTime()),
                 setting.webSearchEnabled(), setting.allowUserWebSearch(),
-                setting.contextCompressionThreshold(), setting.compressionPrompt(),
+                setting.contextCompressionThreshold(),
                 setting.semanticCacheEnabled(), setting.retrievalCacheEnabled(),
                 setting.semanticCacheThreshold(), setting.semanticCacheTtlMinutes(),
                 setting.semanticCacheMaxEntries(), setting.retrievalCacheTtlMinutes(),

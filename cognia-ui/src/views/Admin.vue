@@ -13,14 +13,15 @@ import {
   IconShield,
   IconSubtask,
   IconSettings2,
+  IconDashboard,
 } from "@tabler/icons-vue"
 const data = {
   navMain: [
-    //   {
-    //   title: "仪表盘",
-    //   url: "/console/dashboard",
-    //   icon: IconDashboard,
-    // },
+    {
+      title: "运营看板",
+      url: "/console/dashboard",
+      icon: IconDashboard,
+    },
     {
       title: "组织管理",
       url: "#",
@@ -66,6 +67,10 @@ const data = {
           url: "/console/system/object-storage",
         },
         {
+          title: "登录方式",
+          url: "/console/system/oauth",
+        },
+        {
           title: "模型配置",
           url: "/console/system/model",
         },
@@ -80,6 +85,10 @@ const data = {
         {
           title: "Prompt 配置",
           url: "/console/system/prompt",
+        },
+        {
+          title: "开发模式",
+          url: "/console/system/dev",
         },
       ],
     },

@@ -1,6 +1,8 @@
 package bao.gabriel.cognia.system.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -20,6 +22,12 @@ public class ChatConversation {
     private String title;
     private Long modelId;
     private String channelIds;
+    private Boolean pinned;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime pinnedTime;
+    private Boolean archived;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private LocalDateTime archivedTime;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

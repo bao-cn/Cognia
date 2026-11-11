@@ -90,7 +90,8 @@ public class GlobalSearchServiceImpl implements GlobalSearchService {
         for (ChatConversation conversation : conversations) {
             hits.add(new SearchResponse.ConversationHit(conversation.getPublicId(), conversation.getTitle(),
                     conversation.getUpdateTime() == null ? null
-                            : siteSettingService.formatDateTime(conversation.getUpdateTime())));
+                            : siteSettingService.formatDateTime(conversation.getUpdateTime()),
+                    Boolean.TRUE.equals(conversation.getArchived())));
         }
         return hits;
     }

@@ -78,7 +78,7 @@
           <MessageScroller v-else class="h-full min-h-0">
             <MessageScrollerViewport class="mt-4 scrollbar-none">
               <MessageScrollerContent :aria-busy="busy" class="gap-6 px-8 py-0">
-                <template v-for="message in messages" :key="message.id">
+                <template v-for="(message, index) in messages" :key="message.id">
                   <MessageScrollerItem v-if="message.role === 'user'" :message-id="message.id" scroll-anchor
                     class="ms-anim-slide-up">
                     <Message align="end">
@@ -87,12 +87,37 @@
                           <BubbleContent>{{ getMessageText(message) }}</BubbleContent>
                         </Bubble>
                         <div v-if="message.attachments?.length" class="mt-1 flex flex-wrap justify-end gap-1">
-                          <Badge v-for="attachment in message.attachments" :key="attachment.name"
-                            variant="outline" class="max-w-56 gap-1 text-[11px]">
-                            <FileTextIcon class="size-3 shrink-0" />
-                            <span class="truncate">{{ attachment.name }}</span>
-                          </Badge>
+                          <template v-for="attachment in message.attachments" :key="attachment.name">
+                            <img v-if="attachment.kind === 'IMAGE' && attachment.url" :src="attachment.url"
+                              :alt="attachment.name"
+                              class="size-24 cursor-zoom-in rounded-lg border object-cover"
+                              @click="openImageUrl(attachment.url)">
+                            <Badge v-else variant="outline" class="max-w-56 gap-1 text-[11px]">
+                              <FileTextIcon class="size-3 shrink-0" />
+                              <span class="truncate">{{ attachment.name }}</span>
+                            </Badge>
+                          </template>
                         </div>
+                        <MessageFooter class="mt-1 gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100">
+                          <TooltipProvider :delay-duration="150">
+                            <Tooltip>
+                              <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" aria-label="复制" @click="copyMessage(message)">
+                                  <CopyIcon />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>复制</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" aria-label="编辑" @click="editMessage(message, index)">
+                                  <PencilIcon />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>编辑</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </MessageFooter>
                       </MessageContent>
                     </Message>
                   </MessageScrollerItem>
@@ -106,7 +131,71 @@
                             <ToolRow v-else :part="part" :streaming="busy && message === messages.at(-1)" />
                           </template>
                         </Trace>
-                        <Markdown :text="getMessageText(message)" :streaming="busy && message === messages.at(-1)" />
+                        <CitationMarkdown
+                          v-if="message.role === 'assistant'"
+                          :text="getMessageText(message)"
+                          :citations="message.citations"
+                          :streaming="busy && message === messages.at(-1)"
+                          @cite="index => scrollToCitation(message, index)"
+                        />
+                        <Markdown v-else :text="getMessageText(message)" :streaming="busy && message === messages.at(-1)" />
+                        <MessageCitations
+                          v-if="message.role === 'assistant' && message.citations?.length && !(busy && message === messages.at(-1))"
+                          :message-id="message.id"
+                          :sources="message.citations"
+                          :reveal-index="message.revealIndex"
+                          @preview="openCitationPreview"
+                        />
+                        <MessageFooter
+                          v-if="!(busy && message === messages.at(-1))"
+                          class="mt-1 gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100"
+                        >
+                          <TooltipProvider :delay-duration="150">
+                            <Tooltip>
+                              <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" :aria-label="message.favorited ? '取消收藏' : '收藏'"
+                                  @click="toggleMessageFavorite(message)">
+                                  <StarIcon :fill="message.favorited ? 'currentColor' : 'none'" :class="message.favorited ? 'text-amber-500' : ''" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{{ message.favorited ? '取消收藏' : '收藏' }}</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" aria-label="复制" @click="copyMessage(message)">
+                                  <CopyIcon />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>复制</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" aria-label="分叉到新对话" @click="forkMessage(index)">
+                                  <GitBranchIcon />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>分叉到新对话</TooltipContent>
+                            </Tooltip>
+                            <Tooltip v-if="index === messages.length - 1">
+                              <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" aria-label="重新生成"
+                                  @click="regenerateMessage(index)">
+                                  <RotateCcwIcon />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>重新生成</TooltipContent>
+                            </Tooltip>
+                            <Tooltip v-if="message.traceId && canDebug">
+                              <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" aria-label="查看链路"
+                                  @click="debugStore.showTrace(message.traceId!)">
+                                  <ActivityIcon />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>查看开发链路</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </MessageFooter>
                       </MessageContent>
                     </Message>
                   </MessageScrollerItem>
@@ -139,7 +228,8 @@
             <div v-for="(attachment, index) in chatAttachments" :key="`${attachment.name}-${index}`"
               class="flex max-w-64 items-center gap-2 rounded-xl border bg-muted/40 p-1.5 pr-2">
               <img v-if="attachment.type === 'IMAGE' && imagePreview(index)" :src="imagePreview(index)"
-                :alt="attachment.name" class="size-9 rounded-md object-cover">
+                :alt="attachment.name" class="size-9 cursor-zoom-in rounded-md object-cover"
+                @click="openImagePreview(index)">
               <div v-else class="flex size-9 items-center justify-center rounded-md bg-background">
                 <FileTextIcon class="size-4 text-muted-foreground" />
               </div>
@@ -158,7 +248,24 @@
               <LoaderCircleIcon class="size-3.5 animate-spin" />解析中…
             </div>
           </div>
-          <form ref="formRef" class="relative w-full" @submit.prevent="onSubmit">
+          <div v-if="truncatedNotice"
+            class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <span>{{ truncatedNotice }}</span>
+            <button type="button" class="rounded p-0.5 hover:bg-destructive/10" aria-label="关闭提示" @click="truncatedNotice = ''">
+              <XIcon class="size-3" />
+            </button>
+          </div>
+          <div v-if="archived"
+            class="mx-auto mb-2 flex w-full max-w-3xl flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            <span>该对话已归档，恢复后才能继续对话。</span>
+            <Button variant="outline" size="sm" class="h-7" @click="restoreArchived">恢复对话</Button>
+          </div>
+          <div v-if="editingIndex !== null"
+            class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
+            <span>正在编辑第 {{ editingIndex + 1 }} 条消息，发送后将重新生成后续回答</span>
+            <button type="button" class="rounded p-0.5 hover:bg-primary/10" @click="cancelEdit">取消</button>
+          </div>
+          <form ref="formRef" class="relative w-full" @submit.prevent="onSubmit()">
             <div v-if="mentionOpen"
               class="absolute bottom-full left-3 z-50 mb-2 w-80 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg">
               <div class="flex items-center justify-between border-b px-3 py-2">
@@ -187,7 +294,7 @@
               </div>
             </div>
             <InputGroup class="rounded-3xl bg-background">
-              <InputGroupTextarea ref="textareaRef" v-model="text" placeholder="Ask the agent..." aria-label="Message" class="min-h-14"
+              <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived" placeholder="Ask the agent..." aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
                 @input="onComposerInput" @keydown="onKeydown" @blur="onComposerBlur" />
               <InputGroupAddon align="block-end" class="pt-1">
                 <InputGroupButton type="button" size="icon-sm" variant="outline" class="rounded-full"
@@ -251,7 +358,7 @@
                         <DropdownMenuSeparator v-if="index > 0" />
                         <DropdownMenuGroup>
                           <DropdownMenuLabel>{{ provider.name }}</DropdownMenuLabel>
-                          <DropdownMenuRadioItem v-for="item in provider.models" :key="item.id" :value="item.id">
+                          <DropdownMenuRadioItem v-for="item in provider.models" :key="item.id" :value="String(item.id)">
                             {{ item.name }}
                           </DropdownMenuRadioItem>
                         </DropdownMenuGroup>
@@ -356,9 +463,19 @@
       />
     </div>
   </MessageScrollerProvider>
-</template>
+
+    <Dialog v-model:open="imagePreviewOpen">
+      <DialogContent class="max-w-4xl p-2">
+        <DialogTitle class="sr-only">图片预览</DialogTitle>
+        <img v-if="imagePreviewUrl" :src="imagePreviewUrl" alt="图片预览"
+          class="mx-auto max-h-[78vh] w-auto rounded-md object-contain">
+      </DialogContent>
+    </Dialog>
+    <CitationPreviewDialog v-model:open="citationPreviewOpen" :source="citationPreviewSource" />
+  </template>
 <script setup lang="ts">
 import {
+  ActivityIcon,
   ArrowUpIcon,
   SparklesIcon,
   CheckIcon,
@@ -372,6 +489,11 @@ import {
   PaperclipIcon,
   FileTextIcon,
   TerminalIcon,
+  CopyIcon,
+  PencilIcon,
+  GitBranchIcon,
+  RotateCcwIcon,
+  StarIcon,
   XIcon,
 } from '@lucide/vue'
 import { createReusableTemplate } from '@vueuse/core'
@@ -379,6 +501,8 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { toast } from 'vue-sonner'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
+import { useDebugStore } from '@/stores/debug'
+import { useUserStore } from '@/stores/user'
 import Markdown from '@/components/Markdown.vue'
 import ConversationOutline from '@/components/ConversationOutline.vue'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
@@ -406,7 +530,8 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from '@/components/ui/input-group'
-import { Message, MessageContent } from '@/components/ui/message'
+import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -429,8 +554,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { chatApi, channelApi, discoverApi, profileApi } from '@/api'
-import type { ChatAttachmentPayload, ChatAttachmentResult, ChatCacheInfo, ChatContextInfo } from '@/api/chat'
+import { chatApi, channelApi, discoverApi, favoriteApi, profileApi } from '@/api'
+import type { ChatAttachmentPayload, ChatAttachmentResult, ChatCacheInfo, ChatContextInfo, CitationSource } from '@/api/chat'
+import CitationMarkdown from '@/components/CitationMarkdown.vue'
+import CitationPreviewDialog from '@/components/CitationPreviewDialog.vue'
+import MessageCitations from '@/components/MessageCitations.vue'
 import type { ChannelCard, ChatCapabilities, ChatConversationDetail, PublicChatModel } from '@/types/api'
 
 // The parts of an agent turn, shaped like AI SDK UI message parts.
@@ -448,14 +576,22 @@ type ChatPart
 
 interface ChatMessage {
   id: string
+  serverId?: string
   role: 'user' | 'assistant'
   parts: ChatPart[]
-  attachments?: { name: string, kind: string }[]
+  attachments?: { name: string, kind: string, url?: string }[]
+  citations?: CitationSource[]
+  revealIndex?: number
+  favorited?: boolean
+  traceId?: string
 }
 
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
+const debugStore = useDebugStore()
+const userStore = useUserStore()
+const canDebug = computed(() => userStore.hasPermission('trace:read') || userStore.isAdmin)
 
 function setActiveConversation(id: string | null, title: string) {
   chatStore.$patch({
@@ -468,13 +604,16 @@ const chatRoot = ref<HTMLElement | null>(null)
 const activeRoundId = ref<string | undefined>()
 const conversationId = ref<string | null>(null)
 const status = ref<'ready' | 'submitted' | 'streaming'>('ready')
+const archived = ref(false)
+const editingIndex = ref<number | null>(null)
+const truncatedNotice = ref('')
+const citationPreviewOpen = ref(false)
+const citationPreviewSource = ref<CitationSource | null>(null)
 const temporary = computed(() => route.name === 'ChatTemporary')
 const capabilities = ref<ChatCapabilities>({ webSearchEnabled: false, allowUserWebSearch: false, webSearchAvailable: false })
 const cacheInfo = ref<ChatCacheInfo | null>(null)
 const contextInfo = ref<ChatContextInfo | null>(null)
-const webSearch = ref(true)
-let textBuffer = ''
-let flushTimer: ReturnType<typeof setTimeout> | undefined
+const webSearch = ref(Boolean(userStore.profile?.autoWebSearch))
 const draft = ref<string | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
 // Open state of each reasoning row, set once the person toggles it.
@@ -496,7 +635,7 @@ const text = computed({
   },
 })
 const canSend = computed(() => (text.value.trim().length > 0 || chatAttachments.value.length > 0)
-  && !busy.value && !!currentModel.value)
+  && !busy.value && !archived.value && !!currentModel.value)
 
 const chatAttachments = ref<ChatAttachmentPayload[]>([])
 const attachmentPreviews = ref<ChatAttachmentResult[]>([])
@@ -506,7 +645,19 @@ const dragActive = ref(false)
 const supportsAttachments = computed(() => !!currentModel.value?.supportsVision)
 const imagePreview = (index: number) => {
   const preview = attachmentPreviews.value[index]
-  return preview?.kind === 'IMAGE' ? preview.dataUrl : undefined
+  return preview?.kind === 'IMAGE' ? (preview.url || preview.dataUrl) : undefined
+}
+const imagePreviewOpen = ref(false)
+const imagePreviewUrl = ref('')
+function openImagePreview(index: number) {
+  const url = imagePreview(index)
+  if (url)
+    openImageUrl(url)
+}
+
+function openImageUrl(url: string) {
+  imagePreviewUrl.value = url
+  imagePreviewOpen.value = true
 }
 
 async function addFiles(files: FileList | File[]) {
@@ -530,9 +681,9 @@ async function addFiles(files: FileList | File[]) {
         toast.error(`不支持的文件类型：${file.name}`)
         continue
       }
-      const result = await chatApi.uploadAttachment(file)
+      const result = await chatApi.uploadAttachment(file, conversationId.value)
       const payload: ChatAttachmentPayload = result.kind === 'IMAGE'
-        ? { type: 'IMAGE', name: result.name, mimeType: result.mimeType, dataUrl: result.dataUrl }
+        ? { type: 'IMAGE', name: result.name, mimeType: result.mimeType, dataUrl: result.dataUrl, url: result.url, key: result.key }
         : { type: 'TEXT', name: result.name, mimeType: result.mimeType, text: result.text }
       chatAttachments.value.push(payload)
       attachmentPreviews.value.push(result)
@@ -589,52 +740,56 @@ function onDrop(event: DragEvent) {
 }
 
 
-function scheduleTextFlush(message: ChatMessage) {
-  if (flushTimer)
+async function restoreArchived() {
+  if (!conversationId.value)
     return
-  flushTimer = setTimeout(() => {
-    flushTimer = undefined
-    flushTextBuffer(message)
-  }, 55)
+  try {
+    await chatApi.archiveConversation(conversationId.value, false)
+    archived.value = false
+    toast.success('对话已恢复')
+    await chatStore.loadConversations()
+  } catch (err: any) {
+    toast.error(err?.message || '恢复对话失败')
+  }
 }
 
-function flushTextBuffer(message: ChatMessage) {
-  if (!textBuffer)
-    return
-  const part = message.parts.find(item => item.type === 'text') as Extract<ChatPart, { type: 'text' }> | undefined
-  if (part)
-    part.text += textBuffer
-  else
-    message.parts.push({ type: 'text', text: textBuffer })
-  textBuffer = ''
-}
-
-async function onSubmit() {
+async function onSubmit(options: { regenerate?: boolean } = {}) {
   mentionOpen.value = false
   if (!canSend.value || !currentModel.value)
     return
   const pendingAttachments = [...chatAttachments.value]
+  const pendingPreviews = [...attachmentPreviews.value]
   const userMessage: ChatMessage = {
     id: `user-${Date.now()}`,
     role: 'user',
     parts: [{ type: 'text', text: text.value.trim() }],
-    attachments: pendingAttachments.map(item => ({ name: item.name, kind: item.type })),
+    attachments: pendingAttachments.map((item, index) => ({
+      name: item.name,
+      kind: item.type,
+      url: pendingPreviews[index]?.url,
+    })),
   }
   const assistant = reactive<ChatMessage>({
     id: `assistant-${Date.now()}`,
     role: 'assistant',
     parts: [],
   })
-  const history = [...messages.value, userMessage]
+  const editIndex = editingIndex.value
+  editingIndex.value = null
+  const baseMessages = editIndex === null ? messages.value : messages.value.slice(0, editIndex)
+  const history = [...baseMessages, userMessage]
     .map(message => ({ role: message.role, content: getMessageText(message) }))
     .filter((message, index, all) => message.content.trim().length > 0 || index === all.length - 1)
   if (!temporary.value && !conversationId.value)
     setActiveConversation(null, (text.value.trim() || '图片消息').slice(0, 60))
+  if (editIndex !== null)
+    messages.value = baseMessages
   messages.value.push(userMessage, assistant)
   chatAttachments.value = []
   attachmentPreviews.value = []
   draft.value = ''
   status.value = 'submitted'
+  truncatedNotice.value = ''
   let finished = false
   try {
     await chatApi.stream({
@@ -647,6 +802,11 @@ async function onSubmit() {
       temporary: temporary.value || undefined,
       webSearch: capabilities.value.webSearchAvailable ? webSearch.value : undefined,
       attachments: pendingAttachments.length ? pendingAttachments : undefined,
+      regenerate: options.regenerate || undefined,
+      editMessageIndex: editIndex ?? undefined,
+      debugTopK: debugStore.enabled ? debugStore.overrides.topK : undefined,
+      debugRerankEnabled: debugStore.enabled ? debugStore.overrides.rerankEnabled : undefined,
+      debugToolsEnabled: debugStore.enabled ? debugStore.overrides.toolsEnabled : undefined,
     }, {
       onStart: (data) => {
         status.value = 'streaming'
@@ -661,6 +821,12 @@ async function onSubmit() {
       },
       onContext: (data) => {
         contextInfo.value = data
+      },
+      onCitations: (sources) => {
+        assistant.citations = sources
+      },
+      onTrace: (traceId) => {
+        assistant.traceId = traceId
       },
       onReasoning: (delta) => {
         status.value = 'streaming'
@@ -678,8 +844,7 @@ async function onSubmit() {
           part = { type: 'text', text: '' }
           assistant.parts.push(part)
         }
-        textBuffer += delta
-        scheduleTextFlush(assistant)
+        part.text += delta
       },
       onTool: (data) => {
         status.value = 'streaming'
@@ -702,9 +867,10 @@ async function onSubmit() {
           part.output = { stdout: data.output ?? '' }
         }
       },
-      onDone: () => {
+      onDone: (data) => {
         finished = true
-        flushTextBuffer(assistant)
+        if (data.assistantMessageId)
+          assistant.serverId = String(data.assistantMessageId)
         refreshConversationTitle()
         // The LLM title is generated asynchronously after the answer; poll a few times.
         if (!temporary.value) {
@@ -714,9 +880,18 @@ async function onSubmit() {
       },
       onError: (message) => {
         finished = true
-        flushTextBuffer(assistant)
         toast.error(message)
         assistant.parts.push({ type: 'text', text: `\n\n> 请求失败：${message}` })
+      },
+      onTruncated: (message) => {
+        finished = true
+        status.value = 'ready'
+        truncatedNotice.value = message || '生成已停止，请重新尝试'
+        const index = messages.value.indexOf(assistant)
+        if (index >= 0)
+          messages.value.splice(index, 1)
+        toast.error(truncatedNotice.value)
+        void chatStore.loadConversations()
       },
     })
   } catch (err: any) {
@@ -776,6 +951,18 @@ function onKeydown(event: KeyboardEvent) {
     event.preventDefault()
     formRef.value?.requestSubmit()
   }
+}
+
+function scrollToCitation(message: ChatMessage, index: number) {
+  message.revealIndex = undefined
+  void nextTick(() => {
+    message.revealIndex = index
+  })
+}
+
+function openCitationPreview(source: CitationSource) {
+  citationPreviewSource.value = source
+  citationPreviewOpen.value = true
 }
 
 function getMessageText(message: ChatMessage) {
@@ -869,7 +1056,8 @@ function getSteps(message: ChatMessage) {
 }
 
 const availableModels = ref<PublicChatModel[]>([])
-const model = ref('')
+const MODEL_STORAGE_KEY = 'cognia:chat-model'
+const model = ref(localStorage.getItem(MODEL_STORAGE_KEY) || '')
 const efforts = [
   { id: 'low', name: 'Low' },
   { id: 'medium', name: 'Medium' },
@@ -887,6 +1075,10 @@ const providers = computed(() => {
   return [...groups.entries()].map(([name, models]) => ({ name, models }))
 })
 const currentModel = computed(() => availableModels.value.find(item => String(item.id) === model.value))
+watch(model, (value) => {
+  if (value)
+    localStorage.setItem(MODEL_STORAGE_KEY, value)
+})
 watch(() => currentModel.value?.id, () => {
   if (!supportsAttachments.value && chatAttachments.value.length) {
     chatAttachments.value = []
@@ -982,8 +1174,11 @@ function toggleChannel(channel: PickableChannel) {
 async function loadModels() {
   try {
     availableModels.value = await chatApi.models()
-    if (!model.value && availableModels.value.length)
-      model.value = String(availableModels.value[0]!.id)
+    if (!availableModels.value.length)
+      return
+    const saved = localStorage.getItem(MODEL_STORAGE_KEY) || model.value
+    const exists = availableModels.value.some(item => String(item.id) === saved)
+    model.value = exists ? saved : String(availableModels.value[0]!.id)
   } catch (err: any) {
     toast.error(err?.message || '加载模型列表失败')
   }
@@ -1029,19 +1224,16 @@ function refreshConversationTitle() {
 }
 
 function resetConversation() {
-  textBuffer = ''
-  if (flushTimer) {
-    clearTimeout(flushTimer)
-    flushTimer = undefined
-  }
   messages.value = []
   activeRoundId.value = undefined
   conversationId.value = null
+  archived.value = false
   setActiveConversation(null, temporary.value ? '临时对话' : '新对话')
   cacheInfo.value = null
   contextInfo.value = null
   status.value = 'ready'
   draft.value = ''
+  editingIndex.value = null
 }
 
 async function loadConversation(id: string) {
@@ -1050,10 +1242,13 @@ async function loadConversation(id: string) {
     cacheInfo.value = null
     contextInfo.value = null
     conversationId.value = String(detail.id)
+    archived.value = Boolean(detail.archived)
     setActiveConversation(conversationId.value, detail.title)
     channelIds.value = detail.channelIds ?? []
     messages.value = detail.messages.map((message, index) => ({
       id: `${message.role}-${index}`,
+      serverId: message.id,
+      favorited: message.favorited,
       role: message.role,
       parts: message.role === 'assistant'
         ? [
@@ -1061,14 +1256,95 @@ async function loadConversation(id: string) {
             ...(message.content ? [{ type: 'text' as const, text: message.content }] : []),
           ]
         : [{ type: 'text' as const, text: message.content }],
+      citations: message.citations ?? [],
+      attachments: (message.attachments ?? []).map(attachment => ({
+        name: attachment.name,
+        kind: attachment.type,
+        url: attachment.url,
+      })),
     }))
-    if (detail.modelId && availableModels.value.some(item => item.id === detail.modelId))
+    if (detail.modelId && availableModels.value.some(item => String(item.id) === String(detail.modelId)))
       model.value = String(detail.modelId)
     status.value = 'ready'
+    editingIndex.value = null
   } catch (err: any) {
     toast.error(err?.message || '加载对话失败')
     void router.replace({ name: 'Chat' })
   }
+}
+
+async function toggleMessageFavorite(message: ChatMessage) {
+  if (!message.serverId) {
+    toast.error('消息尚未保存，请稍后再试')
+    return
+  }
+  try {
+    if (message.favorited)
+      await favoriteApi.unfavoriteMessage(message.serverId)
+    else
+      await favoriteApi.favoriteMessage(message.serverId)
+    message.favorited = !message.favorited
+    toast.success(message.favorited ? '已收藏消息' : '已取消收藏')
+  } catch (err: any) {
+    toast.error(err?.message || '收藏失败')
+  }
+}
+
+async function copyMessage(message: ChatMessage) {
+  try {
+    await navigator.clipboard.writeText(getMessageText(message))
+    toast.success('已复制')
+  } catch {
+    toast.error('复制失败')
+  }
+}
+
+function focusComposer() {
+  void nextTick(() => {
+    const el = (textareaRef.value as unknown as { $el?: HTMLTextAreaElement } | null)?.$el
+      ?? (textareaRef.value as unknown as HTMLTextAreaElement | null)
+    if (el instanceof HTMLTextAreaElement) {
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    }
+  })
+}
+
+function editMessage(message: ChatMessage, index: number) {
+  if (busy.value)
+    return
+  editingIndex.value = index
+  text.value = getMessageText(message)
+  void nextTick(() => focusComposer())
+  toast.info('正在编辑消息，发送后将重新生成后续回答')
+}
+
+function cancelEdit() {
+  editingIndex.value = null
+  text.value = ''
+  toast.info('已取消编辑')
+}
+
+async function forkMessage(index: number) {
+  if (!conversationId.value)
+    return
+  try {
+    const detail = await chatApi.forkConversation(conversationId.value, index + 1)
+    toast.success('已分叉到新对话')
+    await router.push({ name: 'ChatConversation', params: { conversationId: detail.id } })
+  } catch (err: any) {
+    toast.error(err?.message || '分叉失败')
+  }
+}
+
+async function regenerateMessage(index: number) {
+  const user = messages.value[index - 1]
+  if (!user || user.role !== 'user')
+    return
+  messages.value.splice(index - 1, 2)
+  text.value = getMessageText(user)
+  await nextTick()
+  await onSubmit({ regenerate: true })
 }
 
 function syncRoute() {
@@ -1099,7 +1375,7 @@ onMounted(async () => {
   await loadChannels()
   try {
     capabilities.value = await chatApi.capabilities()
-    webSearch.value = capabilities.value.webSearchAvailable
+    webSearch.value = capabilities.value.webSearchAvailable && Boolean(userStore.profile?.autoWebSearch)
   } catch { /* capabilities are optional */ }
   syncRoute()
   void bindScrollSpy()
@@ -1108,8 +1384,6 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('chat:reset', handleReset)
   unbindScrollSpy()
-  if (flushTimer)
-    clearTimeout(flushTimer)
 })
 
 </script>

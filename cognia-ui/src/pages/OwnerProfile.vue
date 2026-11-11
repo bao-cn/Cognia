@@ -4,24 +4,28 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import Markdown from '@/components/Markdown.vue'
 import TeamDetail from '@/pages/TeamDetail.vue'
-import { profileApi, channelApi } from '@/api'
+import { profileApi, channelApi, userApi } from '@/api'
+import { useUserStore } from '@/stores/user'
 import type { ChannelCard, OwnerProfile, ProfileLink } from '@/types/api'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  IconPlus, IconPencil, IconLink, IconBrandGithub, IconMail,
+  IconPlus, IconPencil, IconLink, IconBrandGithub, IconMail, IconCamera,
   IconMapPin, IconBuilding, IconClock, IconUsers, IconBook, IconPin,
   IconFolder, IconArrowUpRight, IconShieldCheck, IconId,
 } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(true)
 const error = ref('')
 const profile = ref<OwnerProfile | null>(null)
@@ -61,12 +65,56 @@ function goTeam(slug: string) {
 const editOpen = ref(false)
 const saving = ref(false)
 const editForm = reactive({
-  nickname: '', gender: '', bio: '', company: '', hometown: '', timezone: '', readme: '',
+  username: '', nickname: '', gender: '', bio: '', company: '', hometown: '', timezone: '', readme: '',
 })
+const avatarInput = ref<HTMLInputElement | null>(null)
+const avatarUploading = ref(false)
+
+function triggerAvatar() {
+  avatarInput.value?.click()
+}
+
+async function toSquareWebp(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file)
+  const side = Math.min(bitmap.width, bitmap.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 512
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('无法处理图片')
+  context.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 512, 512)
+  bitmap.close()
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('无法生成头像')), 'image/webp', 0.9)
+  })
+}
+
+async function handleAvatarFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+    toast.error('请选择 JPG、PNG、WebP 或 GIF 图片')
+    return
+  }
+  avatarUploading.value = true
+  try {
+    const updated = await userApi.uploadAvatar(await toSquareWebp(file))
+    userStore.setProfile(updated)
+    if (profile.value) profile.value.avatar = updated.avatar
+    toast.success('头像已更新')
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : '头像上传失败')
+  } finally {
+    avatarUploading.value = false
+  }
+}
 const editLinks = ref<ProfileLink[]>([])
 
 function openEdit() {
   if (!profile.value) return
+  editForm.username = profile.value.username ?? ''
   editForm.nickname = profile.value.nickname ?? ''
   editForm.gender = profile.value.gender ?? ''
   editForm.bio = profile.value.bio ?? ''
@@ -92,12 +140,18 @@ async function saveProfile() {
     toast.error('昵称不能为空')
     return
   }
+  if (!/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/.test(editForm.username.trim())) {
+    toast.error('用户名需以字母开头，3-32 位字母、数字或下划线')
+    return
+  }
   saving.value = true
   try {
     const links = editLinks.value
       .map(link => ({ label: link.label.trim(), url: link.url.trim() }))
       .filter(link => link.label && link.url)
+    const previousUsername = profile.value?.username
     profile.value = await profileApi.update({
+      username: editForm.username.trim(),
       nickname: editForm.nickname.trim(),
       gender: editForm.gender.trim(),
       bio: editForm.bio.trim(),
@@ -108,6 +162,9 @@ async function saveProfile() {
       links,
     })
     editOpen.value = false
+    if (previousUsername && profile.value?.username && profile.value.username !== previousUsername && profile.value?.self) {
+      await router.replace(`/${profile.value.username}`)
+    }
     toast.success('资料已更新')
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : '保存失败')
@@ -205,18 +262,25 @@ watch(identity, load)
     </div>
 
     <template v-else-if="profile">
+      <input ref="avatarInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" @change="handleAvatarFile" />
       <div class="grid items-start gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside class="flex flex-col gap-4 lg:sticky lg:top-4">
-          <section class="overflow-hidden rounded-xl border bg-card">
-            <div class="h-20 bg-gradient-to-r from-primary/20 via-primary/10 to-emerald-500/15" />
-            <div class="px-4 pb-4">
-              <Avatar class="-mt-9 size-20 border-4 border-background shadow-sm">
-                <AvatarImage :src="profile.avatar || '/logo.png'" :alt="displayName" />
-                <AvatarFallback class="text-xl">{{ initials }}</AvatarFallback>
+          <div class="relative aspect-square w-full">
+              <Avatar class="size-full rounded-full">
+                <AvatarImage :src="profile?.avatar || '/logo.png'" :alt="displayName" class="object-cover" />
+                <AvatarFallback class="rounded-full text-4xl">{{ initials }}</AvatarFallback>
               </Avatar>
+              <Button v-if="profile.canEdit && !isTeam" size="icon" class="absolute bottom-7 right-7 rounded-full shadow-lg" :disabled="avatarUploading" title="修改头像" @click="triggerAvatar">
+                <Spinner v-if="avatarUploading" class="size-4" />
+                <IconCamera v-else class="size-4" />
+              </Button>
+            </div>
+          <section class="overflow-hidden rounded-xl border bg-card">
+            
+            <div class="px-4 pb-4">
               <div class="mt-3 flex flex-col gap-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h1 class="text-xl font-semibold">{{ displayName }}</h1>
+                  <h1 data-i18n-skip class="text-xl font-semibold">{{ displayName }}</h1>
                   <Badge variant="outline" class="gap-1">
                     <IconUsers v-if="isTeam" class="size-3" />
                     <IconId v-else class="size-3" />
@@ -284,8 +348,8 @@ watch(identity, load)
                 @click="goTeam(team.slug)">
                 <Avatar class="size-8"><AvatarImage :src="team.logoUrl || '/logo.png'" /><AvatarFallback>{{ team.name.slice(0, 1) }}</AvatarFallback></Avatar>
                 <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium">{{ team.name }}</p>
-                  <p class="truncate text-xs text-muted-foreground">{{ teamMemberRoleLabel[team.role] || team.role }} · {{ team.memberCount }} 位成员</p>
+                  <p data-i18n-skip class="truncate text-sm font-medium">{{ team.name }}</p>
+                  <p class="truncate text-xs text-muted-foreground"><span>{{ teamMemberRoleLabel[team.role] || team.role }}</span> · <span>{{ team.memberCount }} 位成员</span></p>
                 </div>
               </button>
             </div>
@@ -312,7 +376,7 @@ watch(identity, load)
                 @click="goChannel(channel)">
                 <div class="flex items-center gap-2">
                   <IconFolder class="size-4 text-muted-foreground" />
-                  <span class="truncate text-sm font-medium">{{ channel.name }}</span>
+                  <span data-i18n-skip class="truncate text-sm font-medium">{{ channel.name }}</span>
                   <Badge variant="secondary" class="ml-auto shrink-0">{{ channel.isPublic ? '公开' : '私密' }}</Badge>
                 </div>
                 <p class="line-clamp-2 text-xs text-muted-foreground">{{ channel.description || '暂无简介' }}</p>
@@ -340,10 +404,10 @@ watch(identity, load)
                 </div>
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
-                    <p class="truncate text-sm font-medium">{{ channel.name }}</p>
+                    <p data-i18n-skip class="truncate text-sm font-medium">{{ channel.name }}</p>
                     <Badge variant="outline" class="shrink-0">{{ channel.isPublic ? '公开' : '私密' }}</Badge>
                   </div>
-                  <p class="truncate text-xs text-muted-foreground">{{ channel.description || '暂无简介' }} · {{ channel.documentCount }} 个文档</p>
+                  <p class="truncate text-xs text-muted-foreground"><span data-i18n-skip>{{ channel.description || '暂无简介' }}</span> · <span>{{ channel.documentCount }} 个文档</span></p>
                 </div>
                 <IconArrowUpRight class="size-4 shrink-0 text-muted-foreground" />
               </button>
@@ -367,19 +431,42 @@ watch(identity, load)
           <DialogDescription>这些信息会展示在你的公开主页上。</DialogDescription>
         </DialogHeader>
         <div class="grid max-h-[70vh] gap-4 overflow-y-auto py-1 md:grid-cols-2">
+          <div class="flex items-center gap-3 md:col-span-2">
+            <Avatar class="size-14">
+              <AvatarImage :src="profile?.avatar || '/logo.png'" :alt="displayName" class="object-cover" />
+              <AvatarFallback>{{ initials }}</AvatarFallback>
+            </Avatar>
+            <Button variant="outline" size="sm" :disabled="avatarUploading" @click="triggerAvatar">
+              <Spinner v-if="avatarUploading" class="mr-1 size-3.5" />
+              <IconCamera v-else class="mr-1 size-3.5" />
+              修改头像
+            </Button>
+            <span class="text-xs text-muted-foreground">JPG / PNG / WebP / GIF，自动裁切为 512×512 WebP</span>
+          </div>
+          <div class="grid gap-2">
+            <Label for="profile-username">Username</Label>
+            <Input id="profile-username" v-model="editForm.username" maxlength="32" placeholder="用户名，作为个人主页地址" />
+          </div>
           <div class="grid gap-2">
             <Label for="profile-nickname">Nickname</Label>
             <Input id="profile-nickname" v-model="editForm.nickname" maxlength="32" />
           </div>
           <div class="grid gap-2">
             <Label for="profile-gender">性别</Label>
-            <select id="profile-gender" v-model="editForm.gender"
-              class="h-9 rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">不公开</option>
-              <option value="male">男</option>
-              <option value="female">女</option>
-              <option value="other">其他</option>
-            </select>
+            <Select
+              :model-value="editForm.gender || 'none'"
+              @update:model-value="(value) => editForm.gender = value === 'none' ? '' : String(value)"
+            >
+              <SelectTrigger id="profile-gender" class="w-full">
+                <SelectValue placeholder="不公开" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">不公开</SelectItem>
+                <SelectItem value="male">男</SelectItem>
+                <SelectItem value="female">女</SelectItem>
+                <SelectItem value="other">其他</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div class="grid gap-2 md:col-span-2">
             <Label for="profile-bio">个人简介</Label>
@@ -445,10 +532,10 @@ watch(identity, load)
             <Label for="channel-description">频道简介</Label>
             <Textarea id="channel-description" v-model="createForm.description" rows="3" maxlength="512" />
           </div>
-          <label class="flex items-center gap-2 text-sm">
-            <input v-model="createForm.isPublic" type="checkbox" class="size-4 rounded border-input" />
-            公开频道（所有人可访问）
-          </label>
+          <div class="flex items-center gap-2">
+            <Checkbox id="channel-public" v-model="createForm.isPublic" />
+            <Label for="channel-public" class="text-sm font-normal">公开频道（所有人可访问）</Label>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" :disabled="creating" @click="createOpen = false">取消</Button>

@@ -6,6 +6,8 @@ public record ChatAttachmentResponse(
         String mimeType,
         long size,
         String dataUrl,
-        String text
+        String text,
+        String url,
+        String key
 ) {
 }

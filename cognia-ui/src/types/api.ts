@@ -33,6 +33,9 @@ export interface UserProfile {
   lastLoginIp?: string
   createTime?: string
   remark?: string
+  autoWebSearch?: boolean
+  twoFactorEnabled?: boolean
+  hasPassword?: boolean
 }
 
 export interface LoginPayload {
@@ -40,6 +43,7 @@ export interface LoginPayload {
   password: string
   turnstileToken?: string
   rememberMe?: boolean
+  twoFactorCode?: string
 }
 
 export interface LoginResult {
@@ -627,6 +631,7 @@ export interface OwnerProfile {
 }
 
 export interface UpdateOwnerProfilePayload {
+  username?: string
   nickname?: string
   gender?: string
   bio?: string
@@ -676,6 +681,7 @@ export interface ChannelDetail {
   canWrite: boolean
   canManage: boolean
   canNotify: boolean
+  canViewInsights: boolean
 }
 
 export interface CreateChannelPayload {
@@ -709,11 +715,14 @@ export interface RecycleBinEntry {
   expiresAt?: string
 }
 
+export type ProviderProtocol = 'OPENAI_CHAT' | 'OPENAI_RESPONSE' | 'ANTHROPIC_MESSAGES'
+
 export interface ModelProvider {
   id: number
   name: string
   vendor?: string
   baseUrl: string
+  protocol?: ProviderProtocol
   apiKeyConfigured: boolean
   enabled: boolean
   modelCount: number
@@ -725,6 +734,7 @@ export interface SaveModelProviderPayload {
   name: string
   vendor?: string
   baseUrl: string
+  protocol?: ProviderProtocol
   apiKey?: string
   clearApiKey?: boolean
   enabled?: boolean
@@ -737,6 +747,12 @@ export interface RemoteModel {
 
 export type ModelType = 'CHAT' | 'EMBEDDING' | 'RERANK'
 
+/** One selectable reasoning level and the provider value it maps to. */
+export interface ReasoningLevel {
+  label: string
+  value?: string
+}
+
 export interface ModelConfig {
   id: number
   providerId: number
@@ -747,12 +763,15 @@ export interface ModelConfig {
   enabled: boolean
   visible: boolean
   supportsTools: boolean
+  supportsText?: boolean
   thinkingEnabled: boolean
   supportsVision?: boolean
   reasoningEffort?: string
+  reasoningLevels?: string
   extraBody?: string
   dimension?: number
   contextWindow?: number
+  maxOutputTokens?: number
   updatedAt?: string
 }
 
@@ -764,12 +783,15 @@ export interface SaveModelConfigPayload {
   enabled?: boolean
   visible?: boolean
   supportsTools?: boolean
+  supportsText?: boolean
   thinkingEnabled?: boolean
   supportsVision?: boolean
   reasoningEffort?: string
+  reasoningLevels?: string
   extraBody?: string
   dimension?: number
   contextWindow?: number
+  maxOutputTokens?: number
 }
 
 export interface PublicChatModel {
@@ -791,8 +813,6 @@ export interface RagSettings {
   chunkOverlap: number
   retrievalTopK: number
   retrievalTopN: number
-  webSearchEndpoint?: string
-  webSearchApiKeyConfigured: boolean
   webSearchEnabled: boolean
   allowUserWebSearch: boolean
   semanticCacheEnabled: boolean
@@ -804,7 +824,6 @@ export interface RagSettings {
   retrievalCacheMaxEntries: number
   titleGenerationEnabled: boolean
   contextCompressionThreshold: number
-  compressionPrompt?: string
   updatedAt?: string
 }
 
@@ -817,9 +836,6 @@ export interface UpdateRagSettingsPayload {
   chunkOverlap?: number
   retrievalTopK?: number
   retrievalTopN?: number
-  webSearchEndpoint?: string
-  webSearchApiKey?: string
-  clearWebSearchApiKey?: boolean
   webSearchEnabled?: boolean
   allowUserWebSearch?: boolean
   semanticCacheEnabled?: boolean
@@ -831,7 +847,6 @@ export interface UpdateRagSettingsPayload {
   retrievalCacheMaxEntries?: number
   titleGenerationEnabled?: boolean
   contextCompressionThreshold?: number
-  compressionPrompt?: string
 }
 
 export interface PromptSettings {
@@ -839,6 +854,7 @@ export interface PromptSettings {
   ragPrompt?: string
   expiredPrompt?: string
   toolPrompt?: string
+  compressionPrompt?: string
   updatedAt?: string
 }
 
@@ -847,6 +863,66 @@ export interface UpdatePromptSettingsPayload {
   ragPrompt?: string
   expiredPrompt?: string
   toolPrompt?: string
+  compressionPrompt?: string
+}
+
+export interface ToolSettings {
+  webSearchEnabled: boolean
+  webSearchEndpoint?: string
+  webSearchApiKeyConfigured: boolean
+  webFetchEnabled: boolean
+  maxResults: number
+  updatedAt?: string
+}
+
+export interface UpdateToolSettingsPayload {
+  webSearchEnabled?: boolean
+  webSearchEndpoint?: string
+  webSearchApiKey?: string
+  clearWebSearchApiKey?: boolean
+  webFetchEnabled?: boolean
+  maxResults?: number
+}
+
+export interface ChatTraceSummary {
+  traceId: string
+  conversationId?: string
+  userId?: number
+  modelName?: string
+  protocol?: string
+  question?: string
+  status: string
+  durationMs?: number
+  createTime?: string
+}
+
+export interface ChatTraceDetail extends ChatTraceSummary {
+  answer?: string
+  trace: Record<string, any>
+}
+
+export interface TraceStats {
+  total: number
+  success: number
+  failed: number
+  truncated: number
+  today: number
+  avgDurationMs: number
+}
+
+export interface DebugSetting {
+  enabled: boolean
+  hardcodedUsername: string
+  updatedAt?: string
+}
+
+export interface TraceReplayResult {
+  traceId: string
+  stage: string
+  status: string
+  durationMs: number
+  result: Record<string, any>
+  message?: string
 }
 
 export interface ChatConversation {
@@ -856,17 +932,54 @@ export interface ChatConversation {
   channelIds?: number[]
   createTime?: string
   updateTime?: string
+  pinned?: boolean
+  favorited?: boolean
+  archived?: boolean
+}
+
+export interface CitationSource {
+  index: number
+  documentId?: number | string
+  channelId?: number | string
+  channelName?: string
+  channelSlug?: string
+  ownerType?: string
+  ownerId?: number | string
+  fileName?: string
+  title?: string
+  documentType?: string
+  pageNumber?: number
+  chunkIndex?: number
+  snippet?: string
+  score?: number
+  url?: string
+  kind?: 'DOCUMENT' | 'WEB'
+}
+
+export interface ChatMessageAttachment {
+  type: 'IMAGE' | 'TEXT'
+  name: string
+  mimeType?: string
+  dataUrl?: string
+  text?: string
+  url?: string
+  key?: string
 }
 
 export interface ChatConversationMessage {
+  id: string
   role: 'user' | 'assistant'
   content: string
   reasoning?: string
+  citations?: CitationSource[]
+  attachments?: ChatMessageAttachment[]
   createTime?: string
+  favorited?: boolean
 }
 
 export interface ChatConversationDetail extends ChatConversation {
   messages: ChatConversationMessage[]
+  archived?: boolean
 }
 
 export interface SearchChannelHit {
@@ -889,10 +1002,123 @@ export interface SearchConversationHit {
   id: string
   title: string
   updateTime?: string
+  archived?: boolean
 }
 
 export interface GlobalSearchResult {
   channels: SearchChannelHit[]
   users: SearchUserHit[]
   conversations: SearchConversationHit[]
+}
+
+export interface FavoriteConversation {
+  id: string
+  conversationId: string
+  title: string
+  createTime?: string
+}
+
+export interface FavoriteMessage {
+  id: string
+  messageId: string
+  conversationId: string
+  conversationTitle: string
+  role: string
+  content: string
+  createTime?: string
+}
+
+export interface FavoriteList {
+  conversations: FavoriteConversation[]
+  messages: FavoriteMessage[]
+}
+
+export interface DashboardOverview {
+  totalUsers: number
+  activeUsers: number
+  bannedUsers: number
+  inactiveUsers: number
+  newUsersToday: number
+  newUsersWeek: number
+  newUsersMonth: number
+  totalChannels: number
+  publicChannels: number
+  privateChannels: number
+  totalFiles: number
+  storageBytes: number
+  conversations: number
+  avgRounds: number
+  qaRequests: number
+  retrievalRequests: number
+  llmCalls: number
+  qaToday: number
+  qaWeek: number
+  qaMonth: number
+  retrievalHitRate: number
+  noRetrievalRate: number
+  refusalRate: number
+  sessionRetentionRate: number
+}
+
+export interface DashboardLatency {
+  avgRetrievalMs: number
+  avgVectorMs: number
+  avgRerankMs: number
+  avgQaMs: number
+  p50QaMs: number
+  p90QaMs: number
+  p99QaMs: number
+}
+
+export interface DashboardTrend { date: string; qa: number; retrieval: number; llm: number }
+export interface DashboardFileType { type: string; count: number; bytes: number }
+export interface DashboardModelStat { modelName: string; calls: number; inputTokens: number; outputTokens: number; errors: number; avgDurationMs: number }
+export interface DashboardTokenStat { name: string; inputTokens: number; outputTokens: number; embeddingTokens: number }
+export interface DashboardErrorCode { errorType: string; count: number }
+export interface DashboardTask {
+  code: string; name: string; enabled: boolean; lastStatus?: string; lastRunAt?: string; lastMessage?: string
+}
+export interface DashboardOps {
+  apiStatus: string; sseStatus: string; sseOnline: number
+  documentWorkerStatus: string; documentQueue: number
+  vectorWorkerStatus: string; vectorQueue: number
+  scheduledStatus: string; scheduledEnabled: number; scheduledFailed: number
+  dbConnections: number; vectorIndexBytes: number; slowQueries: number
+  redisMemory: string; redisHitRate: number
+  minioStorageBytes: number; minioObjects: number; lifecycleDays: number
+  queueAvailable: boolean; queueBacklog: number; queueConsumeRate: number; queueFailed: number; queueRetry: number
+  warnings: string[]
+}
+
+export interface AdminDashboard {
+  overview: DashboardOverview
+  latency: DashboardLatency
+  trends: DashboardTrend[]
+  fileTypes: DashboardFileType[]
+  models: DashboardModelStat[]
+  tokensByUser: DashboardTokenStat[]
+  tokensByModel: DashboardTokenStat[]
+  ops: DashboardOps
+  tasks: DashboardTask[]
+  errorCodes: DashboardErrorCode[]
+  generatedAt: string
+}
+
+export interface ChannelInsights {
+  channel: { id: number; name: string; slug: string; isPublic: boolean; members: number }
+  documentCount: number
+  storageBytes: number
+  subscribers: number
+  qaRequests: number
+  retrievalRequests: number
+  inputTokens: number
+  outputTokens: number
+  retrievalHitRate: number
+  refusalRate: number
+  avgLatencyMs: number
+  p90LatencyMs: number
+  fileTypes: DashboardFileType[]
+  trends: DashboardTrend[]
+  topDocuments: Array<{ id: number; name: string; type: string; size: number; status: string; createTime: string }>
+  generatedAt: string
 }

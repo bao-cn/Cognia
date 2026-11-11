@@ -70,13 +70,13 @@
             <header class="flex flex-col gap-1 border-b px-4 py-3">
               <h2 class="text-sm font-semibold">启用状态</h2>
               <p class="text-xs text-muted-foreground">
-                关闭后，所有依赖对象存储的上传接口将返回「未启用」提示，已存储的对象不会被删除。
+                关闭后，上传功能将不可用并提示「未启用」；已保存的文件不会被删除。
               </p>
             </header>
             <div class="flex flex-col divide-y">
               <SettingSwitchRow
                 title="启用对象存储"
-                description="启用后，知识库文档与附件会写入下方配置的 S3 兼容存储。"
+                description="启用后，知识库文档与附件会保存到下方配置的存储空间。"
                 :model-value="form.enabled"
                 @update:model-value="value => (form.enabled = value)"
               >
@@ -135,7 +135,7 @@
                   :placeholder="secretKeyConfigured ? '已配置，留空保持不变' : '输入 SecretKey'"
                 />
                 <p class="text-xs text-muted-foreground">
-                  密钥使用 AES-GCM 加密后保存在数据库中，接口只返回是否已配置，不会返回明文。
+                  密钥会加密保存，保存后不会再次显示明文，仅显示是否已配置。
                 </p>
               </div>
               <div v-if="secretKeyConfigured" class="flex items-center gap-2 md:col-span-2">
@@ -197,7 +197,7 @@
                 <Label for="storage-prefix">对象键前缀</Label>
                 <Input id="storage-prefix" v-model="form.objectPrefix" placeholder="cognia" />
                 <p class="text-xs text-muted-foreground">
-                  上传文件会保存为「前缀 / 目录 / 年 / 月 / 日 / 随机文件名」，避免同名覆盖；留空表示直接存放在 Bucket 根目录。
+                  上传文件会自动生成不重复的保存路径，避免同名覆盖；留空表示存放在存储空间根目录。
                 </p>
               </div>
               <div class="grid gap-2">
@@ -242,7 +242,7 @@
                   </Button>
                 </div>
                 <p class="text-xs text-muted-foreground">
-                  保存后会立即写入桶的 S3 Lifecycle Rule（前缀 tmp/），计划任务每日再次校准；范围 1 - 365 天。
+                  保存后会立即应用临时文件自动清理规则；范围 1 - 365 天。
                 </p>
               </div>
             </div>
@@ -250,8 +250,8 @@
 
           <section class="rounded-xl border bg-card">
             <header class="flex flex-col gap-1 border-b px-4 py-3">
-              <h2 class="text-sm font-semibold">上传类型白名单</h2>
-              <p class="text-xs text-muted-foreground">文件扩展名由系统设置统一控制，后端会在上传时再次校验。</p>
+              <h2 class="text-sm font-semibold">允许上传的文件类型</h2>
+              <p class="text-xs text-muted-foreground">文件类型以系统设置为准，上传时会自动校验。</p>
             </header>
             <div class="flex items-start gap-3 p-4 text-sm text-muted-foreground">
               <IconInfoCircle class="mt-0.5 size-4 shrink-0" />
@@ -260,7 +260,7 @@
                 <RouterLink to="/console/setting" class="font-medium text-foreground underline underline-offset-4">
                   系统设置 → 上传与文档
                 </RouterLink>
-                调整允许上传的文档类型。当前对象存储仅负责文件落盘，不改变白名单策略。
+                调整允许上传的文件类型；其他上传限制不受影响。
               </p>
             </div>
           </section>
@@ -272,7 +272,7 @@
           <header class="flex flex-col gap-1 border-b px-4 py-3">
             <h2 class="text-sm font-semibold">连接测试</h2>
             <p class="text-xs text-muted-foreground">
-              依次验证 Bucket 可访问、对象可写入、可读取且可删除，测试对象会自动清理。
+              验证存储空间是否可访问，以及文件能否正常上传、读取和删除；测试文件会自动删除。
             </p>
           </header>
           <div class="flex flex-col gap-4 p-4">
@@ -652,10 +652,10 @@ const testResult = ref<StorageConnectionTestResult | null>(null)
 const testChecks = computed(() => {
   if (!testResult.value) return []
   return [
-    { label: 'HeadBucket 可访问', ok: testResult.value.bucketExists },
-    { label: '对象可写入', ok: testResult.value.canWrite },
-    { label: '对象可读取', ok: testResult.value.canRead },
-    { label: '对象可删除', ok: testResult.value.canDelete },
+    { label: '存储空间可访问', ok: testResult.value.bucketExists },
+    { label: '文件可上传', ok: testResult.value.canWrite },
+    { label: '文件可读取', ok: testResult.value.canRead },
+    { label: '文件可删除', ok: testResult.value.canDelete },
   ]
 })
 
@@ -764,9 +764,9 @@ async function syncLifecycle() {
   syncingLifecycle.value = true
   try {
     const result = await storageApi.syncLifecycle()
-    toast.success(result.message || 'tmp/ 生命周期规则已同步')
+    toast.success(result.message || '临时文件自动清理规则已更新')
   } catch (error) {
-    const message = error instanceof Error ? error.message : '同步生命周期失败'
+    const message = error instanceof Error ? error.message : '更新自动清理规则失败'
     toast.error(message)
   } finally {
     syncingLifecycle.value = false

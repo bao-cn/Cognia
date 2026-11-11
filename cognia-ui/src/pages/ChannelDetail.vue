@@ -2,8 +2,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { channelApi, discoverApi, profileApi } from '@/api'
-import type { ChannelDetail, ChannelDocument, ChannelFolder } from '@/types/api'
+import { channelApi, dashboardApi, discoverApi, profileApi } from '@/api'
+import type { ChannelDetail, ChannelDocument, ChannelFolder, ChannelInsights } from '@/types/api'
+import DashboardTrendChart from '@/components/DashboardTrendChart.vue'
+import ChannelSettings from '@/pages/ChannelSettings.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -12,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import Markdown from '@/components/Markdown.vue'
 import {
-  IconBook, IconBookmark, IconBookmarkFilled, IconChevronRight, IconCloudUpload,
+  IconBook, IconBookmark, IconBookmarkFilled, IconChartBar, IconChevronRight, IconCloudUpload,
   IconEye, IconEyeOff, IconFile, IconFileText, IconFolder, IconFolderPlus, IconInfoCircle,
   IconPlus, IconRefresh, IconSettings, IconTrash, IconAlertTriangle, IconCheck,
 } from '@tabler/icons-vue'
@@ -31,13 +33,26 @@ const channel = computed(() => detail.value?.channel)
 const ownerPath = computed(() => `/${ownerParam.value}`)
 const canWrite = computed(() => detail.value?.canWrite ?? false)
 const canManage = computed(() => detail.value?.canManage ?? false)
+const canViewInsights = computed(() => detail.value?.canViewInsights ?? false)
+const activeView = ref<'documents' | 'insights' | 'settings'>('documents')
+const insights = ref<ChannelInsights | null>(null)
+const insightsLoading = ref(false)
+
+async function openInsights() {
+  activeView.value = 'insights'
+  if (!channel.value || insights.value) return
+  insightsLoading.value = true
+  try {
+    insights.value = await dashboardApi.channelInsights(Number(channel.value.id))
+  } catch (err: any) {
+    toast.error(err?.message || '加载频道洞察失败')
+  } finally {
+    insightsLoading.value = false
+  }
+}
 const subscribed = ref(false)
 const notifySubscribed = ref(false)
 const engagementBusy = ref(false)
-
-function goSettings() {
-  void router.push(`/${ownerParam.value}/${slugParam.value}/settings`)
-}
 
 async function loadEngagement() {
   if (!channel.value?.isPublic)
@@ -336,7 +351,7 @@ async function confirmUpload() {
   if (failed === 0) {
     uploadOpen.value = false
     uploadItems.value = []
-    toast.success(`${succeeded} 个文件已上传并进入向量化`)
+    toast.success(`${succeeded} 个文件已上传，正在处理`)
   } else {
     toast.error(`${succeeded} 个成功，${failed} 个失败，请检查后重试`)
   }
@@ -406,7 +421,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             <span>{{ channel.slug }}</span>
           </div>
           <h1 class="flex items-center gap-2 text-xl font-semibold">
-            <IconFolder class="size-5 text-muted-foreground" />{{ channel.name }}
+            <IconFolder class="size-5 text-muted-foreground" /><span data-i18n-skip>{{ channel.name }}</span>
             <Badge :variant="channel.isPublic ? 'secondary' : 'outline'">{{ channel.isPublic ? '公开' : '私密' }}</Badge>
           </h1>
           <p class="max-w-2xl text-sm text-muted-foreground">{{ channel.description || '这个频道还没有简介。' }}</p>
@@ -424,12 +439,27 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
               {{ notifySubscribed ? '通知已开启' : '接收通知' }}
             </Button>
           </template>
-          <Button v-if="canManage" variant="outline" size="sm" @click="goSettings">
-            <IconSettings class="mr-1 size-4" />频道设置
-          </Button>
           <input ref="fileInput" type="file" multiple class="hidden" @change="onFileSelected" />
         </div>
       </div>
+
+      <div class="flex items-center gap-1 border-b">
+        <button type="button" class="border-b-2 px-3 py-2 text-sm transition"
+          :class="activeView === 'documents' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+          @click="activeView = 'documents'">文档</button>
+        <button v-if="canViewInsights" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
+          :class="activeView === 'insights' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+          @click="openInsights">
+          <IconChartBar class="size-4" />数据洞察
+        </button>
+        <button v-if="canManage" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
+          :class="activeView === 'settings' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+          @click="activeView = 'settings'">
+          <IconSettings class="size-4" />频道设置
+        </button>
+      </div>
+
+      <template v-if="activeView === 'documents'">
 
       <div v-if="uploading" class="rounded-xl border bg-card p-4">
         <div class="mb-2 flex items-center justify-between text-sm">
@@ -483,7 +513,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
               <h2 class="flex items-center gap-2 text-sm font-semibold">
                 <IconFolder class="size-4" />{{ currentFolder?.name || '全部文件' }}
               </h2>
-              <p class="mt-0.5 text-xs text-muted-foreground">{{ documentCount }} 个文档 · 上传后自动进行向量化</p>
+              <p class="mt-0.5 text-xs text-muted-foreground">{{ documentCount }} 个文档 · 上传后自动处理，可用于检索</p>
             </div>
             <div class="flex items-center gap-2">
               <Button variant="outline" size="sm" :disabled="loading" @click="load">
@@ -522,7 +552,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             </div>
             <div>
               <p class="text-sm font-medium">这里还没有文档</p>
-              <p class="mt-1 text-xs text-muted-foreground">上传 PDF、Markdown、TXT 等文件，系统会自动解析并向量化。</p>
+              <p class="mt-1 text-xs text-muted-foreground">上传 PDF、Markdown、TXT 等文件，系统会自动解析并处理，完成后即可用于检索。</p>
             </div>
             <Button v-if="canWrite" variant="outline" size="sm" @click="triggerUpload">
               <IconCloudUpload class="mr-1 size-4" />上传第一个文档
@@ -596,13 +626,63 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
         <IconInfoCircle class="size-3.5" />
         AGENT.md 会被检索系统优先读取，用于描述频道结构与检索规则。
       </div>
+      </template>
+
+      <div v-else-if="activeView === 'insights'" class="flex flex-col gap-4">
+        <div v-if="insightsLoading" class="flex h-48 items-center justify-center rounded-xl border"><Spinner class="size-6" /></div>
+        <template v-else-if="insights">
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <section class="rounded-xl border bg-card p-4"><div class="text-xs text-muted-foreground">订阅用户</div><div class="mt-1 text-2xl font-semibold">{{ insights.subscribers }}</div></section>
+            <section class="rounded-xl border bg-card p-4"><div class="text-xs text-muted-foreground">文档 / 存储</div><div class="mt-1 text-2xl font-semibold">{{ insights.documentCount }}</div><div class="text-xs text-muted-foreground">{{ (insights.storageBytes / 1024 / 1024).toFixed(1) }} MB</div></section>
+            <section class="rounded-xl border bg-card p-4"><div class="text-xs text-muted-foreground">问答请求</div><div class="mt-1 text-2xl font-semibold">{{ insights.qaRequests }}</div><div class="text-xs text-muted-foreground">检索 {{ insights.retrievalRequests }}</div></section>
+            <section class="rounded-xl border bg-card p-4"><div class="text-xs text-muted-foreground">检索命中率</div><div class="mt-1 text-2xl font-semibold">{{ insights.retrievalHitRate.toFixed(1) }}%</div><div class="text-xs text-muted-foreground">拒答 {{ insights.refusalRate.toFixed(1) }}%</div></section>
+          </div>
+          <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <section class="rounded-xl border bg-card">
+              <header class="border-b px-4 py-3"><h2 class="text-sm font-semibold">近 14 天问答趋势</h2></header>
+              <div class="px-2 pb-3 pt-4">
+                <DashboardTrendChart :data="insights.trends" :series="[{ key: 'qa', label: '问答请求' }]" :height="220" />
+              </div>
+            </section>
+            <section class="rounded-xl border bg-card">
+              <header class="border-b px-4 py-3"><h2 class="text-sm font-semibold">性能与 Token</h2></header>
+              <div class="grid grid-cols-2 gap-px bg-border">
+                <div class="bg-card p-3"><div class="text-xs text-muted-foreground">平均耗时</div><div class="mt-1 font-semibold">{{ insights.avgLatencyMs }} ms</div></div>
+                <div class="bg-card p-3"><div class="text-xs text-muted-foreground">P90 耗时</div><div class="mt-1 font-semibold">{{ insights.p90LatencyMs }} ms</div></div>
+                <div class="bg-card p-3"><div class="text-xs text-muted-foreground">输入 Token</div><div class="mt-1 font-semibold">{{ insights.inputTokens.toLocaleString() }}</div></div>
+                <div class="bg-card p-3"><div class="text-xs text-muted-foreground">输出 Token</div><div class="mt-1 font-semibold">{{ insights.outputTokens.toLocaleString() }}</div></div>
+              </div>
+            </section>
+          </div>
+          <div class="grid gap-4 xl:grid-cols-2">
+            <section class="rounded-xl border bg-card">
+              <header class="border-b px-4 py-3"><h2 class="text-sm font-semibold">文件格式</h2></header>
+              <div class="flex flex-col gap-2 p-4">
+                <div v-for="t in insights.fileTypes" :key="t.type" class="flex items-center justify-between text-sm"><span class="font-mono text-xs">{{ t.type }}</span><span class="text-muted-foreground">{{ t.count }} · {{ (t.bytes / 1024 / 1024).toFixed(1) }} MB</span></div>
+                <div v-if="!insights.fileTypes.length" class="py-4 text-center text-sm text-muted-foreground">暂无文件</div>
+              </div>
+            </section>
+            <section class="rounded-xl border bg-card">
+              <header class="border-b px-4 py-3"><h2 class="text-sm font-semibold">最近文档</h2></header>
+              <div class="divide-y">
+                <div v-for="d in insights.topDocuments" :key="d.id" class="flex items-center justify-between px-4 py-2 text-sm"><span class="truncate">{{ d.name }}</span><Badge variant="outline">{{ d.status }}</Badge></div>
+                <div v-if="!insights.topDocuments.length" class="py-6 text-center text-sm text-muted-foreground">暂无文档</div>
+              </div>
+            </section>
+          </div>
+        </template>
+      </div>
+
+      <div v-else-if="activeView === 'settings'">
+        <ChannelSettings embedded />
+      </div>
     </template>
 
     <Dialog :open="uploadOpen" @update:open="onUploadOpenChange">
       <DialogContent class="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>上传 {{ uploadItems.length }} 个文件</DialogTitle>
-          <DialogDescription>上传到 {{ uploadTargetLabel }} · 可一次选择多个文件，将逐个上传并进入向量化队列。</DialogDescription>
+          <DialogDescription>上传到 {{ uploadTargetLabel }} · 可一次选择多个文件，将逐个上传并处理。</DialogDescription>
         </DialogHeader>
         <div class="max-h-[58vh] space-y-3 overflow-y-auto py-2 pr-1">
           <div v-for="item in uploadItems" :key="item.id" class="rounded-lg border bg-muted/20 p-3">
@@ -641,7 +721,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
 
             <div v-if="item.status === 'uploading' || item.status === 'done' || item.status === 'error'" class="mt-3 flex flex-col gap-1">
               <div class="flex justify-between gap-2 text-xs text-muted-foreground">
-                <span class="truncate">{{ item.status === 'error' ? item.error : item.status === 'done' ? '已上传并完成向量化' : '正在上传…' }}</span>
+                <span class="truncate">{{ item.status === 'error' ? item.error : item.status === 'done' ? '已上传并处理完成' : '正在上传…' }}</span>
                 <span class="shrink-0">{{ item.progress }}%</span>
               </div>
               <div class="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -651,7 +731,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             </div>
           </div>
         </div>
-        <p class="text-xs text-muted-foreground">过期片段仍可被召回，但会标记“已过期”，模型引用时需注明时效。</p>
+        <p class="text-xs text-muted-foreground">超过时效的文档仍可被检索，回答时会注明内容已过期。</p>
         <DialogFooter>
           <Button variant="outline" :disabled="uploading" @click="closeUpload">取消</Button>
           <Button :disabled="uploading || uploadPendingCount === 0" @click="confirmUpload">
@@ -690,7 +770,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
         <div class="py-2">
           <div class="rounded-lg border bg-muted/30 p-3 text-sm">
             <p class="font-medium">移入文档回收站</p>
-            <p class="mt-1 text-xs text-muted-foreground">文件会保留在对象存储中，可在回收站恢复；留存期结束后由计划任务自动清理。</p>
+            <p class="mt-1 text-xs text-muted-foreground">文件会移入文档回收站，可在保留期内恢复；超过保留期后将自动永久删除。</p>
           </div>
         </div>
         <DialogFooter>

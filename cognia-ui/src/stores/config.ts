@@ -80,7 +80,7 @@ export const useConfigStore = defineStore('config', {
     applyLanguage() {
       const language = this.actualLanguage
       i18n.global.locale.value = language
-      document.documentElement.lang = language
+      document.documentElement.lang = language === 'enUs' ? 'en' : 'zh-CN'
     },
   },
 })

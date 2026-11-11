@@ -42,6 +42,9 @@ public class VerificationCodeService {
     private static final String ATTEMPT_KEY = "auth:verify:register:attempt:";
     private static final String DAILY_KEY = "auth:verify:register:daily:";
     private static final String IP_KEY = "auth:verify:ip:";
+    private static final String EMAIL_CHANGE_CODE_KEY = "auth:verify:email-change:code:";
+    private static final String EMAIL_CHANGE_RATE_KEY = "auth:verify:email-change:rate:";
+    private static final String EMAIL_CHANGE_ATTEMPT_KEY = "auth:verify:email-change:attempt:";
     private static final int IP_HOURLY_LIMIT = 30;
 
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -120,6 +123,59 @@ public class VerificationCodeService {
         String devCode = mailProperties.isExposeCode() ? code : null;
         return new SendCodeResponse("验证码已发送，请注意查收", properties.getTtl().toSeconds(),
                 properties.getResendInterval().toSeconds(), devCode);
+    }
+
+    public SendCodeResponse sendEmailChangeCode(Long userId, String rawEmail) {
+        String email = normalize(rawEmail);
+        Long existing = userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getEmail, email).ne(User::getId, userId));
+        if (existing != null && existing > 0) {
+            throw BusinessException.conflict("该邮箱已被其他账户使用");
+        }
+        Boolean acquired = redis.opsForValue().setIfAbsent(EMAIL_CHANGE_RATE_KEY + email, "1", properties.getResendInterval());
+        if (!Boolean.TRUE.equals(acquired)) {
+            Long ttl = redis.getExpire(EMAIL_CHANGE_RATE_KEY + email);
+            long wait = ttl == null || ttl < 0 ? properties.getResendInterval().toSeconds() : ttl;
+            throw new BusinessException(ResultCode.TOO_MANY_REQUESTS, "验证码发送过于频繁，请 " + wait + " 秒后再试");
+        }
+        String code = generateCode(properties.getLength());
+        redis.opsForValue().set(EMAIL_CHANGE_CODE_KEY + email, code, properties.getTtl());
+        redis.delete(EMAIL_CHANGE_ATTEMPT_KEY + email);
+        try {
+            emailService.sendEmailChangeCode(email, code, properties.getTtl().toMinutes());
+        } catch (RuntimeException ex) {
+            redis.delete(EMAIL_CHANGE_CODE_KEY + email);
+            throw ex;
+        }
+        String devCode = mailProperties.isExposeCode() ? code : null;
+        return new SendCodeResponse("验证码已发送，请注意查收", properties.getTtl().toSeconds(),
+                properties.getResendInterval().toSeconds(), devCode);
+    }
+
+    public void verifyEmailChangeCode(String rawEmail, String code) {
+        String email = normalize(rawEmail);
+        String key = EMAIL_CHANGE_CODE_KEY + email;
+        String stored = redis.opsForValue().get(key);
+        if (stored == null) {
+            throw BusinessException.badRequest("验证码已过期，请重新获取");
+        }
+        String attemptKey = EMAIL_CHANGE_ATTEMPT_KEY + email;
+        Long attempts = redis.opsForValue().increment(attemptKey);
+        if (attempts != null && attempts == 1) {
+            redis.expire(attemptKey, properties.getTtl());
+        }
+        if (attempts != null && attempts > properties.getMaxAttempts()) {
+            redis.delete(key);
+            redis.delete(attemptKey);
+            throw new BusinessException(ResultCode.TOO_MANY_REQUESTS, "验证码错误次数过多，请重新获取");
+        }
+        boolean matches = MessageDigest.isEqual(stored.getBytes(StandardCharsets.UTF_8), code.getBytes(StandardCharsets.UTF_8));
+        if (!matches) {
+            long remaining = Math.max(0, properties.getMaxAttempts() - (attempts == null ? 0 : attempts));
+            throw BusinessException.badRequest("验证码不正确，还可尝试 " + remaining + " 次");
+        }
+        redis.delete(key);
+        redis.delete(attemptKey);
     }
 
     /**

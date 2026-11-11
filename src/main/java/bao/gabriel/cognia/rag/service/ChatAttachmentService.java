@@ -5,5 +5,5 @@ import org.springframework.web.multipart.MultipartFile;
 
 public interface ChatAttachmentService {
 
-    ChatAttachmentResponse prepare(MultipartFile file);
+    ChatAttachmentResponse prepare(Long userId, String conversationId, MultipartFile file);
 }

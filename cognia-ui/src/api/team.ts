@@ -55,6 +55,14 @@ export const teamApi = {
   pinChannel(id: string, channelId: string, pinned: boolean): Promise<TeamChannel> {
     return http.post<TeamChannel>(`/teams/${encodeURIComponent(id)}/channels/${encodeURIComponent(channelId)}/pin`, { pinned })
   },
+  uploadLogo(id: string, file: Blob): Promise<string> {
+    const form = new FormData()
+    form.append('file', file, 'logo.webp')
+    return http.post<string>(`/teams/${encodeURIComponent(id)}/logo`, form, {
+      timeout: 120000,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
   updateTeam(id: string, payload: {
     name: string
     description?: string
@@ -65,8 +73,8 @@ export const teamApi = {
   }): Promise<TeamDetail> {
     return http.put<TeamDetail>(`/teams/${encodeURIComponent(id)}`, payload)
   },
-  deleteTeam(id: string): Promise<void> {
-    return http.delete<void>(`/teams/${encodeURIComponent(id)}`)
+  deleteTeam(id: string, twoFactorCode?: string): Promise<void> {
+    return http.delete<void>(`/teams/${encodeURIComponent(id)}`, { params: twoFactorCode ? { twoFactorCode } : {} })
   },
   transferOwnership(id: string, userId: string): Promise<TeamDetail> {
     return http.post<TeamDetail>(`/teams/${encodeURIComponent(id)}/transfer`, { userId })

@@ -206,7 +206,7 @@ onUnmounted(() => {
       <div ref="listRef" class="max-h-[min(28rem,60vh)] overflow-y-auto p-2">
         <div v-if="!hasQuery" class="flex flex-col items-center gap-1 px-4 py-10 text-center">
           <IconSearch class="size-7 text-muted-foreground/60" />
-          <p class="text-sm font-medium">搜索整个 Cognia</p>
+          <p class="text-sm font-medium">搜索整个平台</p>
           <p class="text-xs text-muted-foreground">支持公开频道名称/标识、用户、历史对话</p>
         </div>
 

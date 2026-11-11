@@ -7,7 +7,7 @@
           文档回收站
         </h1>
         <p class="text-sm text-muted-foreground">
-          逻辑删除的文档会保留原文件，到期后由计划任务自动永久清理。也可以在此立即永久删除。
+          回收站中的文档会保留原文件，超过保留期后自动永久删除；也可以在此立即永久删除。
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -23,7 +23,7 @@
       <header class="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex flex-col gap-1">
           <h2 class="text-sm font-semibold">回收站记录</h2>
-          <p class="text-xs text-muted-foreground">永久删除会同时清理对象存储文件、向量与文档记录。</p>
+          <p class="text-xs text-muted-foreground">永久删除后，文档原文、索引与相关记录都将被删除，且无法恢复。</p>
         </div>
         <div class="w-full sm:w-60">
           <Select v-model="ownerValue" @update:model-value="loadEntries">
@@ -89,7 +89,7 @@
         <DialogHeader>
           <DialogTitle>永久删除文档</DialogTitle>
           <DialogDescription>
-            确定要永久删除「{{ purgeTarget?.name }}」吗？对象存储文件、向量和数据库记录都将被清理，且无法恢复。
+            确定要永久删除「{{ purgeTarget?.name }}」吗？文档原文、索引与相关记录都将被删除，且无法恢复。
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

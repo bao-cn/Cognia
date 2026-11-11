@@ -9,5 +9,7 @@ public interface EmailService {
 
     void sendRegisterCode(String email, String code, long ttlMinutes);
 
+    void sendEmailChangeCode(String email, String code, long ttlMinutes);
+
     void sendTestEmail(String recipient);
 }

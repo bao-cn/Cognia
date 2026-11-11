@@ -5,6 +5,8 @@ import bao.gabriel.cognia.security.SecurityUtils;
 import bao.gabriel.cognia.system.dto.channel.*;
 import bao.gabriel.cognia.system.service.ChannelNotificationService;
 import bao.gabriel.cognia.system.service.ChannelService;
+import bao.gabriel.cognia.system.service.TwoFactorService;
+import bao.gabriel.cognia.system.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +20,8 @@ import java.util.List;
 public class ChannelController {
 
     private final ChannelService channelService;
+    private final TwoFactorService twoFactorService;
+    private final UserService userService;
     private final ChannelNotificationService channelNotificationService;
 
     @GetMapping("/owner/{ownerType}/{ownerId}")

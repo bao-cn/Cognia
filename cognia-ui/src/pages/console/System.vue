@@ -7,7 +7,7 @@
           系统设置
         </h1>
         <p class="text-sm text-muted-foreground">
-          站点品牌、注册策略、团队上限、邮件服务、客户端下载与法律条款均保存在数据库，保存后即时生效。
+          站点品牌、注册策略、团队上限、邮件服务、客户端下载与法律条款，保存后即时生效。
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -104,7 +104,7 @@
                 <div class="grid gap-2 md:col-span-2">
                   <Label for="site-keywords">关键词</Label>
                   <Input id="site-keywords" v-model="keywordsText" placeholder="Cognia, 企业知识库, AI 搜索" />
-                  <p class="text-xs text-muted-foreground">使用逗号分隔，最多 20 个，写入页面 meta keywords。</p>
+                  <p class="text-xs text-muted-foreground">使用逗号分隔，最多 20 个，用于页面搜索引擎关键词。</p>
                 </div>
               </div>
             </div>
@@ -180,7 +180,7 @@
               <div class="grid gap-2">
                 <Label for="recycle-retention-days">回收站留存天数</Label>
                 <Input id="recycle-retention-days" v-model.number="form.recycleRetentionDays" type="number" min="1" max="3650" />
-                <p class="text-xs text-muted-foreground">逻辑删除的文档在回收站保留的天数，到期后由计划任务清理。</p>
+                <p class="text-xs text-muted-foreground">文档在回收站中保留的天数，超过保留期后将自动永久删除。</p>
               </div>
             </div>
           </section>
@@ -246,7 +246,7 @@
             <div class="flex flex-col gap-3 p-4">
               <SettingSwitchRow
                 title="启用邮箱白名单"
-                description="开启后，发送验证码与注册接口都会校验邮箱是否在白名单内。"
+                description="开启后，只有名单内的邮箱可以获取验证码并完成注册。"
                 :model-value="form.registrationEmailWhitelistEnabled"
                 class="!px-0 !py-1"
                 @update:model-value="value => (form.registrationEmailWhitelistEnabled = value)"
@@ -364,7 +364,7 @@
                 </Badge>
               </div>
               <p class="text-xs text-muted-foreground">
-                参数保存在数据库，修改后即时生效，无需重启后端；关闭时验证码会写入应用日志。
+                修改后即时生效；关闭后系统不会发送验证码邮件，请仅在调试环境使用。
               </p>
             </header>
             <div class="flex flex-col divide-y">

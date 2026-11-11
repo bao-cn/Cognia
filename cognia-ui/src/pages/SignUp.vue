@@ -247,7 +247,7 @@ async function handleSubmit(): Promise<void> {
               />
               <FieldError :errors="[errors.email]" />
               <FieldDescription v-if="siteStore.registrationEmailWhitelistEnabled">
-                仅允许组织白名单内的邮箱注册。
+                仅允许指定邮箱或域名注册。
               </FieldDescription>
             </Field>
             <Field v-if="siteStore.emailVerificationRequired">

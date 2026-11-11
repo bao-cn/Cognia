@@ -68,6 +68,12 @@ public class User extends BaseEntity {
      */
     private LocalDateTime filesCleanedAt;
 
+    private Boolean autoWebSearch;
+
+    private String twoFactorSecret;
+
+    private Boolean twoFactorEnabled;
+
     public User(String username, String email, String phone) {
         this.username = username;
         this.email = email;

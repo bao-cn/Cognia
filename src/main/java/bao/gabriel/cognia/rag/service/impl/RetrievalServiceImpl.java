@@ -51,11 +51,19 @@ public class RetrievalServiceImpl implements RetrievalService {
 
     @Override
     public List<RetrievedChunk> retrieve(String query, float[] queryVector, Long viewerId, List<Long> channelIds) {
+        return retrieve(query, queryVector, viewerId, channelIds, null, null);
+    }
+
+    @Override
+    public List<RetrievedChunk> retrieve(String query, float[] queryVector, Long viewerId, List<Long> channelIds,
+                                         Integer topKOverride, Boolean rerankOverride) {
         if (!StringUtils.hasText(query) || queryVector == null || queryVector.length == 0) {
             return List.of();
         }
         RagSetting setting = ragSettingService.getSetting();
-        int topK = Math.max(setting.retrievalTopK(), setting.retrievalTopN());
+        int topK = topKOverride != null
+                ? Math.max(1, Math.min(topKOverride, 200))
+                : Math.max(setting.retrievalTopK(), setting.retrievalTopN());
         int topN = Math.max(1, setting.retrievalTopN());
         String vector = toVector(queryVector);
 
@@ -110,7 +118,8 @@ public class RetrievalServiceImpl implements RetrievalService {
             log.warn("Vector retrieval returned no chunks for viewer {} channels {}", viewerId, channelIds);
             return List.of();
         }
-        if (setting.rerankEnabled() && setting.getRerankModelId() != null) {
+        boolean rerankOn = rerankOverride != null ? rerankOverride : setting.rerankEnabled();
+        if (rerankOn && setting.getRerankModelId() != null) {
             List<RetrievedChunk> reranked = rerank(query, candidates, setting.getRerankModelId(), topN);
             if (!reranked.isEmpty()) {
                 return reranked;

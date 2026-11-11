@@ -63,10 +63,23 @@ public class OpenAiCompatibleClient {
     }
 
     public JsonNode getJson(String baseUrl, String path, String apiKey) {
-        HttpRequest request = request(baseUrl, path, apiKey)
-                .GET()
-                .timeout(Duration.ofSeconds(30))
-                .build();
+        return getJson(baseUrl, path, apiKey, null);
+    }
+
+    /**
+     * GET with protocol specific authentication headers (e.g. Anthropic's
+     * x-api-key + anthropic-version). When a header map is supplied the bearer
+     * token is not added.
+     */
+    public JsonNode getJson(String baseUrl, String path, String apiKey, java.util.Map<String, String> headers) {
+        HttpRequest.Builder builder;
+        if (headers == null || headers.isEmpty()) {
+            builder = request(baseUrl, path, apiKey);
+        } else {
+            builder = HttpRequest.newBuilder().uri(URI.create(normalizeBaseUrl(baseUrl) + path));
+            headers.forEach(builder::header);
+        }
+        HttpRequest request = builder.GET().timeout(Duration.ofSeconds(30)).build();
         return send(request, null);
     }
 
@@ -84,8 +97,24 @@ public class OpenAiCompatibleClient {
     }
 
     public HttpResponse<InputStream> stream(String baseUrl, String path, String apiKey, ObjectNode body) {
+        return stream(baseUrl, path, apiKey, body, null);
+    }
+
+    /**
+     * Streaming POST with protocol specific headers (Anthropic uses x-api-key +
+     * anthropic-version instead of a bearer token).
+     */
+    public HttpResponse<InputStream> stream(String baseUrl, String path, String apiKey, ObjectNode body,
+                                            java.util.Map<String, String> headers) {
         try {
-            HttpRequest request = request(baseUrl, path, apiKey)
+            HttpRequest.Builder builder;
+            if (headers == null || headers.isEmpty()) {
+                builder = request(baseUrl, path, apiKey);
+            } else {
+                builder = HttpRequest.newBuilder().uri(URI.create(normalizeBaseUrl(baseUrl) + path));
+                headers.forEach(builder::header);
+            }
+            HttpRequest request = builder
                     .timeout(Duration.ofMinutes(10))
                     .header("Content-Type", "application/json")
                     .header("Accept", "text/event-stream")

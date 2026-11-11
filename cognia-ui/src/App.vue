@@ -3,6 +3,7 @@
     <router-view />
     <Toaster />
     <GlobalSearch />
+    <TraceDrawer />
 
     <!-- Global re-consent dialog: cannot be dismissed until the user agrees
          or explicitly declines (which logs out and closes the window). -->
@@ -85,6 +86,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Toaster } from '@/components/ui/sonner'
 import GlobalSearch from '@/components/GlobalSearch.vue'
+import TraceDrawer from '@/components/TraceDrawer.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
@@ -109,6 +111,7 @@ import { useUserStore } from '@/stores/user'
 import { useSiteStore } from '@/stores/site'
 import { useLegalStore } from '@/stores/legal'
 import { useNotificationStore } from '@/stores/notification'
+import { useDebugStore } from '@/stores/debug'
 import i18n from '@/locales/index'
 
 const router = useRouter()
@@ -118,6 +121,7 @@ const userStore = useUserStore()
 const siteStore = useSiteStore()
 const legalStore = useLegalStore()
 const notificationStore = useNotificationStore()
+const debugStore = useDebugStore()
 const isStandalonePage = computed(() => Boolean(route.meta.standalone))
 
 const consentChecked = ref(false)
@@ -136,6 +140,7 @@ watch(
     if (loggedIn) {
       await legalStore.ensureStatus(true)
       notificationStore.start()
+      void debugStore.load()
     } else {
       legalStore.reset()
       notificationStore.stop()
@@ -151,12 +156,13 @@ onMounted(async () => {
   })
 
   i18n.global.locale.value = configStore.actualLanguage
-  document.documentElement.lang = configStore.actualLanguage
+  document.documentElement.lang = configStore.actualLanguage === 'enUs' ? 'en' : 'zh-CN'
 
   await siteStore.load()
   if (userStore.isLoggedIn) {
     await legalStore.ensureStatus(true)
     notificationStore.start()
+    void debugStore.load()
   }
 
   // Revisions are picked up while the app stays open (at most one minute lag).

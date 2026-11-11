@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { HoverCardTrigger } from '@/components/ui/hover-card'
 import { cn } from '@/lib/utils'
 import { computed } from 'vue'
@@ -28,8 +28,8 @@ const displayText = computed(() => {
 
 <template>
   <HoverCardTrigger as-child>
-    <Badge :class="cn('ml-1 rounded-full', props.class)" variant="secondary">
+    <Button :class="cn('ml-1 h-6 rounded-full px-2 text-xs', props.class)" variant="secondary" size="xs">
       {{ displayText }}
-    </Badge>
+    </Button>
   </HoverCardTrigger>
 </template>

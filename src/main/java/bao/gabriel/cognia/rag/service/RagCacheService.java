@@ -15,7 +15,7 @@ import java.util.List;
  */
 public interface RagCacheService {
 
-    record SemanticHit(String answer, double similarity, String cacheKey, long entryHits) {
+    record SemanticHit(String answer, String contextJson, double similarity, String cacheKey, long entryHits) {
     }
 
     record RetrievalHit(List<RetrievedChunk> chunks, String cacheKey, long entryHits) {

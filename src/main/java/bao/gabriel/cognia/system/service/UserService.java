@@ -39,6 +39,16 @@ public interface UserService extends IService<User> {
 
     UserResponse updateProfile(Long userId, ProfileUpdateRequest request);
 
+    UserResponse updatePreferences(Long userId, boolean autoWebSearch);
+
+    void setPassword(Long userId, String newPassword);
+
+    void deleteSelf(Long userId);
+
+    UserResponse updateEmail(Long userId, String email);
+
+    boolean matchesPassword(Long userId, String rawPassword);
+
     UserResponse updateAvatar(Long userId, org.springframework.web.multipart.MultipartFile file);
 
     void updateLastLogin(Long userId, String ip);

@@ -73,7 +73,7 @@ public class RagCacheServiceImpl implements RagCacheService {
         String vector = toVector(queryEmbedding);
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                    SELECT id, answer, hits,
+                    SELECT id, answer, context_json, hits,
                            1 - (embedding <=> CAST(:vector AS vector)) AS similarity
                     FROM sys_semantic_cache
                     WHERE scope_hash = :scope
@@ -92,8 +92,9 @@ public class RagCacheServiceImpl implements RagCacheService {
             long hits = row.get("hits") == null ? 0 : ((Number) row.get("hits")).longValue();
             double similarity = row.get("similarity") == null ? 0 : ((Number) row.get("similarity")).doubleValue();
             String answer = row.get("answer") == null ? "" : row.get("answer").toString();
+            String contextJson = row.get("context_json") == null ? "[]" : row.get("context_json").toString();
             touchSemantic(id);
-            return new SemanticHit(answer, similarity, cacheKey(scopeHash, query), hits + 1);
+            return new SemanticHit(answer, contextJson, similarity, cacheKey(scopeHash, query), hits + 1);
         } catch (Exception ex) {
             log.warn("Semantic cache lookup failed: {}", ex.getMessage());
             return null;

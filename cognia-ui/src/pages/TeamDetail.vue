@@ -207,7 +207,10 @@
                   <p class="text-sm font-medium">开启加入团队申请</p>
                   <p class="mt-0.5 text-xs text-muted-foreground">保存该开关；申请审核流程将在后续版本接入。</p>
                 </div>
-                <input v-model="basicForm.joinRequestsEnabled" type="checkbox" class="size-4 rounded border-border" />
+                <div class="flex items-center gap-2">
+                  <Checkbox id="team-join-requests" v-model="basicForm.joinRequestsEnabled" />
+                  <Label for="team-join-requests" class="text-sm font-normal">开启</Label>
+                </div>
               </div>
             </div>
             <div class="mt-4 flex justify-end">
@@ -238,15 +241,21 @@
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3">
                 <div><p class="text-sm font-medium">转让管理权</p><p class="text-xs text-muted-foreground">将团队创建者转让给另一位成员。</p></div>
                 <div class="flex items-center gap-2">
-                  <select v-model="transferTarget" class="h-9 rounded-lg border bg-background px-2 text-xs">
-                    <option value="">选择成员</option>
-                    <option v-for="member in transferCandidates" :key="member.userId" :value="member.userId">{{ member.nickname }}</option>
-                  </select>
+                  <Select v-model="transferTarget">
+                    <SelectTrigger class="h-9 w-40 text-xs">
+                      <SelectValue placeholder="选择成员" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="member in transferCandidates" :key="member.userId" :value="member.userId">
+                        {{ member.nickname }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button variant="outline" size="sm" class="rounded-full" :disabled="!transferTarget" @click="transferOpen = true">转让</Button>
                 </div>
               </div>
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/30 p-3">
-                <div><p class="text-sm font-medium text-destructive">删除团队</p><p class="text-xs text-muted-foreground">删除团队、成员、频道与邀请，无法恢复。</p></div>
+                <div><p class="text-sm font-medium text-destructive">删除团队</p><p class="text-xs text-muted-foreground">删除团队、成员、频道、邀请与团队文件，且无法恢复。</p></div>
                 <Button variant="destructive" size="sm" class="rounded-full" @click="deleteOpen = true">删除团队</Button>
               </div>
             </div>
@@ -262,9 +271,16 @@
             <div class="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3">
               <div><p class="text-sm font-medium">新成员默认权限</p><p class="text-xs text-muted-foreground">接受邀请后自动获得此角色。</p></div>
               <div class="flex items-center gap-2">
-                <select v-model="defaultRole" class="h-9 rounded-lg border bg-background px-2 text-xs">
-                  <option value="MANAGER">管理者</option><option value="EDITOR">编辑</option><option value="MEMBER">成员</option>
-                </select>
+                <Select v-model="defaultRole">
+                  <SelectTrigger class="h-9 w-32 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MANAGER">管理者</SelectItem>
+                    <SelectItem value="EDITOR">编辑</SelectItem>
+                    <SelectItem value="MEMBER">成员</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Button variant="outline" size="sm" class="rounded-full" :disabled="defaultRoleSaving" @click="saveDefaultRole">保存</Button>
               </div>
             </div>
@@ -273,9 +289,20 @@
                 <Avatar class="size-9 rounded-xl"><AvatarImage :src="member.avatar" :alt="member.nickname" class="object-cover" /><AvatarFallback class="rounded-xl">{{ initials(member) }}</AvatarFallback></Avatar>
                 <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium">{{ member.nickname }}</p><p class="truncate text-xs text-muted-foreground">@{{ member.username }}</p></div>
                 <template v-if="member.role !== 'OWNER'">
-                  <select class="h-8 rounded-lg border bg-background px-2 text-xs" :value="member.role" :disabled="roleSaving === member.userId" @change="changeRole(member, ($event.target as HTMLSelectElement).value)">
-                    <option value="MANAGER">管理者</option><option value="EDITOR">编辑</option><option value="MEMBER">成员</option>
-                  </select>
+                  <Select
+                    :model-value="member.role"
+                    :disabled="roleSaving === member.userId"
+                    @update:model-value="(value) => changeRole(member, String(value))"
+                  >
+                    <SelectTrigger class="h-8 w-32 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MANAGER">管理者</SelectItem>
+                      <SelectItem value="EDITOR">编辑</SelectItem>
+                      <SelectItem value="MEMBER">成员</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button variant="ghost" size="sm" class="rounded-full text-xs text-destructive hover:text-destructive" @click="removeTarget = member">移除</Button>
                 </template>
                 <Badge v-else variant="secondary" class="rounded-full">创建者</Badge>
@@ -324,7 +351,7 @@
 
       <Dialog v-model:open="deleteOpen">
         <DialogContent class="sm:max-w-sm">
-          <DialogHeader><DialogTitle>删除团队</DialogTitle><DialogDescription>确定删除「{{ team.name }}」？团队、成员、频道和邀请都会被删除，无法恢复。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>删除团队</DialogTitle><DialogDescription>确定删除「{{ team.name }}」？团队、成员、频道、邀请和团队文件都会被删除，且无法恢复。</DialogDescription></DialogHeader>
           <DialogFooter><Button variant="outline" class="rounded-full" @click="deleteOpen = false">取消</Button><Button variant="destructive" class="rounded-full" :disabled="deletingTeam" @click="confirmDelete"><Spinner v-if="deletingTeam" class="mr-2" />删除团队</Button></DialogFooter>
         </DialogContent>
       </Dialog>
@@ -352,15 +379,19 @@ import type { ChannelCard, TeamDetail, TeamLink, TeamMember, TeamUserSearch } fr
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import Markdown from '@/components/Markdown.vue'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const identity = computed(() => String(route.params.identifier || route.params.id || ''))
 const teamId = ref('')
 const team = ref<TeamDetail | null>(null)
@@ -482,10 +513,13 @@ async function handleLogoUpload(event: Event): Promise<void> {
   }
   try {
     const dataUrl = await compressToWebp(file)
-    basicForm.logoUrl = dataUrl
-    toast.success('图片已压缩为 WebP，保存后生效')
-  } catch {
-    toast.error('图片处理失败')
+    const blob = await (await fetch(dataUrl)).blob()
+    const url = await teamApi.uploadLogo(teamId.value, new File([blob], 'logo.webp', { type: 'image/webp' }))
+    basicForm.logoUrl = url
+    if (team.value) team.value.logoUrl = url
+    toast.success('团队 Logo 已上传')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '图片处理失败')
   } finally {
     input.value = ''
   }
@@ -659,7 +693,12 @@ async function confirmTransfer(): Promise<void> {
 async function confirmDelete(): Promise<void> {
   deletingTeam.value = true
   try {
-    await teamApi.deleteTeam(teamId.value)
+    let twoFactorCode: string | undefined
+    if (userStore.profile?.twoFactorEnabled) {
+      twoFactorCode = window.prompt('请输入两步验证码以解散团队') || undefined
+      if (!twoFactorCode) return
+    }
+    await teamApi.deleteTeam(teamId.value, twoFactorCode)
     toast.success('团队已删除')
     await router.replace('/settings/teams')
   } catch (err) {

@@ -4,9 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import AppSidebar from '@/components/AppSidebar.vue'
 import SiteHeader from '@/components/SiteHeader.vue'
+import TraceFab from '@/components/TraceFab.vue'
 import { useSiteStore } from '@/stores/site'
 import { useChatStore } from '@/stores/chat'
-import { channelApi, discoverApi, profileApi } from '@/api'
+import { channelApi, chatApi, discoverApi, favoriteApi, profileApi } from '@/api'
 import {
   SidebarInset,
   SidebarProvider,
@@ -37,6 +38,8 @@ const data = computed(() => ({
     id: item.id,
     name: item.title,
     url: `/chat/${item.id}`,
+    pinned: item.pinned,
+    favorited: item.favorited,
   })),
   navSecondary,
 }))
@@ -93,14 +96,37 @@ function temporaryChat() {
     router.push('/chat/temporary')
 }
 
-async function deleteConversation(item: { id: string, name: string }) {
+async function pinConversation(item: { id: string, name: string, pinned?: boolean }) {
   try {
-    await chatStore.removeConversation(item.id)
-    toast.success('对话已删除')
+    await chatApi.pinConversation(item.id, !item.pinned)
+    await chatStore.loadConversations()
+    toast.success(item.pinned ? '已取消置顶' : '已置顶')
+  } catch (err: any) {
+    toast.error(err?.message || '操作失败')
+  }
+}
+
+async function favoriteConversation(item: { id: string, name: string, favorited?: boolean }) {
+  try {
+    if (item.favorited)
+      await favoriteApi.unfavoriteConversation(item.id)
+    else
+      await favoriteApi.favoriteConversation(item.id)
+    await chatStore.loadConversations()
+    toast.success(item.favorited ? '已取消收藏' : '已收藏')
+  } catch (err: any) {
+    toast.error(err?.message || '操作失败')
+  }
+}
+
+async function archiveConversation(item: { id: string, name: string }) {
+  try {
+    await chatStore.archiveConversation(item.id)
+    toast.success('对话已归档')
     if (String(route.params.conversationId) === String(item.id))
       router.push('/chat')
   } catch (err: any) {
-    toast.error(err?.message || '删除对话失败')
+    toast.error(err?.message || '归档对话失败')
   }
 }
 
@@ -132,7 +158,9 @@ watch(() => route.fullPath, () => {
       :badge_value="'Beta'"
       @new-chat="newChat"
       @temporary-chat="temporaryChat"
-      @delete-conversation="deleteConversation"
+      @archive-conversation="archiveConversation"
+      @pin-conversation="pinConversation"
+      @favorite-conversation="favoriteConversation"
     />
 
     <SidebarInset class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
@@ -142,5 +170,7 @@ watch(() => route.fullPath, () => {
         <router-view />
       </div>
     </SidebarInset>
+
+    <TraceFab />
   </SidebarProvider>
 </template>

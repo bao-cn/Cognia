@@ -31,7 +31,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 @Slf4j
@@ -65,10 +67,12 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         if (!StringUtils.hasText(request.name()) || !StringUtils.hasText(request.baseUrl())) {
             throw BusinessException.badRequest("供应商名称和 API 端点不能为空");
         }
+        String protocol = normalizeProtocol(request.protocol());
         ModelProvider provider = new ModelProvider();
         provider.setName(request.name().trim());
         provider.setVendor(normalizeVendor(request.vendor()));
-        provider.setBaseUrl(client.normalizeBaseUrl(request.baseUrl()));
+        provider.setProtocol(protocol);
+        provider.setBaseUrl(normalizeBaseUrl(request.baseUrl()));
         provider.setApiKey(cryptoService.encrypt(trimToNull(request.apiKey())));
         provider.setEnabled(request.enabled() == null || request.enabled());
         provider.setUpdatedBy(operatorId);
@@ -91,8 +95,11 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         if (request.vendor() != null) {
             provider.setVendor(normalizeVendor(request.vendor()));
         }
+        if (request.protocol() != null) {
+            provider.setProtocol(normalizeProtocol(request.protocol()));
+        }
         if (request.baseUrl() != null) {
-            provider.setBaseUrl(client.normalizeBaseUrl(request.baseUrl()));
+            provider.setBaseUrl(normalizeBaseUrl(request.baseUrl()));
         }
         if (StringUtils.hasText(request.apiKey())) {
             provider.setApiKey(cryptoService.encrypt(request.apiKey().trim()));
@@ -131,20 +138,34 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     @Override
     public List<RemoteModelResponse> fetchRemoteModels(Long providerId) {
         ModelProvider provider = requireProvider(providerId);
-        return fetchRemoteModels(provider.getBaseUrl(), cryptoService.decrypt(provider.getApiKey()));
+        return fetchRemoteModels(provider.getBaseUrl(), cryptoService.decrypt(provider.getApiKey()),
+                provider.protocolOrDefault());
     }
 
     @Override
-    public List<RemoteModelResponse> fetchRemoteModels(String baseUrl, String apiKey) {
+    public List<RemoteModelResponse> fetchRemoteModels(String baseUrl, String apiKey, String protocol) {
         String normalized = client.normalizeBaseUrl(baseUrl);
-        JsonNode response = client.getJson(normalized, "/models", apiKey);
+        JsonNode response;
+        if (ModelProvider.PROTOCOL_ANTHROPIC_MESSAGES.equals(normalizeProtocol(protocol))) {
+            Map<String, String> headers = new LinkedHashMap<>();
+            headers.put("x-api-key", apiKey == null ? "" : apiKey.trim());
+            headers.put("anthropic-version", "2023-06-01");
+            headers.put("Accept", "application/json");
+            response = client.getJson(normalized, "/models?limit=1000", null, headers);
+        } else {
+            response = client.getJson(normalized, "/models", apiKey);
+        }
         JsonNode data = response.path("data");
         List<RemoteModelResponse> result = new ArrayList<>();
         if (data.isArray()) {
             for (JsonNode item : data) {
                 String id = item.path("id").asText(null);
                 if (StringUtils.hasText(id)) {
-                    result.add(new RemoteModelResponse(id, item.path("owned_by").asText(null)));
+                    String owner = item.path("owned_by").asText(null);
+                    if (!StringUtils.hasText(owner)) {
+                        owner = item.path("display_name").asText(null);
+                    }
+                    result.add(new RemoteModelResponse(id, owner));
                 }
             }
         }
@@ -190,7 +211,9 @@ public class ModelConfigServiceImpl implements ModelConfigService {
             model.setSupportsTools(false);
             model.setThinkingEnabled(false);
             model.setSupportsVision(false);
+            model.setSupportsText(true);
             model.setContextWindow(ModelConfig.DEFAULT_CONTEXT_WINDOW);
+            model.setMaxOutputTokens(ModelConfig.DEFAULT_MAX_OUTPUT_TOKENS);
             model.setCreateTime(LocalDateTime.now());
         }
         if (request.displayName() != null) {
@@ -213,6 +236,25 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         }
         if (request.supportsVision() != null) {
             model.setSupportsVision(request.supportsVision());
+        }
+        if (request.supportsText() != null) {
+            model.setSupportsText(request.supportsText());
+        }
+        if (request.reasoningLevels() != null) {
+            String levels = trimToNull(request.reasoningLevels());
+            if (levels != null) {
+                validateReasoningLevels(levels);
+            }
+            model.setReasoningLevels(levels);
+        }
+        if (request.maxOutputTokens() != null) {
+            model.setMaxOutputTokens(request.maxOutputTokens());
+        }
+        if (model.getMaxOutputTokens() == null) {
+            model.setMaxOutputTokens(ModelConfig.DEFAULT_MAX_OUTPUT_TOKENS);
+        }
+        if (model.getSupportsText() == null) {
+            model.setSupportsText(true);
         }
         if (request.reasoningEffort() != null) {
             model.setReasoningEffort(normalizeEffort(request.reasoningEffort()));
@@ -348,10 +390,12 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     private ResolvedModel resolveRequired(ModelConfig model) {
         ModelProvider provider = requireProvider(model.getProviderId());
         return new ResolvedModel(model.getId(), provider.getId(), provider.getName(), provider.getVendor(),
-                provider.getBaseUrl(), cryptoService.decrypt(provider.getApiKey()), model.getModelId(),
-                model.getModelType(), model.supportsTools(), model.thinkingEnabled(), model.supportsVision(),
-                model.getReasoningEffort(), model.getExtraBody(), model.getDimension(),
-                model.contextWindow());
+                provider.getBaseUrl(), cryptoService.decrypt(provider.getApiKey()), provider.protocolOrDefault(),
+                model.getModelId(), model.getModelType(), model.supportsTools(), model.supportsText(),
+                model.thinkingEnabled(), model.supportsVision(),
+                model.getReasoningEffort(),
+                ResolvedModel.parseReasoningLevels(model.getReasoningLevels(), client.mapper()),
+                model.getExtraBody(), model.getDimension(), model.contextWindow(), model.maxOutputTokensOrDefault());
     }
 
     private ModelProvider requireProvider(Long id) {
@@ -372,7 +416,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
 
     private ModelProviderResponse toProvider(ModelProvider provider, long count) {
         return new ModelProviderResponse(provider.getId(), provider.getName(), provider.getVendor(),
-                provider.getBaseUrl(), StringUtils.hasText(provider.getApiKey()), provider.enabled(), count,
+                provider.getBaseUrl(), provider.protocolOrDefault(),
+                StringUtils.hasText(provider.getApiKey()), provider.enabled(), count,
                 siteSettingService.formatDateTime(provider.getCreateTime()),
                 siteSettingService.formatDateTime(provider.getUpdateTime()));
     }
@@ -381,13 +426,53 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         return new ModelConfigResponse(model.getId(), model.getProviderId(),
                 provider == null ? "" : provider.getName(), model.getModelId(), displayName(model),
                 model.getModelType(), model.enabled(), model.visible(), model.supportsTools(),
-                model.thinkingEnabled(), model.supportsVision(), model.getReasoningEffort(), model.getExtraBody(),
-                model.getDimension(), model.getContextWindow(),
+                model.supportsText(), model.thinkingEnabled(), model.supportsVision(),
+                model.getReasoningEffort(), model.getReasoningLevels(), model.getExtraBody(),
+                model.getDimension(), model.getContextWindow(), model.getMaxOutputTokens(),
                 siteSettingService.formatDateTime(model.getUpdateTime()));
     }
 
     private String displayName(ModelConfig model) {
         return StringUtils.hasText(model.getDisplayName()) ? model.getDisplayName() : model.getModelId();
+    }
+
+    private String normalizeProtocol(String protocol) {
+        if (!StringUtils.hasText(protocol)) {
+            return ModelProvider.PROTOCOL_OPENAI_CHAT;
+        }
+        String value = protocol.trim().toUpperCase(Locale.ROOT);
+        return switch (value) {
+            case ModelProvider.PROTOCOL_OPENAI_CHAT,
+                 ModelProvider.PROTOCOL_OPENAI_RESPONSE,
+                 ModelProvider.PROTOCOL_ANTHROPIC_MESSAGES -> value;
+            default -> throw BusinessException.badRequest("未知的供应商协议");
+        };
+    }
+
+    /**
+     * Anthropic's API exposes /v1/messages relative to the host, so the shared
+     * normalizer (which appends /v1) is correct for all three protocols.
+     */
+    private String normalizeBaseUrl(String raw) {
+        return client.normalizeBaseUrl(raw);
+    }
+
+    private void validateReasoningLevels(String json) {
+        try {
+            JsonNode node = client.mapper().readTree(json);
+            if (!node.isArray()) {
+                throw BusinessException.badRequest("推理档位必须是 JSON 数组");
+            }
+            for (JsonNode item : node) {
+                if (!StringUtils.hasText(item.path("label").asText(null))) {
+                    throw BusinessException.badRequest("推理档位缺少名称");
+                }
+            }
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw BusinessException.badRequest("推理档位必须是合法 JSON");
+        }
     }
 
     private String normalizeVendor(String vendor) {

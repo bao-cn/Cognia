@@ -4,7 +4,6 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.Size;
 
 public record UpdateRagSettingRequest(
         Long chatModelId,
@@ -15,13 +14,9 @@ public record UpdateRagSettingRequest(
         @Min(0) @Max(2000) Integer chunkOverlap,
         @Min(1) @Max(100) Integer retrievalTopK,
         @Min(1) @Max(50) Integer retrievalTopN,
-        @Size(max = 512) String webSearchEndpoint,
-        @Size(max = 2048) String webSearchApiKey,
-        Boolean clearWebSearchApiKey,
         Boolean webSearchEnabled,
         Boolean allowUserWebSearch,
         @Min(1) @Max(100) Integer contextCompressionThreshold,
-        @Size(max = 8000) String compressionPrompt,
         Boolean semanticCacheEnabled,
         Boolean retrievalCacheEnabled,
         @DecimalMin("0.5") @DecimalMax("1.0") Double semanticCacheThreshold,

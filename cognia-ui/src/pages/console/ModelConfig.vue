@@ -7,7 +7,7 @@
           模型配置
         </h1>
         <p class="text-sm text-muted-foreground">
-          接入任意 OpenAI 兼容供应商。密钥使用 AES-GCM 加密存储，用户只能使用管理员开放的模型。
+          接入任意 OpenAI 兼容供应商。
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -45,7 +45,7 @@
         <fieldset :disabled="!canUpdate" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
           <div v-if="providers.length === 0" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16">
             <IconPlug class="size-10 text-muted-foreground" />
-            <p class="text-sm text-muted-foreground">还没有供应商，添加一个 OpenAI 兼容端点开始。</p>
+            <p class="text-sm text-muted-foreground">还没有供应商，添加一个 OpenAI 兼容端点以开始。</p>
             <Button size="sm" @click="openProviderDialog()"><IconPlus class="mr-1 size-4" />添加供应商</Button>
           </div>
           <div v-else class="grid gap-4 xl:grid-cols-2">
@@ -57,6 +57,7 @@
                     <Badge :variant="provider.enabled ? 'default' : 'secondary'">
                       {{ provider.enabled ? '已启用' : '已停用' }}
                     </Badge>
+                    <Badge variant="outline">{{ protocolLabel(provider.protocol) }}</Badge>
                   </div>
                   <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ provider.baseUrl }}</p>
                 </div>
@@ -168,7 +169,7 @@
         <DialogHeader>
           <DialogTitle>{{ editingProvider ? '编辑供应商' : '添加供应商' }}</DialogTitle>
           <DialogDescription>
-            支持 OpenAI Chat Completions 兼容接口；填写端点与 Key 后可拉取模型。
+            支持 OpenAI Chat Completions、OpenAI Response 与 Anthropic Messages 协议；填写端点与 Key 后可拉取模型。
           </DialogDescription>
         </DialogHeader>
         <div class="grid gap-4">
@@ -189,6 +190,20 @@
             </Select>
             <p class="text-xs text-muted-foreground">
               选择厂商后，系统会自动注入 thinking / reasoning_effort 等兼容参数。
+            </p>
+          </div>
+          <div class="grid gap-2">
+            <Label for="provider-protocol">协议</Label>
+            <Select v-model="providerForm.protocol">
+              <SelectTrigger id="provider-protocol" class="w-full"><SelectValue placeholder="OpenAI Chat Completions" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="OPENAI_CHAT">OpenAI Chat Completions</SelectItem>
+                <SelectItem value="OPENAI_RESPONSE">OpenAI Response</SelectItem>
+                <SelectItem value="ANTHROPIC_MESSAGES">Anthropic Messages</SelectItem>
+              </SelectContent>
+            </Select>
+            <p class="text-xs text-muted-foreground">
+              决定请求路径与消息体格式；绝大多数 OpenAI 兼容端点使用 Chat Completions。
             </p>
           </div>
           <div class="grid gap-2">
@@ -238,7 +253,10 @@
           </div>
           <label v-for="item in remoteModels" :key="item.id"
             class="flex cursor-pointer items-center gap-3 border-b px-3 py-2 text-sm last:border-b-0 hover:bg-muted/50">
-            <input v-model="selectedRemote" type="checkbox" :value="item.id" class="size-4 accent-primary">
+            <Checkbox
+              :model-value="selectedRemote.includes(item.id)"
+              @update:model-value="(checked) => toggleRemote(item.id, checked === true)"
+            />
             <span class="min-w-0 flex-1 truncate">{{ item.id }}</span>
             <span v-if="item.ownedBy" class="text-xs text-muted-foreground">{{ item.ownedBy }}</span>
             <Badge v-if="existingModelIds.has(item.id)" variant="secondary">已添加</Badge>
@@ -254,12 +272,12 @@
     </Dialog>
 
     <Dialog v-model:open="modelDialogOpen">
-      <DialogContent class="sm:max-w-lg">
+      <DialogContent class="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>编辑模型</DialogTitle>
           <DialogDescription>为单个模型配置可见性、思考模式与厂商扩展参数。</DialogDescription>
         </DialogHeader>
-        <div class="grid gap-4">
+        <div class="grid max-h-[70vh] gap-4 overflow-y-auto pr-1">
           <div class="grid gap-2">
             <Label for="model-name">显示名称</Label>
             <Input id="model-name" v-model="modelForm.displayName" />
@@ -281,10 +299,37 @@
               <Input v-model.number="modelForm.dimension" type="number" placeholder="1536" />
             </div>
           </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="grid gap-2">
+              <Label for="model-context">上下文窗口（tokens）</Label>
+              <Input id="model-context" v-model.number="modelForm.contextWindow" type="number" min="1000" max="2000000" placeholder="32000" />
+              <p class="text-xs text-muted-foreground">用于滑动窗口裁剪与上下文压缩阈值计算，聊天模型必填。</p>
+            </div>
+            <div class="grid gap-2">
+              <Label for="model-max-output">最大输出 token 数</Label>
+              <Input id="model-max-output" v-model.number="modelForm.maxOutputTokens" type="number" min="1" max="1000000" placeholder="4096" />
+              <p class="text-xs text-muted-foreground">单次回复的输出上限，留空使用默认 4096。</p>
+            </div>
+          </div>
           <div class="grid gap-2">
-            <Label>最大上下文长度（tokens）</Label>
-            <Input v-model.number="modelForm.contextWindow" type="number" min="1000" max="2000000" placeholder="32000" />
-            <p class="text-xs text-muted-foreground">用于滑动窗口裁剪与上下文压缩阈值计算，聊天模型必填。</p>
+            <Label>输入类型</Label>
+            <div class="flex flex-wrap items-center gap-6">
+              <label class="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox
+                  :model-value="modelForm.supportsText"
+                  @update:model-value="(checked) => modelForm.supportsText = checked === true"
+                />
+                文本
+              </label>
+              <label class="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox
+                  :model-value="modelForm.supportsVision"
+                  @update:model-value="(checked) => modelForm.supportsVision = checked === true"
+                />
+                图片
+              </label>
+            </div>
+            <p class="text-xs text-muted-foreground">勾选「图片」后允许在对话中上传图片，仅视觉模型可用。</p>
           </div>
           <div class="grid gap-2">
             <Label>推理强度</Label>
@@ -309,11 +354,42 @@
             @update:model-value="modelForm.visible = $event" />
           <SettingSwitchRow title="支持工具调用" :model-value="modelForm.supportsTools"
             @update:model-value="modelForm.supportsTools = $event" />
-          <SettingSwitchRow title="默认开启思考" :model-value="modelForm.thinkingEnabled"
+          <SettingSwitchRow title="默认开启思考" description="开启后默认展示思考过程，并可使用下方推理档位"
+            :model-value="modelForm.thinkingEnabled"
             @update:model-value="modelForm.thinkingEnabled = $event" />
-          <SettingSwitchRow title="支持图片输入（视觉）" description="仅视觉模型允许在对话中上传图片"
-            :model-value="modelForm.supportsVision"
-            @update:model-value="modelForm.supportsVision = $event" />
+          <div class="grid gap-3 rounded-lg border p-4" :class="!modelForm.thinkingEnabled && 'opacity-60'">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="flex flex-col gap-0.5">
+                <Label>推理档位</Label>
+                <p class="text-xs text-muted-foreground">
+                  档位用于界面展示，API 参数值留空则直接使用档位名称；仅思考开启时生效。
+                </p>
+              </div>
+              <Button variant="outline" size="sm" :disabled="!modelForm.thinkingEnabled" @click="addReasoningLevel">
+                <IconPlus class="mr-1 size-4" />添加档位
+              </Button>
+            </div>
+            <div v-if="modelForm.reasoningLevels.length === 0"
+              class="rounded-lg border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+              还没有配置档位，例如 off / low / medium / high。
+            </div>
+            <template v-else>
+              <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 text-xs text-muted-foreground">
+                <span>档位</span>
+                <span>API 参数值</span>
+                <span class="w-8" />
+              </div>
+              <div v-for="(level, index) in modelForm.reasoningLevels" :key="index"
+                class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
+                <Input v-model="level.label" :disabled="!modelForm.thinkingEnabled" placeholder="off / low / medium" />
+                <Input v-model="level.value" :disabled="!modelForm.thinkingEnabled" placeholder="留空则直接使用档位" />
+                <Button variant="ghost" size="icon-sm" title="删除档位" :disabled="!modelForm.thinkingEnabled"
+                  @click="removeReasoningLevel(index)">
+                  <IconTrash class="size-4" />
+                </Button>
+              </div>
+            </template>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" @click="modelDialogOpen = false">取消</Button>
@@ -336,11 +412,13 @@ import {
 import { modelApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import type {
-  ModelConfig, ModelProvider, ModelType, RemoteModel, SaveModelConfigPayload,
+  ModelConfig, ModelProvider, ModelType, ProviderProtocol, ReasoningLevel, RemoteModel,
+  SaveModelConfigPayload, SaveModelProviderPayload,
 } from '@/types/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
@@ -367,7 +445,9 @@ const configs = ref<ModelConfig[]>([])
 const providerDialogOpen = ref(false)
 const editingProvider = ref<ModelProvider | null>(null)
 const providerForm = reactive({
-  name: '', vendor: 'OPENAI', baseUrl: '', apiKey: '', enabled: true,
+  name: '', vendor: 'OPENAI', baseUrl: '',
+  protocol: 'OPENAI_CHAT' as ProviderProtocol,
+  apiKey: '', enabled: true,
 })
 
 const fetchDialogOpen = ref(false)
@@ -375,6 +455,15 @@ const fetchProvider = ref<ModelProvider | null>(null)
 const fetching = ref(false)
 const remoteModels = ref<RemoteModel[]>([])
 const selectedRemote = ref<string[]>([])
+
+function toggleRemote(modelId: string, checked: boolean) {
+  if (checked) {
+    if (!selectedRemote.value.includes(modelId))
+      selectedRemote.value.push(modelId)
+  } else {
+    selectedRemote.value = selectedRemote.value.filter(id => id !== modelId)
+  }
+}
 const bulkType = ref<ModelType>('CHAT')
 
 const modelDialogOpen = ref(false)
@@ -382,7 +471,10 @@ const editingModel = ref<ModelConfig | null>(null)
 const modelForm = reactive({
   displayName: '', modelType: 'CHAT' as ModelType, dimension: undefined as number | undefined,
   contextWindow: 32000 as number | undefined,
+  maxOutputTokens: 4096 as number | undefined,
+  supportsText: true,
   reasoningEffort: '', extraBody: '', enabled: true, visible: true, supportsTools: false, thinkingEnabled: false, supportsVision: false,
+  reasoningLevels: [] as ReasoningLevel[],
 })
 
 const existingModelIds = computed(() => new Set(configs.value.map(item => item.modelId)))
@@ -406,6 +498,7 @@ function openProviderDialog(provider?: ModelProvider) {
   providerForm.name = provider?.name ?? ''
   providerForm.vendor = provider?.vendor || 'OPENAI'
   providerForm.baseUrl = provider?.baseUrl ?? ''
+  providerForm.protocol = provider?.protocol ?? 'OPENAI_CHAT'
   providerForm.apiKey = ''
   providerForm.enabled = provider?.enabled ?? true
   providerDialogOpen.value = true
@@ -418,10 +511,11 @@ async function saveProvider() {
   }
   saving.value = true
   try {
-    const payload = {
+    const payload: SaveModelProviderPayload = {
       name: providerForm.name.trim(),
       vendor: providerForm.vendor,
       baseUrl: providerForm.baseUrl.trim(),
+      protocol: providerForm.protocol,
       apiKey: providerForm.apiKey.trim() || undefined,
       enabled: providerForm.enabled,
     }
@@ -514,12 +608,63 @@ async function toggle(model: ModelConfig, field: 'enabled' | 'visible' | 'suppor
   }
 }
 
+function protocolLabel(protocol?: ProviderProtocol) {
+  if (protocol === 'OPENAI_RESPONSE')
+    return 'Responses'
+  if (protocol === 'ANTHROPIC_MESSAGES')
+    return 'Anthropic'
+  return 'Chat Completions'
+}
+
+function addReasoningLevel() {
+  modelForm.reasoningLevels.push({ label: '' })
+}
+
+function removeReasoningLevel(index: number) {
+  modelForm.reasoningLevels.splice(index, 1)
+}
+
+function parseReasoningLevels(raw?: string | null): ReasoningLevel[] {
+  if (!raw?.trim())
+    return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed))
+      return []
+    return parsed.flatMap<ReasoningLevel>((item) => {
+      if (!item || typeof item !== 'object')
+        return []
+      const record = item as Record<string, unknown>
+      const label = typeof record.label === 'string' ? record.label.trim() : ''
+      if (!label)
+        return []
+      const value = typeof record.value === 'string' && record.value.trim() ? record.value : undefined
+      return [{ label, value }]
+    })
+  } catch {
+    return []
+  }
+}
+
+function serializeReasoningLevels(rows: ReasoningLevel[]) {
+  const normalized = rows.flatMap<ReasoningLevel>((row) => {
+    const label = row.label.trim()
+    if (!label)
+      return []
+    const value = row.value?.trim()
+    return [value ? { label, value } : { label }]
+  })
+  return normalized.length ? JSON.stringify(normalized) : ''
+}
+
 function openModelDialog(model: ModelConfig) {
   editingModel.value = model
   modelForm.displayName = model.displayName
   modelForm.modelType = model.modelType
   modelForm.dimension = model.dimension
   modelForm.contextWindow = model.contextWindow ?? 32000
+  modelForm.maxOutputTokens = model.maxOutputTokens ?? 4096
+  modelForm.supportsText = model.supportsText ?? true
   modelForm.reasoningEffort = model.reasoningEffort ?? ''
   modelForm.extraBody = model.extraBody ?? ''
   modelForm.enabled = model.enabled
@@ -527,6 +672,7 @@ function openModelDialog(model: ModelConfig) {
   modelForm.supportsTools = model.supportsTools
   modelForm.thinkingEnabled = model.thinkingEnabled
   modelForm.supportsVision = !!model.supportsVision
+  modelForm.reasoningLevels = parseReasoningLevels(model.reasoningLevels)
   modelDialogOpen.value = true
 }
 
@@ -535,6 +681,10 @@ async function saveModel() {
     return
   saving.value = true
   try {
+    const maxOutput = Number(modelForm.maxOutputTokens)
+    const maxOutputTokens = Number.isFinite(maxOutput) && maxOutput >= 1
+      ? Math.min(Math.round(maxOutput), 1000000)
+      : undefined
     await modelApi.saveConfig({
       providerId: editingModel.value.providerId,
       modelId: editingModel.value.modelId,
@@ -543,12 +693,15 @@ async function saveModel() {
       enabled: modelForm.enabled,
       visible: modelForm.visible,
       supportsTools: modelForm.supportsTools,
+      supportsText: modelForm.supportsText,
       thinkingEnabled: modelForm.thinkingEnabled,
       supportsVision: modelForm.supportsVision,
       reasoningEffort: modelForm.reasoningEffort || undefined,
+      reasoningLevels: serializeReasoningLevels(modelForm.reasoningLevels),
       extraBody: modelForm.extraBody.trim() || undefined,
       dimension: modelForm.dimension,
       contextWindow: modelForm.contextWindow,
+      maxOutputTokens,
     })
     toast.success('模型已更新')
     modelDialogOpen.value = false

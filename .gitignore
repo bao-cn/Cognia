@@ -45,3 +45,12 @@ cognia-ui/.env.*.local
 
 ### AI / local agent instructions ###
 AGENT.md
+
+### Local test artifacts / secrets ###
+.tmp/
+.2fa.json
+.token
+.token2
+.token3
+.tokens
+.tmp-ui*/

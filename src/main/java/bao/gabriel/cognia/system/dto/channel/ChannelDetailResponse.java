@@ -8,6 +8,7 @@ public record ChannelDetailResponse(
         List<ChannelDocumentResponse> documents,
         boolean canWrite,
         boolean canManage,
-        boolean canNotify
+        boolean canNotify,
+        boolean canViewInsights
 ) {
 }

@@ -118,4 +118,9 @@ public class NotificationSseServiceImpl implements NotificationSseService {
             // Already completed.
         }
     }
+
+    @Override
+    public long onlineCount() {
+        return emitters.values().stream().filter(list -> !list.isEmpty()).count();
+    }
 }

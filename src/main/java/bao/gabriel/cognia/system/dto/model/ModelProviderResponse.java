@@ -5,6 +5,7 @@ public record ModelProviderResponse(
         String name,
         String vendor,
         String baseUrl,
+        String protocol,
         boolean apiKeyConfigured,
         boolean enabled,
         long modelCount,

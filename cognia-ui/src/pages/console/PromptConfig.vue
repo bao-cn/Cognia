@@ -103,6 +103,33 @@
 
         <section class="rounded-xl border bg-card">
           <header class="flex flex-col gap-1 border-b px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="text-sm font-semibold">上下文压缩</h2>
+              <Badge variant="secondary">必填</Badge>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              对话上下文占用达到压缩阈值时，使用该提示词把历史对话压缩为摘要，再继续回答。
+            </p>
+          </header>
+          <div class="p-4">
+            <Textarea
+              id="compression-prompt"
+              v-model="form.compressionPrompt"
+              :rows="5"
+              :placeholder="compressionPlaceholder"
+              :aria-invalid="compressionPromptError ? true : undefined"
+            />
+            <p v-if="compressionPromptError" class="mt-2 text-xs text-destructive">
+              {{ compressionPromptError }}
+            </p>
+            <p class="mt-2 text-xs text-muted-foreground">
+              压缩触发阈值与上下文窗口在「检索参数配置」中调整；留空无法保存，恢复默认会还原为后端内置提示词。
+            </p>
+          </div>
+        </section>
+
+        <section class="rounded-xl border bg-card">
+          <header class="flex flex-col gap-1 border-b px-4 py-3">
             <h2 class="text-sm font-semibold">提示词预览</h2>
             <p class="text-xs text-muted-foreground">
               实际下发时会按顺序拼接以下内容；检索结果会以 Retrieved knowledge 区块自动追加在末尾。
@@ -123,7 +150,7 @@
         <DialogHeader>
           <DialogTitle>恢复默认 Prompt？</DialogTitle>
           <DialogDescription>
-            当前配置会被内置默认值覆盖，保存后立即影响新对话。此操作不可撤销。
+            当前配置将恢复为默认设置，保存后立即影响新对话。此操作不可撤销。
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -138,7 +165,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { IconRefresh, IconTool } from '@tabler/icons-vue'
 import { promptApi } from '@/api'
@@ -170,13 +197,26 @@ const error = ref('')
 const updatedAt = ref('')
 const originalSnapshot = ref('')
 const resetOpen = ref(false)
+const compressionPromptError = ref('')
+const defaultCompressionPrompt = ref('')
+const compressionPlaceholder = computed(
+  () => defaultCompressionPrompt.value || '请将以下对话压缩为简洁摘要，保留事实、决定、未完成事项与用户偏好……',
+)
 
 const form = reactive<PromptSettings>({
   systemPrompt: '',
   ragPrompt: '',
   expiredPrompt: '',
   toolPrompt: '',
+  compressionPrompt: '',
 })
+
+watch(
+  () => form.compressionPrompt,
+  () => {
+    if (compressionPromptError.value) compressionPromptError.value = ''
+  },
+)
 
 const isDirty = computed(() => JSON.stringify(buildPayload()) !== originalSnapshot.value)
 
@@ -193,6 +233,7 @@ function buildPayload(): UpdatePromptSettingsPayload {
     ragPrompt: form.ragPrompt?.trim() ?? '',
     expiredPrompt: form.expiredPrompt?.trim() ?? '',
     toolPrompt: form.toolPrompt?.trim() ?? '',
+    compressionPrompt: form.compressionPrompt?.trim() ?? '',
   }
 }
 
@@ -201,8 +242,18 @@ function applySettings(settings: PromptSettings) {
   form.ragPrompt = settings.ragPrompt ?? ''
   form.expiredPrompt = settings.expiredPrompt ?? ''
   form.toolPrompt = settings.toolPrompt ?? ''
+  form.compressionPrompt = settings.compressionPrompt ?? ''
   updatedAt.value = settings.updatedAt ?? ''
   originalSnapshot.value = JSON.stringify(buildPayload())
+}
+
+async function loadDefaults() {
+  try {
+    const defaults = await promptApi.defaults()
+    defaultCompressionPrompt.value = defaults.compressionPrompt ?? ''
+  } catch {
+    // 仅用于占位提示，加载失败时继续使用本地兜底文案。
+  }
 }
 
 async function loadSettings() {
@@ -220,6 +271,11 @@ async function loadSettings() {
 async function saveSettings() {
   if (!form.systemPrompt.trim()) {
     toast.error('系统提示词不能为空')
+    return
+  }
+  if (!(form.compressionPrompt ?? '').trim()) {
+    compressionPromptError.value = '上下文压缩提示词不能为空'
+    toast.error('上下文压缩提示词不能为空')
     return
   }
   saving.value = true
@@ -250,5 +306,6 @@ async function resetDefaults() {
 
 onMounted(() => {
   void loadSettings()
+  void loadDefaults()
 })
 </script>

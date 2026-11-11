@@ -1,7 +1,5 @@
 package bao.gabriel.cognia.system.dto.model;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 
 public record SaveModelProviderRequest(
@@ -10,6 +8,8 @@ public record SaveModelProviderRequest(
         @Size(max = 512) String baseUrl,
         @Size(max = 2048) String apiKey,
         Boolean clearApiKey,
-        Boolean enabled
+        Boolean enabled,
+        /** OPENAI_CHAT | OPENAI_RESPONSE | ANTHROPIC_MESSAGES */
+        @Size(max = 32) String protocol
 ) {
 }

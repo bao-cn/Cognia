@@ -15,9 +15,16 @@ const props = defineProps<{
     <h4 v-if="title" class="truncate font-medium text-sm leading-tight">
       {{ title }}
     </h4>
-    <p v-if="url" class="truncate break-all text-muted-foreground text-xs">
+    <a
+      v-if="url"
+      :href="url"
+      target="_blank"
+      rel="noreferrer"
+      class="block truncate break-all text-xs text-muted-foreground underline-offset-4 hover:underline"
+    >
       {{ url }}
-    </p>
+      <span class="sr-only"> (opens in a new tab)</span>
+    </a>
     <p v-if="description" class="line-clamp-3 text-muted-foreground text-sm leading-relaxed">
       {{ description }}
     </p>

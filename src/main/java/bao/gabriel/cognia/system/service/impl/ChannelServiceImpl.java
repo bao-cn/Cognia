@@ -103,7 +103,8 @@ public class ChannelServiceImpl implements ChannelService {
                 .stream().map(this::toFolder).toList();
         List<ChannelDocumentResponse> documents = documents(channelId, viewerId, null);
         return new ChannelDetailResponse(toSummary(channel, viewerId), folders, documents,
-                access.write(), access.manage(), access.member() || access.write());
+                access.write(), access.manage(), access.member() || access.write(),
+                access.member() || access.write());
     }
 
     @Override
@@ -495,6 +496,27 @@ public class ChannelServiceImpl implements ChannelService {
                         .ne(KbDocument::getStatus, DocumentStateMachine.DocumentStatus.DELETED.name())
                         .orderByDesc(KbDocument::getCreateTime))
                 .stream().map(this::toDocument).toList();
+    }
+
+    @Override
+    public DocumentContent documentContent(Long documentId, Long viewerId) {
+        KbDocument document = documentId == null ? null : documentMapper.selectById(documentId);
+        if (document == null || DocumentStateMachine.DocumentStatus.DELETED.name().equals(document.getStatus())) {
+            throw BusinessException.notFound("文档不存在");
+        }
+        Channel channel = requireChannel(document.getChannelId());
+        if (!access(channel, viewerId).read()) {
+            throw BusinessException.notFound("文档不存在");
+        }
+        try {
+            byte[] bytes = storageService.readObject(document.getObjectKey());
+            String contentType = StringUtils.hasText(document.getContentType())
+                    ? document.getContentType() : "application/octet-stream";
+            return new DocumentContent(document.getName(), contentType, bytes);
+        } catch (RuntimeException ex) {
+            log.warn("Unable to read document {}: {}", documentId, ex.getMessage());
+            throw BusinessException.notFound("文档内容不可用");
+        }
     }
 
     @Override

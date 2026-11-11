@@ -42,8 +42,32 @@ export const userApi = {
   resetPassword(id: string, newPassword: string): Promise<void> {
     return http.put<void>(`/users/${id}/password`, { newPassword })
   },
-  updateMe(payload: { nickname?: string; avatar?: string }): Promise<UserProfile> {
+  updateMe(payload: { username?: string; nickname?: string; avatar?: string }): Promise<UserProfile> {
     return http.put<UserProfile>('/users/me', payload)
+  },
+  updatePreferences(payload: { autoWebSearch: boolean }): Promise<UserProfile> {
+    return http.put<UserProfile>('/users/me/preferences', payload)
+  },
+  setMyPassword(payload: { newPassword: string; twoFactorCode?: string }): Promise<UserProfile> {
+    return http.post<UserProfile>('/users/me/password/set', payload)
+  },
+  setupTwoFactor(): Promise<{ secret: string; otpauthUri: string }> {
+    return http.post<{ secret: string; otpauthUri: string }>('/users/me/two-factor/setup')
+  },
+  enableTwoFactor(code: string): Promise<UserProfile> {
+    return http.post<UserProfile>('/users/me/two-factor/enable', { code })
+  },
+  disableTwoFactor(code: string): Promise<UserProfile> {
+    return http.post<UserProfile>('/users/me/two-factor/disable', { code })
+  },
+  sendEmailChangeCode(email: string): Promise<{ message: string; ttlSeconds: number; resendIntervalSeconds: number; devCode?: string }> {
+    return http.post('/users/me/email/code', { email })
+  },
+  updateEmail(payload: { email: string; code: string; twoFactorCode?: string }): Promise<UserProfile> {
+    return http.put<UserProfile>('/users/me/email', payload)
+  },
+  deleteMe(payload: { password?: string; twoFactorCode?: string }): Promise<void> {
+    return http.post<void>('/users/me/delete', payload)
   },
   uploadAvatar(file: Blob): Promise<UserProfile> {
     const form = new FormData()
@@ -53,7 +77,7 @@ export const userApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
-  changeMyPassword(payload: { oldPassword: string; newPassword: string }): Promise<void> {
+  changeMyPassword(payload: { oldPassword: string; newPassword: string; twoFactorCode?: string }): Promise<void> {
     return http.put<void>('/users/me/password', payload)
   },
 }

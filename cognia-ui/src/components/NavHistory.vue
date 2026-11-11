@@ -3,9 +3,14 @@ import { ref } from "vue"
 import { toast } from "vue-sonner"
 import {
   IconDots,
-  IconTrash,
+  IconArchive,
   IconMessagePlus,
   IconChevronDown,
+  IconPin,
+  IconPinned,
+  IconPinFilled,
+  IconStar,
+  IconStarFilled,
 } from "@tabler/icons-vue"
 
 import {
@@ -28,13 +33,20 @@ interface HistoryItem {
   id: string
   name: string
   url: string
+  pinned?: boolean
+  favorited?: boolean
 }
 
 defineProps<{
   items: HistoryItem[]
 }>()
 
-const emit = defineEmits<{ 'new': []; 'delete': [item: HistoryItem] }>()
+const emit = defineEmits<{
+  'new': []
+  'archive': [item: HistoryItem]
+  'pin': [item: HistoryItem]
+  'favorite': [item: HistoryItem]
+}>()
 
 const { isMobile } = useSidebar()
 const isMenuCollapsed = ref(false)
@@ -74,7 +86,9 @@ const isMenuCollapsed = ref(false)
           <SidebarMenuItem v-for="item in items" :key="item.id">
             <SidebarMenuButton as-child>
               <router-link :to="item.url" class="min-w-0">
-                <span class="truncate">{{ item.name }}</span>
+                <IconPinFilled v-if="item.pinned" class="size-3 shrink-0 text-primary" />
+                <span data-i18n-skip class="truncate">{{ item.name }}</span>
+                <IconStarFilled v-if="item.favorited" class="size-3 shrink-0 text-amber-500" />
               </router-link>
             </SidebarMenuButton>
             <DropdownMenu>
@@ -83,11 +97,21 @@ const isMenuCollapsed = ref(false)
                   <IconDots />
                 </SidebarMenuAction>
               </DropdownMenuTrigger>
-              <DropdownMenuContent class="w-24 rounded-lg" :side="isMobile ? 'bottom' : 'right'"
+              <DropdownMenuContent class="w-40 rounded-lg" :side="isMobile ? 'bottom' : 'right'"
                 :align="isMobile ? 'end' : 'start'">
-                <DropdownMenuItem variant="destructive" @click="emit('delete', item)">
-                  <IconTrash />
-                  <span>删除</span>
+                <DropdownMenuItem @click="emit('pin', item)">
+                  <IconPinned v-if="item.pinned" />
+                  <IconPin v-else />
+                  <span>{{ item.pinned ? '取消置顶' : '置顶' }}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="emit('favorite', item)">
+                  <IconStarFilled v-if="item.favorited" class="text-amber-500" />
+                  <IconStar v-else />
+                  <span>{{ item.favorited ? '取消收藏' : '收藏' }}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="emit('archive', item)">
+                  <IconArchive />
+                  <span>归档</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

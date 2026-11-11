@@ -8,6 +8,8 @@ import bao.gabriel.cognia.system.entity.StorageSetting;
 import bao.gabriel.cognia.system.mapper.StorageSettingMapper;
 import bao.gabriel.cognia.system.service.MinioStorageService;
 import bao.gabriel.cognia.system.service.SiteSettingService;
+import io.minio.CopyObjectArgs;
+import io.minio.CopySource;
 import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
@@ -83,6 +85,38 @@ public class MinioStorageServiceImpl implements MinioStorageService {
     }
 
     @Override
+    public StoredObjectResponse uploadChatImage(MultipartFile file, String key, UploadProgressListener listener) {
+        StorageSetting setting = requireEnabledSetting();
+        validateTempFile(file, setting);
+        if (key == null || key.isBlank() || key.startsWith("/") || key.contains("..")) {
+            throw BusinessException.badRequest("对象 Key 不合法");
+        }
+        return put(setting, file, key, contentType(file), listener);
+    }
+
+    @Override
+    public void copyChatImage(String sourceKey, String targetKey) {
+        StorageSetting setting = requireEnabledSetting();
+        validateObjectKey(sourceKey);
+        validateObjectKey(targetKey);
+        try {
+            buildClient(setting).copyObject(CopyObjectArgs.builder()
+                    .bucket(setting.getBucket())
+                    .object(targetKey)
+                    .source(CopySource.builder().bucket(setting.getBucket()).object(sourceKey).build())
+                    .build());
+        } catch (Exception ex) {
+            throw BusinessException.badRequest("图片归档失败：" + describe(ex));
+        }
+    }
+
+    private void validateObjectKey(String key) {
+        if (key == null || key.isBlank() || key.startsWith("/") || key.contains("..") || key.contains("\\")) {
+            throw BusinessException.badRequest("对象 Key 不合法");
+        }
+    }
+
+    @Override
     public StoredObjectResponse uploadBytesAtKey(byte[] bytes, String key, String contentType) {
         StorageSetting setting = requireEnabledSetting();
         if (bytes == null) {
@@ -120,20 +154,29 @@ public class MinioStorageServiceImpl implements MinioStorageService {
     }
 
     @Override
-    public StoredObjectResponse uploadAvatar(Long ownerId, MultipartFile file) {
+    public StoredObjectResponse uploadAvatar(String ownerHandle, Long ownerId, MultipartFile file) {
         StorageSetting setting = requireEnabledSetting();
         if (file == null || file.isEmpty()) {
             throw BusinessException.badRequest("头像文件不能为空");
         }
         String type = contentType(file);
         if (!"image/webp".equalsIgnoreCase(type)) {
-            throw BusinessException.badRequest("头像请先转换为 WebP 格式");
+            String name = file.getOriginalFilename();
+            if (name != null && name.toLowerCase().endsWith(".webp")) {
+                type = "image/webp";
+            } else {
+                throw BusinessException.badRequest("头像请先转换为 WebP 格式");
+            }
         }
         long maxBytes = (long) setting.maxFileSizeMb() * 1024L * 1024L;
         if (file.getSize() > maxBytes) {
             throw BusinessException.badRequest("头像大小不能超过 " + setting.maxFileSizeMb() + " MB");
         }
-        String key = "avatar/" + ownerId + ".webp";
+        String handle = ownerHandle == null || ownerHandle.isBlank() ? String.valueOf(ownerId) : ownerHandle.trim();
+        if (!handle.matches("[A-Za-z0-9._-]{1,64}")) {
+            throw BusinessException.badRequest("头像标识不合法");
+        }
+        String key = "avatar/" + handle + "/avatar.webp";
         StoredObjectResponse stored = put(setting, file, key, "image/webp", UploadProgressListener.NOOP);
         // Avatars are rendered by <img> tags without an Authorization header,
         // so persist a stable same-origin URL and let the public avatar

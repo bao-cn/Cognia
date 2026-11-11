@@ -66,7 +66,7 @@ const isMenuCollapsed = ref(false)
             <SidebarMenuButton as-child>
               <router-link :to="item.url" class="min-w-0">
                 <IconRss />
-                <span class="truncate">{{ item.name }}</span>
+                <span data-i18n-skip class="truncate">{{ item.name }}</span>
               </router-link>
             </SidebarMenuButton>
             <DropdownMenu>

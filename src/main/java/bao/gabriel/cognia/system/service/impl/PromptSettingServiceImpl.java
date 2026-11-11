@@ -28,6 +28,12 @@ public class PromptSettingServiceImpl implements PromptSettingService {
                     + "state its expiration time, and must not present it as a current fact.";
     public static final String DEFAULT_TOOL_PROMPT =
             "Use web_search and web_fetch when current external information is needed, and cite the sources you used.";
+    public static final String DEFAULT_COMPRESSION_PROMPT =
+            "请把下面的多轮对话历史压缩成一段简洁的中文摘要，要求：\n"
+                    + "1. 保留用户的目标、已确认的事实、关键结论与未完成的事项；\n"
+                    + "2. 保留对话中出现的人名、专有名词、数字、时间等关键信息；\n"
+                    + "3. 删除寒暄、重复内容和无关细节；\n"
+                    + "4. 只输出摘要正文，不要加标题或解释。";
 
     private static final long CACHE_TTL_MS = 10_000;
 
@@ -87,6 +93,13 @@ public class PromptSettingServiceImpl implements PromptSettingService {
         if (request.toolPrompt() != null) {
             setting.setToolPrompt(trimToNull(request.toolPrompt()));
         }
+        if (request.compressionPrompt() != null) {
+            String value = request.compressionPrompt().trim();
+            if (!StringUtils.hasText(value)) {
+                throw BusinessException.badRequest("上下文压缩提示词不能为空");
+            }
+            setting.setCompressionPrompt(value);
+        }
         setting.setUpdatedBy(operatorId);
         setting.setUpdateTime(LocalDateTime.now());
         mapper.updateById(setting);
@@ -113,6 +126,7 @@ public class PromptSettingServiceImpl implements PromptSettingService {
         setting.setRagPrompt(DEFAULT_RAG_PROMPT);
         setting.setExpiredPrompt(DEFAULT_EXPIRED_PROMPT);
         setting.setToolPrompt(DEFAULT_TOOL_PROMPT);
+        setting.setCompressionPrompt(DEFAULT_COMPRESSION_PROMPT);
         setting.setUpdateTime(LocalDateTime.now());
     }
 
@@ -122,6 +136,7 @@ public class PromptSettingServiceImpl implements PromptSettingService {
                 setting.getRagPrompt(),
                 setting.getExpiredPrompt(),
                 setting.getToolPrompt(),
+                setting.getCompressionPrompt(),
                 setting.getUpdateTime() == null ? null : siteSettingService.formatDateTime(setting.getUpdateTime()));
     }
 

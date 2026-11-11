@@ -9,6 +9,8 @@ public record ChatAttachmentRequest(
         String name,
         String mimeType,
         String dataUrl,
-        String text
+        String text,
+        String url,
+        String key
 ) {
 }

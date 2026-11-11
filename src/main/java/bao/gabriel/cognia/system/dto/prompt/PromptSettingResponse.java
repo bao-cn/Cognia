@@ -5,6 +5,7 @@ public record PromptSettingResponse(
         String ragPrompt,
         String expiredPrompt,
         String toolPrompt,
+        String compressionPrompt,
         String updatedAt
 ) {
 }

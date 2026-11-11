@@ -60,6 +60,7 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("audit:read", "查看审计日志", "API", "/api/v1/audit-logs", "GET", 60),
             new PermissionSeed("task:read", "查看计划任务", "API", "/api/v1/scheduled-tasks", "GET", 61),
             new PermissionSeed("task:update", "修改计划任务", "API", "/api/v1/scheduled-tasks", "PUT", 62),
+                new PermissionSeed("dashboard:read", "查看运营看板", "API", "/api/v1/admin/dashboard", "GET", 65),
             new PermissionSeed("team:read", "查看团队", "API", "/api/v1/admin/teams", "GET", 63),
             new PermissionSeed("team:update", "管理团队", "API", "/api/v1/admin/teams", "DELETE", 64),
             new PermissionSeed("model:read", "查看模型配置", "API", "/api/v1/admin/models", "GET", 65),
@@ -67,7 +68,11 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("rag:read", "查看检索参数", "API", "/api/v1/admin/rag", "GET", 67),
             new PermissionSeed("rag:update", "修改检索参数", "API", "/api/v1/admin/rag", "PUT", 68),
             new PermissionSeed("discover:read", "查看发现广场", "API", "/api/v1/discover", "GET", 69),
-            new PermissionSeed("discover:update", "管理精选频道", "API", "/api/v1/discover", "PUT", 70)
+            new PermissionSeed("discover:update", "管理精选频道", "API", "/api/v1/discover", "PUT", 70),
+            new PermissionSeed("tool:read", "查看工具配置", "API", "/api/v1/admin/tools", "GET", 71),
+            new PermissionSeed("tool:update", "修改工具配置", "API", "/api/v1/admin/tools", "PUT", 72),
+            new PermissionSeed("trace:read", "查看开发链路", "API", "/api/v1/admin/traces", "GET", 73),
+            new PermissionSeed("trace:write", "清理开发链路", "API", "/api/v1/admin/traces", "DELETE", 74)
     );
 
     private final InitProperties initProperties;

@@ -21,6 +21,7 @@ public class PromptSetting {
     private String ragPrompt;
     private String expiredPrompt;
     private String toolPrompt;
+    private String compressionPrompt;
     private Long updatedBy;
     private LocalDateTime updateTime;
 }

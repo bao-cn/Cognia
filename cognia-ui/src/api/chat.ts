@@ -1,4 +1,5 @@
-import type { ChatCapabilities, ChatConversation, ChatConversationDetail, PublicChatModel } from '@/types/api'
+import type { ChatCapabilities, ChatConversation, ChatConversationDetail, CitationSource, PublicChatModel } from '@/types/api'
+export type { CitationSource }
 import { http } from './http'
 import { getAccessToken } from '@/utils/token'
 
@@ -15,11 +16,15 @@ export interface ChatAttachmentPayload {
   mimeType?: string
   dataUrl?: string
   text?: string
+  url?: string
+  key?: string
 }
 
 export interface ChatAttachmentResult extends ChatAttachmentPayload {
   kind: 'IMAGE' | 'TEXT'
   size: number
+  url?: string
+  key?: string
 }
 
 export interface ChatStreamPayload {
@@ -32,6 +37,12 @@ export interface ChatStreamPayload {
   temporary?: boolean
   webSearch?: boolean
   attachments?: ChatAttachmentPayload[]
+  regenerate?: boolean
+  editMessageIndex?: number
+  debug?: boolean
+  debugTopK?: number
+  debugRerankEnabled?: boolean
+  debugToolsEnabled?: boolean
 }
 
 export interface ChatCacheInfo {
@@ -56,10 +67,13 @@ export interface ChatStreamHandlers {
   onStart?: (data: { model: string, provider: string, supportsTools: boolean, supportsVision?: boolean, conversationId?: string }) => void
   onCache?: (data: ChatCacheInfo) => void
   onContext?: (data: ChatContextInfo) => void
+  onCitations?: (sources: CitationSource[]) => void
   onReasoning?: (delta: string) => void
   onText?: (delta: string) => void
   onTool?: (data: { id?: string, name: string, status: string, arguments?: string, output?: string }) => void
-  onDone?: () => void
+  onDone?: (data: { assistantMessageId?: string }) => void
+  onTruncated?: (message: string) => void
+  onTrace?: (traceId: string) => void
   onError?: (message: string) => void
 }
 
@@ -68,9 +82,10 @@ export const chatApi = {
     return http.get<PublicChatModel[]>('/chat/models')
   },
 
-  uploadAttachment(file: File): Promise<ChatAttachmentResult> {
+  uploadAttachment(file: File, conversationId?: string | null): Promise<ChatAttachmentResult> {
     const form = new FormData()
     form.append('file', file)
+    if (conversationId) form.append('conversationId', conversationId)
     return http.post<ChatAttachmentResult>('/chat/attachments', form, {
       timeout: 180000,
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -81,16 +96,24 @@ export const chatApi = {
     return http.get<ChatCapabilities>('/chat/capabilities')
   },
 
-  conversations(): Promise<ChatConversation[]> {
-    return http.get<ChatConversation[]>('/chat/conversations')
+  conversations(archived = false): Promise<ChatConversation[]> {
+    return http.get<ChatConversation[]>('/chat/conversations', { params: { archived } })
   },
 
   conversation(id: string | number): Promise<ChatConversationDetail> {
     return http.get<ChatConversationDetail>(`/chat/conversations/${id}`)
   },
 
-  deleteConversation(id: string | number): Promise<void> {
-    return http.delete<void>(`/chat/conversations/${id}`)
+  pinConversation(id: string | number, pinned: boolean): Promise<void> {
+    return http.put<void>(`/chat/conversations/${id}/pin`, { pinned })
+  },
+
+  archiveConversation(id: string | number, archived = true): Promise<void> {
+    return http.put<void>(`/chat/conversations/${id}/archive`, { archived })
+  },
+
+  forkConversation(id: string | number, messageIndex: number): Promise<ChatConversationDetail> {
+    return http.post<ChatConversationDetail>(`/chat/conversations/${id}/fork`, { messageIndex })
   },
 
   async stream(payload: ChatStreamPayload, handlers: ChatStreamHandlers, signal?: AbortSignal): Promise<void> {
@@ -138,10 +161,13 @@ export const chatApi = {
           case 'start': handlers.onStart?.(event); break
           case 'cache': handlers.onCache?.(event); break
           case 'context': handlers.onContext?.(event); break
+          case 'citations': handlers.onCitations?.(event.sources ?? []); break
           case 'reasoning': handlers.onReasoning?.(event.delta ?? ''); break
           case 'text': handlers.onText?.(event.delta ?? ''); break
           case 'tool': handlers.onTool?.(event); break
-          case 'done': handlers.onDone?.(); break
+          case 'done': handlers.onDone?.(event); break
+          case 'truncated': handlers.onTruncated?.(event.message ?? '生成已停止，请重新尝试'); break
+          case 'trace': if (event.traceId) handlers.onTrace?.(String(event.traceId)); break
           case 'error': handlers.onError?.(event.message ?? '模型请求失败'); break
         }
       }
