@@ -1,0 +1,11 @@
+.git
+.gitignore
+.idea
+.vscode
+target
+cognia-ui
+docs
+*.log
+.env
+.env.*
+!.env.example
