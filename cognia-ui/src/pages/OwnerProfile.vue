@@ -19,7 +19,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import {
   IconPlus, IconPencil, IconLink, IconBrandGithub, IconMail, IconCamera,
-  IconMapPin, IconBuilding, IconClock, IconUsers, IconBook, IconPin,
+  IconMapPin, IconBuilding, IconClock, IconUsers, IconPin,
   IconFolder, IconArrowUpRight, IconShieldCheck, IconId,
 } from '@tabler/icons-vue'
 
@@ -275,8 +275,7 @@ watch(identity, load)
                 <IconCamera v-else class="size-4" />
               </Button>
             </div>
-          <section class="overflow-hidden rounded-xl border bg-card">
-            
+          <section class="overflow-hidden rounded-xl">
             <div class="px-4 pb-4">
               <div class="mt-3 flex flex-col gap-1">
                 <div class="flex flex-wrap items-center gap-2">
@@ -296,12 +295,14 @@ watch(identity, load)
                 <Button v-if="profile.canEdit && !isTeam" variant="outline" size="sm" class="w-full" @click="openEdit">
                   <IconPencil class="mr-1 size-4" />编辑资料
                 </Button>
+                <!-- 
                 <Button v-if="profile.canEdit" size="sm" class="w-full" @click="openCreate">
                   <IconPlus class="mr-1 size-4" />新建频道
                 </Button>
+                 -->
               </div>
 
-              <div class="mt-4 flex flex-col gap-2 border-t pt-4 text-sm">
+              <div class="mt-4 flex flex-col gap-2 pt-4 text-sm">
                 <div v-if="profile.company" class="flex items-center gap-2 text-muted-foreground">
                   <IconBuilding class="size-4" /><span>{{ profile.company }}</span>
                 </div>
@@ -319,7 +320,7 @@ watch(identity, load)
                 </div>
               </div>
 
-              <div v-if="profile.links.length" class="mt-4 flex flex-col gap-1 border-t pt-3">
+              <div v-if="profile.links.length" class="mt-4 flex flex-col gap-1 pt-3">
                 <a v-for="link in profile.links" :key="link.url" :href="link.url" target="_blank"
                   rel="noopener noreferrer"
                   class="flex items-center gap-2 rounded-md px-1 py-1 text-sm text-muted-foreground hover:text-foreground">
@@ -340,11 +341,11 @@ watch(identity, load)
             </div>
           </section>
 
-          <section v-if="profile.teams.length" class="rounded-xl border bg-card">
-            <header class="border-b px-4 py-3"><h2 class="text-sm font-semibold">团队</h2></header>
+          <section v-if="profile.teams.length" class="rounded-xl">
+            <header class="border-t px-4 py-3"><h2 class="text-sm font-semibold">团队</h2></header>
             <div class="flex flex-col divide-y">
               <button v-for="team in profile.teams" :key="team.id" type="button"
-                class="flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/50"
+                class="flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/50 hover:rounded-md"
                 @click="goTeam(team.slug)">
                 <Avatar class="size-8"><AvatarImage :src="team.logoUrl || '/logo.png'" /><AvatarFallback>{{ team.name.slice(0, 1) }}</AvatarFallback></Avatar>
                 <div class="min-w-0 flex-1">
@@ -358,9 +359,6 @@ watch(identity, load)
 
         <div class="flex min-w-0 flex-col gap-4">
           <section v-if="profile.readme" class="rounded-xl border bg-card">
-            <header class="border-b px-4 py-3">
-              <h2 class="flex items-center gap-2 text-sm font-semibold"><IconBook class="size-4" />README</h2>
-            </header>
             <div class="p-4">
               <Markdown :text="profile.readme" />
             </div>

@@ -48,29 +48,25 @@
         </div>
       </section>
 
-      <div class="flex gap-1 overflow-x-auto border-b">
+      <div class="flex flex-wrap items-center gap-1 border-b">
         <button
           v-for="tab in visibleTabs"
           :key="tab.value"
           type="button"
-          class="relative shrink-0 px-4 py-2.5 text-sm transition"
+          class="relative flex shrink-0 items-center px-3 py-2.5 text-sm transition sm:px-4"
           :class="activeTab === tab.value ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'"
           @click="activeTab = tab.value"
         >
-          <component :is="tab.icon" class="mr-1.5 inline size-4" />
+          <component :is="tab.icon" class="mr-1.5 size-4 shrink-0" />
           {{ tab.label }}
-          <span v-if="activeTab === tab.value" class="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-primary" />
+          <span v-if="activeTab === tab.value" class="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary sm:inset-x-3" />
         </button>
       </div>
 
       <!-- 介绍 -->
       <div v-if="activeTab === 'overview'" class="flex flex-col gap-5">
         <section v-if="team.readme" class="rounded-2xl border bg-card p-5 md:p-6">
-          <div class="flex items-center gap-2 border-b pb-3">
-            <IconBook class="size-4 text-muted-foreground" />
-            <h2 class="text-sm font-semibold">团队 README</h2>
-          </div>
-          <div class="mt-4 text-sm leading-7"><Markdown :text="team.readme" /></div>
+          <div class="text-sm leading-7"><Markdown :text="team.readme" /></div>
         </section>
 
         <section v-if="pinnedChannels.length" class="rounded-2xl border bg-card p-5">
@@ -111,7 +107,7 @@
         <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 class="text-lg font-semibold">团队频道</h2>
-            <p class="mt-1 text-xs text-muted-foreground">团队成员可以看到全部频道；非成员只能看到公开频道。</p>
+            <p class="mt-1 text-xs text-muted-foreground">该组织的全部频道</p>
           </div>
           <Button v-if="team.canCreateChannel" class="rounded-full" @click="createChannel">
             <IconHash class="mr-1.5 size-4" />
@@ -120,8 +116,8 @@
         </div>
         <div v-if="!kbChannels.length" class="flex flex-col items-center gap-2 rounded-2xl border border-dashed px-4 py-14 text-center">
           <IconHash class="size-8 text-muted-foreground" />
-          <p class="text-sm font-medium">还没有频道</p>
-          <p class="text-xs text-muted-foreground">频道由团队所有者或编辑创建，创建后团队成员可以上传文档。</p>
+          <p class="text-sm font-medium">暂无频道</p>
+          <p class="text-xs text-muted-foreground">该组织还没有创建频道</p>
         </div>
         <div v-else class="grid gap-3 md:grid-cols-2">
           <article v-for="channel in kbChannels" :key="channel.id"
@@ -147,7 +143,7 @@
       <div v-else-if="activeTab === 'people'" class="flex flex-col gap-4">
         <div>
           <h2 class="text-lg font-semibold">团队成员</h2>
-          <p class="mt-1 text-xs text-muted-foreground">这里展示团队的全部成员。成员权限管理在设置中进行。</p>
+          <p class="mt-1 text-xs text-muted-foreground">该组织的全部成员</p>
         </div>
         <div class="overflow-hidden rounded-2xl border bg-card">
           <div v-for="member in team.members" :key="member.userId" class="flex items-center gap-3 border-b p-4 last:border-b-0">
@@ -189,14 +185,14 @@
                   <img :src="basicForm.logoUrl || '/logo.png'" alt="团队 Logo" class="size-14 rounded-xl object-cover ring-1 ring-border" />
                   <label class="inline-flex h-9 cursor-pointer items-center rounded-full border px-3 text-xs transition hover:bg-muted">
                     <IconUpload class="mr-1.5 size-3.5" />
-                    上传并压缩为 WebP
+                    上传
                     <input type="file" accept="image/*" class="hidden" @change="handleLogoUpload" />
                   </label>
                 </div>
-                <p class="text-xs text-muted-foreground">图片会在浏览器中压缩为 WebP，最长边 256px。</p>
+                <p class="text-xs text-muted-foreground">256 x 256</p>
               </div>
               <div class="grid gap-2">
-                <Label>自定义链接（最多 4 个）</Label>
+                <Label>自定义链接</Label>
                 <div v-for="(link, index) in basicForm.links" :key="index" class="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
                   <Input v-model="link.label" maxlength="24" placeholder="名称" />
                   <Input v-model="link.url" maxlength="512" placeholder="https://..." />
