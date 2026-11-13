@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${DB_USER:-cognia}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-cognia}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/10-vector.sql:ro
     ports:
       - "5432:5432"
