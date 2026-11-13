@@ -307,13 +307,13 @@
                 <input ref="attachmentInput" type="file" multiple class="hidden"
                   accept="image/jpeg,image/gif,image/png,image/webp,.pdf,.docx,.xlsx,.pptx,.txt,.md,.markdown,.csv,.json,.html,.htm"
                   @change="onAttachmentInput">
-                <InputGroupButton v-if="capabilities.allowUserWebSearch" type="button" size="sm" variant="outline"
+                <InputGroupButton v-if="capabilities.allowUserWebSearch" type="button" size="sm" variant="ghost"
                   class="rounded-full" :aria-pressed="webSearch" @click="webSearch = !webSearch">
                   <GlobeIcon class="size-4" />联网搜索
                 </InputGroupButton>
                 <Popover v-model:open="channelPickerOpen">
                   <PopoverTrigger as-child>
-                    <InputGroupButton size="sm" variant="outline" class="rounded-full" aria-label="选择知识库频道">
+                    <InputGroupButton size="sm" variant="ghost" class="rounded-full" aria-label="选择知识库频道">
                       <DatabaseIcon class="size-4" />
                       知识库
                       <Badge v-if="channelIds.length" variant="secondary" class="ml-1 h-4 px-1 text-[10px]">{{ channelIds.length }}</Badge>
@@ -346,7 +346,7 @@
                 <div class="flex-1"></div>
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
-                    <InputGroupButton size="sm" variant="outline" :aria-label="`Model: ${currentModel?.name || '未选择'}`"
+                    <InputGroupButton size="sm" variant="ghost" :aria-label="`Model: ${currentModel?.name || '未选择'}`"
                       class="ml-auto rounded-full">
                       {{ currentModel?.name || '未配置模型' }}
                       <ChevronDownIcon />
@@ -368,9 +368,8 @@
                 </DropdownMenu>
                 <DropdownMenu v-if="currentModel?.thinking">
                   <DropdownMenuTrigger as-child>
-                    <InputGroupButton size="sm" variant="outline" :aria-label="`Effort: ${currentEffort.name}`"
+                    <InputGroupButton size="sm" variant="ghost" :aria-label="`Effort: ${currentEffort.name}`"
                       class="rounded-full">
-                      <span class="text-muted-foreground">推理强度</span>
                       {{ currentEffort.name }}
                       <ChevronDownIcon />
                     </InputGroupButton>
@@ -421,6 +420,29 @@
                   <p>本次：{{ cacheHitLabel }}<span v-if="cacheInfo?.hitType === 'SEMANTIC'">（相似度 {{ ((cacheInfo?.similarity ?? 0) * 100).toFixed(1) }}%）</span></p>
                   <p v-if="cacheInfo?.cacheKey">key：{{ cacheInfo.cacheKey }}</p>
                   <p>累计命中：{{ cacheInfo?.hits ?? 0 }} / {{ cacheInfo?.requests ?? 0 }} 次请求</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip v-if="usageInfo">
+                <TooltipTrigger as-child>
+                  <div class="flex cursor-default items-center gap-1.5">
+                    <div class="relative size-9">
+                      <svg viewBox="0 0 20 20" class="size-9 -rotate-90">
+                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2" class="text-muted/40" />
+                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-emerald-500 transition-[stroke-dashoffset] duration-500" :stroke-dasharray="ringLength" :stroke-dashoffset="usageRingOffset" />
+                      </svg>
+                      <span class="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">{{ usagePercent }}%</span>
+                    </div>
+                    <div class="leading-tight">
+                      <p>KV 缓存</p>
+                      <p class="text-muted-foreground">{{ usageInfo.cacheHitTokens.toLocaleString() }} / {{ (usageInfo.cacheHitTokens + usageInfo.cacheMissTokens).toLocaleString() }} tokens</p>
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" class="max-w-64 text-xs">
+                  <p>Prompt tokens：{{ usageInfo.promptTokens.toLocaleString() }}</p>
+                  <p>Completion tokens：{{ usageInfo.completionTokens.toLocaleString() }}</p>
+                  <p>缓存命中：{{ usageInfo.cacheHitTokens.toLocaleString() }} tokens</p>
+                  <p>缓存未命中：{{ usageInfo.cacheMissTokens.toLocaleString() }} tokens</p>
                 </TooltipContent>
               </Tooltip>
               <Tooltip>
@@ -555,7 +577,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { chatApi, channelApi, discoverApi, favoriteApi, profileApi } from '@/api'
-import type { ChatAttachmentPayload, ChatAttachmentResult, ChatCacheInfo, ChatContextInfo, CitationSource } from '@/api/chat'
+import type { ChatAttachmentPayload, ChatAttachmentResult, ChatCacheInfo, ChatContextInfo, ChatUsageInfo, CitationSource } from '@/api/chat'
 import CitationMarkdown from '@/components/CitationMarkdown.vue'
 import CitationPreviewDialog from '@/components/CitationPreviewDialog.vue'
 import MessageCitations from '@/components/MessageCitations.vue'
@@ -613,6 +635,7 @@ const temporary = computed(() => route.name === 'ChatTemporary')
 const capabilities = ref<ChatCapabilities>({ webSearchEnabled: false, allowUserWebSearch: false, webSearchAvailable: false })
 const cacheInfo = ref<ChatCacheInfo | null>(null)
 const contextInfo = ref<ChatContextInfo | null>(null)
+const usageInfo = ref<ChatUsageInfo | null>(null)
 const webSearch = ref(Boolean(userStore.profile?.autoWebSearch))
 const draft = ref<string | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
@@ -625,6 +648,13 @@ const contextPercent = computed(() => Math.round(Math.max(0, Math.min(100, conte
 const ringLength = 2 * Math.PI * 8
 const cacheRingOffset = computed(() => ringLength * (1 - cachePercent.value / 100))
 const contextRingOffset = computed(() => ringLength * (1 - contextPercent.value / 100))
+const usagePercent = computed(() => {
+  const value = usageInfo.value
+  if (!value) return 0
+  const total = value.cacheHitTokens + value.cacheMissTokens
+  return total > 0 ? Math.round((value.cacheHitTokens / total) * 100) : 0
+})
+const usageRingOffset = computed(() => ringLength * (1 - usagePercent.value / 100))
 const cacheHitLabel = computed(() => cacheInfo.value?.hitType === 'SEMANTIC'
   ? '语义缓存'
   : cacheInfo.value?.hitType === 'RETRIEVAL' ? '检索缓存' : '未命中')
@@ -755,6 +785,9 @@ async function restoreArchived() {
 
 async function onSubmit(options: { regenerate?: boolean } = {}) {
   mentionOpen.value = false
+  cacheInfo.value = null
+  contextInfo.value = null
+  usageInfo.value = null
   if (!canSend.value || !currentModel.value)
     return
   const pendingAttachments = [...chatAttachments.value]
@@ -821,6 +854,9 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
       },
       onContext: (data) => {
         contextInfo.value = data
+      },
+      onUsage: (data) => {
+        usageInfo.value = data
       },
       onCitations: (sources) => {
         assistant.citations = sources
@@ -1231,6 +1267,7 @@ function resetConversation() {
   setActiveConversation(null, temporary.value ? '临时对话' : '新对话')
   cacheInfo.value = null
   contextInfo.value = null
+  usageInfo.value = null
   status.value = 'ready'
   draft.value = ''
   editingIndex.value = null
@@ -1241,10 +1278,19 @@ async function loadConversation(id: string) {
     const detail: ChatConversationDetail = await chatApi.conversation(id)
     cacheInfo.value = null
     contextInfo.value = null
+    usageInfo.value = null
     conversationId.value = String(detail.id)
     archived.value = Boolean(detail.archived)
     setActiveConversation(conversationId.value, detail.title)
     channelIds.value = detail.channelIds ?? []
+    const lastMetrics = [...detail.messages].reverse()
+      .find(message => message.role === 'assistant' && message.metrics)?.metrics
+    if (lastMetrics?.cache)
+      cacheInfo.value = lastMetrics.cache as ChatCacheInfo
+    if (lastMetrics?.context)
+      contextInfo.value = lastMetrics.context as ChatContextInfo
+    if (lastMetrics?.usage)
+      usageInfo.value = lastMetrics.usage as ChatUsageInfo
     messages.value = detail.messages.map((message, index) => ({
       id: `${message.role}-${index}`,
       serverId: message.id,

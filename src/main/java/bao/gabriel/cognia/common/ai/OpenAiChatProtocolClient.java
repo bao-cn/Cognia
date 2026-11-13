@@ -66,6 +66,7 @@ public class OpenAiChatProtocolClient implements ChatProtocolClient {
         body.put("model", model.modelId());
         body.set("messages", request.messages() == null ? mapper.createArrayNode() : request.messages());
         body.put("stream", true);
+        body.putObject("stream_options").put("include_usage", true);
         body.put("max_tokens", model.maxOutputTokensOrDefault());
         applyReasoning(body, model, request.effort());
         if (request.includeTools() && request.tools() != null && !request.tools().isEmpty()) {
@@ -106,6 +107,10 @@ public class OpenAiChatProtocolClient implements ChatProtocolClient {
         StringBuilder content = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
         Map<Integer, ToolCall> calls = new TreeMap<>();
+        Integer promptTokens = null;
+        Integer completionTokens = null;
+        Integer cacheHitTokens = null;
+        Integer cacheMissTokens = null;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -123,6 +128,13 @@ public class OpenAiChatProtocolClient implements ChatProtocolClient {
                     continue;
                 }
                 listener.onRawChunk(payload);
+                JsonNode usage = chunk.path("usage");
+                if (usage.isObject()) {
+                    promptTokens = intOrNull(usage, "prompt_tokens");
+                    completionTokens = intOrNull(usage, "completion_tokens");
+                    cacheHitTokens = intOrNull(usage, "prompt_cache_hit_tokens");
+                    cacheMissTokens = intOrNull(usage, "prompt_cache_miss_tokens");
+                }
                 JsonNode choice = chunk.path("choices").path(0);
                 JsonNode delta = choice.path("delta");
                 String text = delta.path("content").asText("");
@@ -139,16 +151,14 @@ public class OpenAiChatProtocolClient implements ChatProtocolClient {
                     listener.onReasoning(thinking);
                 }
                 collectToolCalls(delta.path("tool_calls"), calls);
-                if (!choice.path("finish_reason").asText("").isEmpty()) {
-                    break;
-                }
             }
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
             throw BusinessException.badRequest(FAILED + ex.getMessage());
         }
-        return new Result(content.toString(), reasoning.toString(), assembleCalls(calls, mapper));
+        return new Result(content.toString(), reasoning.toString(), assembleCalls(calls, mapper),
+                promptTokens, completionTokens, cacheHitTokens, cacheMissTokens);
     }
 
     private void collectToolCalls(JsonNode items, Map<Integer, ToolCall> calls) {
@@ -227,6 +237,11 @@ public class OpenAiChatProtocolClient implements ChatProtocolClient {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private Integer intOrNull(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isNumber() ? value.asInt() : null;
     }
 
     private static final class ToolCall {

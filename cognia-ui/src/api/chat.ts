@@ -63,10 +63,18 @@ export interface ChatContextInfo {
   droppedMessages?: number
 }
 
+export interface ChatUsageInfo {
+  promptTokens: number
+  completionTokens: number
+  cacheHitTokens: number
+  cacheMissTokens: number
+}
+
 export interface ChatStreamHandlers {
   onStart?: (data: { model: string, provider: string, supportsTools: boolean, supportsVision?: boolean, conversationId?: string }) => void
   onCache?: (data: ChatCacheInfo) => void
   onContext?: (data: ChatContextInfo) => void
+  onUsage?: (data: ChatUsageInfo) => void
   onCitations?: (sources: CitationSource[]) => void
   onReasoning?: (delta: string) => void
   onText?: (delta: string) => void
@@ -161,6 +169,7 @@ export const chatApi = {
           case 'start': handlers.onStart?.(event); break
           case 'cache': handlers.onCache?.(event); break
           case 'context': handlers.onContext?.(event); break
+          case 'usage': handlers.onUsage?.(event); break
           case 'citations': handlers.onCitations?.(event.sources ?? []); break
           case 'reasoning': handlers.onReasoning?.(event.delta ?? ''); break
           case 'text': handlers.onText?.(event.delta ?? ''); break

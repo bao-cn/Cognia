@@ -49,9 +49,18 @@ public class WebToolService {
      * configured endpoint: there is no implicit third-party fallback.
      */
     public ArrayNode toolDefinitions() {
+        return toolDefinitions(true, true);
+    }
+
+    /**
+     * Declares only the tools allowed for this request. The chat-level web
+     * switch gates both search and fetch; the admin tool switch gates each
+     * capability independently.
+     */
+    public ArrayNode toolDefinitions(boolean includeSearch, boolean includeFetch) {
         ArrayNode tools = mapper.createArrayNode();
         ToolSetting setting = toolSettingService.getSetting();
-        if (setting.webSearchUsable()) {
+        if (includeSearch && setting.webSearchUsable()) {
             ObjectNode search = tools.addObject();
             search.put("type", "function");
             ObjectNode searchFn = search.putObject("function");
@@ -65,7 +74,7 @@ public class WebToolService {
                     .put("description", "1-10, default " + setting.maxResultsOr(5));
             searchParams.putArray("required").add("query");
         }
-        if (!setting.webFetchEnabled()) {
+        if (!includeFetch || !setting.webFetchEnabled()) {
             return tools;
         }
 

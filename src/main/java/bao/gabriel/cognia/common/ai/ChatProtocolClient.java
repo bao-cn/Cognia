@@ -54,6 +54,12 @@ public interface ChatProtocolClient {
      * @param toolCalls assembled calls in OpenAI shape, ready to append to the
      *                  assistant message
      */
-    record Result(String content, String reasoning, ArrayNode toolCalls) {
+    record Result(String content, String reasoning, ArrayNode toolCalls,
+                  Integer promptTokens, Integer completionTokens,
+                  Integer promptCacheHitTokens, Integer promptCacheMissTokens) {
+
+        public Result(String content, String reasoning, ArrayNode toolCalls) {
+            this(content, reasoning, toolCalls, null, null, null, null);
+        }
     }
 }

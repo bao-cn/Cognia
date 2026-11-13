@@ -19,6 +19,10 @@ public interface ChatConversationService {
     Long append(String conversationId, Long userId, String role, String content, String reasoning,
                 String citationsJson, String attachmentsJson);
 
+    void updateLatestUserContext(String conversationId, Long userId, String contextText);
+
+    void updateMessageMetrics(String conversationId, Long userId, Long messageId, String metricsJson);
+
     default Long append(String conversationId, Long userId, String role, String content, String reasoning) {
         return append(conversationId, userId, role, content, reasoning, null, null);
     }

@@ -21,5 +21,8 @@ public class ChatMessage {
     private String reasoning;
     private String citationsJson;
     private String attachmentsJson;
+    /** Hidden RAG block injected into this user turn; replayed verbatim for prefix-cache stability. */
+    private String contextText;
+    private String metricsJson;
     private LocalDateTime createTime;
 }

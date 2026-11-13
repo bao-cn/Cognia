@@ -34,5 +34,7 @@ public class MetricEvent {
     private Integer embeddingTokens;
     private Integer retrievalDurationMs;
     private Integer rerankDurationMs;
+    private Integer promptCacheHitTokens;
+    private Integer promptCacheMissTokens;
     private LocalDateTime createTime;
 }

@@ -1080,6 +1080,8 @@ CREATE INDEX IF NOT EXISTS idx_sys_favorite_user
     ON sys_favorite (user_id, create_time DESC);
 
 ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS attachments_json TEXT;
+ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS context_text TEXT;
+ALTER TABLE chat_message ADD COLUMN IF NOT EXISTS metrics_json TEXT;
 
 -- ---------------------------------------------------------------------------
 -- Config convergence: prompt compression belongs to prompts, web search
@@ -1183,8 +1185,12 @@ CREATE TABLE IF NOT EXISTS sys_metric_event (
     embedding_tokens INTEGER NOT NULL DEFAULT 0,
     retrieval_duration_ms INTEGER NOT NULL DEFAULT 0,
     rerank_duration_ms INTEGER NOT NULL DEFAULT 0,
+    prompt_cache_hit_tokens INTEGER NOT NULL DEFAULT 0,
+    prompt_cache_miss_tokens INTEGER NOT NULL DEFAULT 0,
     create_time TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE sys_metric_event ADD COLUMN IF NOT EXISTS prompt_cache_hit_tokens INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sys_metric_event ADD COLUMN IF NOT EXISTS prompt_cache_miss_tokens INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_metric_event_type_time ON sys_metric_event(event_type, create_time DESC);
 CREATE INDEX IF NOT EXISTS idx_metric_event_user ON sys_metric_event(user_id, create_time DESC);
 CREATE INDEX IF NOT EXISTS idx_metric_event_channel ON sys_metric_event(channel_id, create_time DESC);

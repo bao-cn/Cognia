@@ -36,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -123,8 +124,9 @@ public class ChatConversationServiceImpl implements ChatConversationService {
                 .map(message -> new ConversationMessageResponse(String.valueOf(message.getId()), message.getRole(),
                         message.getContent(), message.getReasoning(),
                         usedCitations(message.getContent(), parseCitations(message.getCitationsJson())),
-                        parseAttachments(message.getAttachmentsJson()),
-                        format(message.getCreateTime()), favoriteMessages.contains(message.getId())))
+                        parseAttachments(message.getAttachmentsJson()), message.getContextText(),
+                        format(message.getCreateTime()), favoriteMessages.contains(message.getId()),
+                        parseMetrics(message.getMetricsJson())))
                 .toList();
         return new ConversationDetailResponse(conversation.getPublicId(), conversation.getTitle(),
                 conversation.getModelId(), splitIds(conversation.getChannelIds()), messages,
@@ -149,6 +151,22 @@ public class ChatConversationServiceImpl implements ChatConversationService {
         conversation.setUpdateTime(message.getCreateTime());
         conversationMapper.updateById(conversation);
         return message.getId();
+    }
+
+    @Override
+    @Transactional
+    public void updateLatestUserContext(String conversationId, Long userId, String contextText) {
+        ChatConversation conversation = requireActive(conversationId, userId);
+        ChatMessage last = messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getConversationId, conversation.getId())
+                .eq(ChatMessage::getRole, "user")
+                .orderByDesc(ChatMessage::getId)
+                .last("LIMIT 1"));
+        if (last == null) {
+            return;
+        }
+        last.setContextText(contextText);
+        messageMapper.updateById(last);
     }
 
     @Override
@@ -219,6 +237,8 @@ public class ChatConversationServiceImpl implements ChatConversationService {
             copy.setContent(original.getContent());
             copy.setReasoning(original.getReasoning());
             copy.setCitationsJson(original.getCitationsJson());
+            copy.setContextText(original.getContextText());
+            copy.setMetricsJson(original.getMetricsJson());
             copy.setCreateTime(LocalDateTime.now());
             messageMapper.insert(copy);
         }
@@ -461,6 +481,33 @@ public class ChatConversationServiceImpl implements ChatConversationService {
         } catch (Exception ex) {
             log.warn("Failed to parse attachments", ex);
             return java.util.List.of();
+        }
+    }
+
+    @Override
+    @Transactional
+    public void updateMessageMetrics(String conversationId, Long userId, Long messageId, String metricsJson) {
+        ChatConversation conversation = requireActive(conversationId, userId);
+        if (messageId == null || !StringUtils.hasText(metricsJson)) {
+            return;
+        }
+        ChatMessage message = messageMapper.selectById(messageId);
+        if (message == null || !conversation.getId().equals(message.getConversationId())) {
+            return;
+        }
+        message.setMetricsJson(metricsJson);
+        messageMapper.updateById(message);
+    }
+
+    private Map<String, Object> parseMetrics(String json) {
+        if (!StringUtils.hasText(json)) {
+            return Map.of();
+        }
+        try {
+            return JSON.readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception ex) {
+            log.debug("Ignoring malformed message metrics: {}", ex.getMessage());
+            return Map.of();
         }
     }
 }

@@ -121,6 +121,9 @@ public class ChatServiceImpl implements ChatService {
         int metricLlmRounds = 0;
         int metricInputTokens = 0;
         int metricOutputTokens = 0;
+        int metricPromptCacheHitTokens = 0;
+        int metricPromptCacheMissTokens = 0;
+        int metricCompletionTokens = 0;
         boolean metricRefused = false;
         String metricStatus = "SUCCESS";
         String metricErrorType = null;
@@ -277,13 +280,15 @@ public class ChatServiceImpl implements ChatService {
                 if (conversation != null) {
                     cachedMessageId = conversationService.append(conversationPublicId, userId, "assistant",
                             cachedAnswer, "", citationsJson(cachedCitations), null);
+                    conversationService.updateMessageMetrics(conversationPublicId, userId, cachedMessageId,
+                            metricsJson(hitType, similarity, cacheKey, emptyContext(model, setting), 0, 0, 0));
                     if (newConversation) {
                         conversationService.generateTitleAsync(conversationPublicId, model.id(), lastUser, cachedAnswer);
                     }
                 }
                 metricOutputTokens = estimateTokens(cachedAnswer);
                 metricRefused = isRefusal(cachedAnswer);
-                send(emitter, event("text").put("delta", cachedAnswer));
+                streamCachedAnswer(emitter, cachedAnswer);
                 send(emitter, doneEvent(hitType, similarity, cacheKey, cachedMessageId));
                 emitter.complete();
                 return;
@@ -332,7 +337,11 @@ public class ChatServiceImpl implements ChatService {
             List<CitationSource> allSources = new ArrayList<>(sources);
             send(emitter, citationsEvent(allSources));
             long promptStart = System.nanoTime();
-            ArrayNode messages = buildMessages(request, userId, chunks, conversationPublicId);
+            String knowledge = knowledgeBlock(chunks);
+            ArrayNode messages = buildMessages(request, userId, knowledge, conversationPublicId);
+            if (conversation != null && StringUtils.hasText(knowledge)) {
+                conversationService.updateLatestUserContext(conversationPublicId, userId, knowledge);
+            }
             bao.gabriel.cognia.system.entity.PromptSetting promptSetting = promptSettingService.getSetting();
             ContextWindowManager.Prepared prepared = contextWindowManager.prepare(messages, model,
                     setting.contextCompressionThreshold(), promptSetting.getCompressionPrompt());
@@ -343,7 +352,10 @@ public class ChatServiceImpl implements ChatService {
             }
 
             String effort = model.thinkingEnabled() ? request.effort() : null;
-            boolean toolsAvailable = model.supportsTools() && toolsUsable(setting, request);
+            boolean webSearchTool = webSearchAllowed(setting, request) && toolSettingService.webSearchUsable();
+            boolean webFetchTool = webAccessAllowed(setting, request) && toolSettingService.webFetchEnabled();
+            boolean toolsAvailable = model.supportsTools() && webToolsEnabled(request)
+                    && (webSearchTool || webFetchTool);
             StringBuilder answer = new StringBuilder();
             StringBuilder reasoning = new StringBuilder();
             java.util.Set<String> seenToolCalls = new java.util.HashSet<>();
@@ -358,11 +370,29 @@ public class ChatServiceImpl implements ChatService {
                 }
                 long llmStart = System.nanoTime();
                 metricLlmRounds++;
-                StreamOutcome outcome = streamCompletion(model, messages, effort, emitter, includeTools, trace);
+                StreamOutcome outcome = streamCompletion(model, messages, effort, emitter, includeTools,
+                        webSearchTool, webFetchTool, trace);
                 if (trace != null) {
                     trace.stage("llm.round" + round, llmStart, "SUCCESS");
                 }
                 reasoning.append(outcome.reasoning());
+                if (outcome.promptCacheHitTokens() != null) {
+                    metricPromptCacheHitTokens += outcome.promptCacheHitTokens();
+                }
+                if (outcome.promptCacheMissTokens() != null) {
+                    metricPromptCacheMissTokens += outcome.promptCacheMissTokens();
+                }
+                if (outcome.completionTokens() != null) {
+                    metricCompletionTokens += outcome.completionTokens();
+                }
+                if (trace != null && (outcome.promptCacheHitTokens() != null
+                        || outcome.promptCacheMissTokens() != null)) {
+                    trace.put("llm", "usage", java.util.Map.of(
+                            "promptTokens", outcome.promptTokens() == null ? 0 : outcome.promptTokens(),
+                            "completionTokens", outcome.completionTokens() == null ? 0 : outcome.completionTokens(),
+                            "promptCacheHitTokens", outcome.promptCacheHitTokens() == null ? 0 : outcome.promptCacheHitTokens(),
+                            "promptCacheMissTokens", outcome.promptCacheMissTokens() == null ? 0 : outcome.promptCacheMissTokens()));
+                }
                 if (outcome.toolCalls().isEmpty()) {
                     answer.append(outcome.content());
                     break;
@@ -434,6 +464,9 @@ public class ChatServiceImpl implements ChatService {
             if (conversation != null) {
                 assistantMessageId = conversationService.append(conversation.getPublicId(), userId, "assistant",
                         answer.toString(), reasoning.toString(), citationsJson(allSources), null);
+                conversationService.updateMessageMetrics(conversation.getPublicId(), userId, assistantMessageId,
+                        metricsJson(hitType, similarity, cacheKey, prepared,
+                                metricPromptCacheHitTokens, metricPromptCacheMissTokens, metricCompletionTokens));
                 if (newConversation || (editing && request.editMessageIndex() != null
                         && request.editMessageIndex() == 0)) {
                     conversationService.generateTitleAsync(conversation.getPublicId(), model.id(),
@@ -455,11 +488,20 @@ public class ChatServiceImpl implements ChatService {
                 trace.put("output", "citations", allSources.size());
                 trace.put("output", "citationCheck", citationCheck(allSources, answer.toString()));
                 trace.put("output", "source", "LLM");
+                trace.put("llm", "cacheHitTokens", metricPromptCacheHitTokens);
+                trace.put("llm", "cacheMissTokens", metricPromptCacheMissTokens);
                 trace.stage("postprocess", System.nanoTime(), "SUCCESS");
                 chatTraceService.finish(trace, "SUCCESS", answer.toString());
             }
-            metricOutputTokens = estimateTokens(answer.toString());
+            metricOutputTokens = metricCompletionTokens > 0 ? metricCompletionTokens : estimateTokens(answer.toString());
             metricRefused = isRefusal(answer.toString());
+            if (metricPromptCacheHitTokens + metricPromptCacheMissTokens > 0) {
+                send(emitter, event("usage")
+                        .put("promptTokens", metricPromptCacheHitTokens + metricPromptCacheMissTokens)
+                        .put("completionTokens", metricOutputTokens)
+                        .put("cacheHitTokens", metricPromptCacheHitTokens)
+                        .put("cacheMissTokens", metricPromptCacheMissTokens));
+            }
             send(emitter, doneEvent(hitType, similarity, cacheKey, assistantMessageId));
             emitter.complete();
         } catch (Exception ex) {
@@ -486,7 +528,7 @@ public class ChatServiceImpl implements ChatService {
                     0, metricLlmRounds, metricRefused,
                     metricInputTokens, metricOutputTokens,
                     metricRetrievalUsed ? estimateTokens(lastUserMessage(request)) : 0,
-                    metricRetrievalMs, 0);
+                    metricRetrievalMs, 0, metricPromptCacheHitTokens, metricPromptCacheMissTokens);
             if (stampedeLock != null && stampedeLock.isHeldByCurrentThread()) {
                 stampedeLock.unlock();
             }
@@ -518,6 +560,71 @@ public class ChatServiceImpl implements ChatService {
             return embedded == null ? null : embedded.vector();
         } catch (Exception ex) {
             log.warn("Query embedding failed, semantic cache skipped: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+
+
+    /**
+     * Semantic-cache hits still need to look like a live answer on the wire.
+     * Emit the cached text as small SSE deltas instead of one large chunk so
+     * the browser can render markdown incrementally and keep its stream
+     * affordances.
+     */
+    private void streamCachedAnswer(SseEmitter emitter, String answer) throws Exception {
+        if (!StringUtils.hasText(answer)) {
+            return;
+        }
+        int length = answer.codePointCount(0, answer.length());
+        int chunkSize = 12;
+        for (int start = 0; start < length; start += chunkSize) {
+            int end = Math.min(length, start + chunkSize);
+            int from = answer.offsetByCodePoints(0, start);
+            int to = answer.offsetByCodePoints(0, end);
+            send(emitter, event("text").put("delta", answer.substring(from, to)));
+            try {
+                Thread.sleep(12);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private String metricsJson(String hitType, double similarity, String cacheKey,
+                               ContextWindowManager.Prepared prepared,
+                               int promptCacheHitTokens, int promptCacheMissTokens, int completionTokens) {
+        try {
+            RagCacheService.Stats stats = ragCacheService.stats();
+            ObjectNode root = mapper.createObjectNode();
+            ObjectNode cache = root.putObject("cache");
+            cache.put("hitType", hitType);
+            cache.put("similarity", round(similarity));
+            if (cacheKey != null) {
+                cache.put("cacheKey", cacheKey);
+            }
+            cache.put("hits", stats.hits());
+            cache.put("requests", stats.requests());
+            cache.put("hitRate", stats.hitRate());
+            ObjectNode context = root.putObject("context");
+            context.put("usedTokens", prepared.usedTokens());
+            context.put("maxTokens", prepared.maxTokens());
+            context.put("percent", prepared.maxTokens() > 0
+                    ? Math.round(prepared.usedTokens() * 100.0 / prepared.maxTokens()) : 0);
+            context.put("compressionThreshold", Math.round(prepared.compressionThreshold() * 100));
+            context.put("compressed", prepared.compressed());
+            context.put("droppedMessages", prepared.droppedMessages());
+            if (promptCacheHitTokens + promptCacheMissTokens > 0) {
+                ObjectNode usage = root.putObject("usage");
+                usage.put("promptTokens", promptCacheHitTokens + promptCacheMissTokens);
+                usage.put("completionTokens", completionTokens);
+                usage.put("cacheHitTokens", promptCacheHitTokens);
+                usage.put("cacheMissTokens", promptCacheMissTokens);
+            }
+            return mapper.writeValueAsString(root);
+        } catch (Exception ex) {
+            log.debug("Message metrics serialization skipped: {}", ex.getMessage());
             return null;
         }
     }
@@ -803,20 +910,17 @@ public class ChatServiceImpl implements ChatService {
         return context.toString();
     }
 
+    private boolean webToolsEnabled(ChatRequest request) {
+        return !Boolean.FALSE.equals(request.debugToolsEnabled());
+    }
+
     /**
-     * Web search is only exposed when the platform enables it, the user did not
-     * opt out (when opting out is allowed) and every selected channel allows it.
+     * The chat-level web switch gates the whole web capability, including
+     * web_fetch. When the platform does not allow per-user opt-out, the switch
+     * is ignored.
      */
-    /**
-     * Tools are only offered when at least one of them can actually run: the
-     * search endpoint is configured (no implicit fallback) or web_fetch is on.
-     */
-    private boolean toolsUsable(RagSetting setting, ChatRequest request) {
-        if (Boolean.FALSE.equals(request.debugToolsEnabled())) {
-            return false;
-        }
-        return (webSearchAllowed(setting, request) && toolSettingService.webSearchUsable())
-                || toolSettingService.webFetchEnabled();
+    private boolean webAccessAllowed(RagSetting setting, ChatRequest request) {
+        return !(setting.allowUserWebSearch() && Boolean.FALSE.equals(request.webSearch()));
     }
 
     private boolean webSearchAllowed(RagSetting setting, ChatRequest request) {
@@ -894,7 +998,7 @@ public class ChatServiceImpl implements ChatService {
         return text.toString();
     }
 
-    private ArrayNode buildMessages(ChatRequest request, Long userId, List<RetrievedChunk> chunks,
+    private ArrayNode buildMessages(ChatRequest request, Long userId, String knowledge,
                                     String conversationPublicId) {
         ArrayNode messages = mapper.createArrayNode();
         PromptSetting prompt = promptSettingService.getSetting();
@@ -903,33 +1007,26 @@ public class ChatServiceImpl implements ChatService {
         appendPrompt(system, prompt.getRagPrompt());
         appendPrompt(system, prompt.getExpiredPrompt());
         appendPrompt(system, prompt.getToolPrompt());
-        if (request.channelIds() != null && !request.channelIds().isEmpty()) {
-            String agentPrompt = channelService.agentPrompt(request.channelIds(), userId);
+        List<Long> channelIds = request.channelIds() == null ? List.of()
+                : request.channelIds().stream().filter(id -> id != null).distinct().sorted().toList();
+        if (!channelIds.isEmpty()) {
+            String agentPrompt = channelService.agentPrompt(channelIds, userId);
             if (StringUtils.hasText(agentPrompt)) {
                 system.append("\n\nChannel AGENT knowledge:\n").append(agentPrompt);
             }
         }
-        if (!chunks.isEmpty()) {
-            system.append("\n\nRetrieved knowledge:\n");
-            int index = 1;
-            for (RetrievedChunk chunk : chunks) {
-                system.append("[").append(index++).append("] file=").append(chunk.fileName())
-                        .append("; channel=").append(chunk.channelName())
-                        .append("; page=").append(chunk.pageNumber())
-                        .append("; chunk=").append(chunk.chunkIndex());
-                if (chunk.expired()) {
-                    system.append("; 状态：已过期; expiration_time=").append(formatTime(chunk.expirationTime()));
-                }
-                system.append("\n").append(chunk.chunkText()).append("\n\n");
-            }
-            system.append("""
-                    \nCitation rules:
-                    - When a statement uses the retrieved knowledge above, add a marker like [1] or [2] at the end of that sentence.
-                    - The number must match the retrieved source number shown above.
-                    - Only cite sources you actually used. Never invent numbers or sources.
-                    - Do not add a separate references/bibliography section; the UI renders the source list.
-                    """);
-        }
+        // Keep the system prompt byte-stable for the whole conversation: retrieved
+        // chunks change on nearly every turn and must live at the tail, otherwise
+        // the provider's prefix cache is invalidated before the first user turn.
+        system.append("""
+                \nCitation rules:
+                - Retrieved knowledge may be appended to the latest user message under "Retrieved knowledge".
+                - When a statement uses that knowledge, add a marker like [1] or [2] at the end of the sentence.
+                - The number must match the source number in the retrieved knowledge.
+                - Only cite sources you actually used. Never invent numbers or sources.
+                - If no retrieved knowledge is provided, do not add citation markers.
+                - Do not add a separate references/bibliography section; the UI renders the source list.
+                """);
         ObjectNode systemMessage = messages.addObject();
         systemMessage.put("role", "system");
         systemMessage.put("content", system.toString());
@@ -961,6 +1058,15 @@ public class ChatServiceImpl implements ChatService {
             String content = message.content() == null ? "" : message.content();
             if (i == lastUserIndex && StringUtils.hasText(extraText)) {
                 content = content + (StringUtils.hasText(content) ? "\n\n" : "") + extraText;
+            }
+            if (i == lastUserIndex && StringUtils.hasText(knowledge)) {
+                content = content + (StringUtils.hasText(content) ? "\n\n" : "") + knowledge;
+            } else if (i < lastUserIndex && "user".equalsIgnoreCase(message.role()) && i < persisted.size()
+                    && StringUtils.hasText(persisted.get(i).contextText())) {
+                // Replay the exact hidden RAG block from that turn so the model sees
+                // the same token prefix it saw originally.
+                content = content + (StringUtils.hasText(content) ? "\n\n" : "")
+                        + persisted.get(i).contextText();
             }
             boolean lastUser = i == lastUserIndex;
             String role = normalizeRole(message.role());
@@ -1000,6 +1106,25 @@ public class ChatServiceImpl implements ChatService {
         return messages;
     }
 
+    private String knowledgeBlock(List<RetrievedChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return "";
+        }
+        StringBuilder knowledge = new StringBuilder("Retrieved knowledge:\n");
+        int index = 1;
+        for (RetrievedChunk chunk : chunks) {
+            knowledge.append("[").append(index++).append("] file=").append(chunk.fileName())
+                    .append("; channel=").append(chunk.channelName())
+                    .append("; page=").append(chunk.pageNumber())
+                    .append("; chunk=").append(chunk.chunkIndex());
+            if (chunk.expired()) {
+                knowledge.append("; 状态：已过期; expiration_time=").append(formatTime(chunk.expirationTime()));
+            }
+            knowledge.append("\n").append(chunk.chunkText()).append("\n\n");
+        }
+        return knowledge.toString();
+    }
+
     private String inlineImage(ChatAttachmentRequest attachment) {
         if (StringUtils.hasText(attachment.key())) {
             try {
@@ -1032,10 +1157,12 @@ public class ChatServiceImpl implements ChatService {
      * client; this method only owns sanitising, SSE forwarding and tracing.
      */
     private StreamOutcome streamCompletion(ResolvedModel model, ArrayNode messages, String effort,
-                                           SseEmitter emitter, boolean includeTools, TraceRecorder trace) throws Exception {
+                                           SseEmitter emitter, boolean includeTools,
+                                           boolean webSearchTool, boolean webFetchTool,
+                                           TraceRecorder trace) throws Exception {
         ArrayNode tools = mapper.createArrayNode();
         if (includeTools) {
-            tools = webToolService.toolDefinitions();
+            tools = webToolService.toolDefinitions(webSearchTool, webFetchTool);
             includeTools = tools.size() > 0;
         }
         StringBuilder fullText = new StringBuilder();
@@ -1102,7 +1229,11 @@ public class ChatServiceImpl implements ChatService {
         }
         ArrayNode calls = result == null || result.toolCalls() == null ? mapper.createArrayNode() : result.toolCalls();
         log.debug("Chat stream completed with {} chars, {} tool calls", fullText.length(), calls.size());
-        return new StreamOutcome(fullText.toString(), fullReasoning.toString(), calls);
+        return new StreamOutcome(fullText.toString(), fullReasoning.toString(), calls,
+                result == null ? null : result.promptTokens(),
+                result == null ? null : result.completionTokens(),
+                result == null ? null : result.promptCacheHitTokens(),
+                result == null ? null : result.promptCacheMissTokens());
     }
 
     /** Records retrieval parameters, candidates and the assembled context. */
@@ -1217,7 +1348,9 @@ public class ChatServiceImpl implements ChatService {
         return check;
     }
 
-    private record StreamOutcome(String content, String reasoning, ArrayNode toolCalls) {
+    private record StreamOutcome(String content, String reasoning, ArrayNode toolCalls,
+                                 Integer promptTokens, Integer completionTokens,
+                                 Integer promptCacheHitTokens, Integer promptCacheMissTokens) {
     }
 
     private void send(SseEmitter emitter, ObjectNode payload) throws Exception {

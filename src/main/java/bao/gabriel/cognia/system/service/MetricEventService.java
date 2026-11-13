@@ -5,5 +5,6 @@ public interface MetricEventService {
                   String status, String errorType, long durationMs, boolean retrievalUsed, boolean retrievalHit,
                   boolean rerankUsed, int citationCount, int llmRounds, boolean refused,
                   int inputTokens, int outputTokens, int embeddingTokens,
-                  long retrievalDurationMs, long rerankDurationMs);
+                  long retrievalDurationMs, long rerankDurationMs,
+                  int promptCacheHitTokens, int promptCacheMissTokens);
 }

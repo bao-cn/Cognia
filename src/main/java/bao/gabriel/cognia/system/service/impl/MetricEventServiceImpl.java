@@ -20,7 +20,8 @@ public class MetricEventServiceImpl implements MetricEventService {
                          String status, String errorType, long durationMs, boolean retrievalUsed,
                          boolean retrievalHit, boolean rerankUsed, int citationCount, int llmRounds,
                          boolean refused, int inputTokens, int outputTokens, int embeddingTokens,
-                         long retrievalDurationMs, long rerankDurationMs) {
+                         long retrievalDurationMs, long rerankDurationMs,
+                         int promptCacheHitTokens, int promptCacheMissTokens) {
         try {
             MetricEvent event = new MetricEvent();
             event.setEventType("QA");
@@ -43,6 +44,8 @@ public class MetricEventServiceImpl implements MetricEventService {
             event.setEmbeddingTokens(Math.max(0, embeddingTokens));
             event.setRetrievalDurationMs((int) Math.min(Integer.MAX_VALUE, Math.max(0, retrievalDurationMs)));
             event.setRerankDurationMs((int) Math.min(Integer.MAX_VALUE, Math.max(0, rerankDurationMs)));
+            event.setPromptCacheHitTokens(Math.max(0, promptCacheHitTokens));
+            event.setPromptCacheMissTokens(Math.max(0, promptCacheMissTokens));
             event.setCreateTime(LocalDateTime.now());
             mapper.insert(event);
         } catch (Exception ex) {
