@@ -56,4 +56,10 @@ public interface UserService extends IService<User> {
     void assertUsernameAvailable(String username, Long excludeUserId);
 
     void assertEmailAvailable(String email, Long excludeUserId);
+
+    boolean isUsernameAvailable(String username);
+
+    boolean isEmailAvailable(String email);
+
+    java.util.List<String> suggestUsernames(String base);
 }

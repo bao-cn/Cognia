@@ -67,7 +67,11 @@ public class SecurityConfig {
                                 "/api/v1/storage/avatar/**",
                                 "/api/v1/auth/oauth/providers",
                                 "/api/v1/auth/oauth/*/authorize-url",
-                                "/api/v1/auth/oauth/*/callback").permitAll()
+                                "/api/v1/auth/oauth/*/callback",
+                                "/api/v1/auth/register/check-email",
+                                "/api/v1/auth/register/check-username",
+                                "/api/v1/auth/register/suggestions").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/oauth/link", "/api/v1/auth/oauth/register").permitAll()
                         .requestMatchers("/api/v1/public/**", "/error", "/favicon.ico").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

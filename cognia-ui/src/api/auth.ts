@@ -1,5 +1,6 @@
 import { http } from './http'
 import type {
+  AvailabilityResult,
   LoginPayload,
   LoginResult,
   RegisterPayload,
@@ -10,6 +11,15 @@ import type {
 export const authApi = {
   sendRegisterCode(email: string, turnstileToken?: string): Promise<SendCodeResult> {
     return http.post<SendCodeResult>('/auth/register/code', { email, turnstileToken })
+  },
+  checkEmail(email: string): Promise<AvailabilityResult> {
+    return http.get<AvailabilityResult>('/auth/register/check-email', { params: { email } })
+  },
+  checkUsername(username: string): Promise<AvailabilityResult> {
+    return http.get<AvailabilityResult>('/auth/register/check-username', { params: { username } })
+  },
+  usernameSuggestions(base: string): Promise<string[]> {
+    return http.get<string[]>('/auth/register/suggestions', { params: { base } })
   },
   register(payload: RegisterPayload): Promise<UserProfile> {
     return http.post<UserProfile>('/auth/register', payload)

@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS sys_user
 (
     id              BIGINT PRIMARY KEY,
     username        VARCHAR(64)  NOT NULL,
-    password        VARCHAR(100) NOT NULL,
+    password        VARCHAR(100),
     nickname        VARCHAR(64),
     email           VARCHAR(128) NOT NULL,
     phone           VARCHAR(32),

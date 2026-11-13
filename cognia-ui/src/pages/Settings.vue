@@ -19,20 +19,34 @@
           <span class="text-xs text-gray-500 dark:text-gray-300">{{ userStore.profile?.phone || '未绑定' }}</span>
           <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="toast.info('手机号绑定功能暂未开放')">绑定</Button>
         </div>
-        <div class="border-t border-border"></div>
-        <div class="flex items-center px-3 h-12 gap-2">
-          <ColorfulIcon :icon="IconBrandAppleFilled" color="#111827" class="size-6" />
-          <span class="text-sm font-medium">{{ $t('settings.account.apple') }}</span>
-          <div class="flex-1"></div>
-          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="toast.warning('暂不可用，管理员未配置 Apple ID 绑定功能')">{{ $t('settings.other.bind') }}</Button>
-        </div>
-        <div class="border-t border-border"></div>
-        <div class="flex items-center px-3 h-12 gap-2">
-          <ColorfulIcon :icon="IconBrandGoogleFilled" color="#EA4335" class="size-6" />
-          <span class="text-sm font-medium">{{ $t('settings.account.google') }}</span>
-          <div class="flex-1"></div>
-          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="toast.warning('暂不可用，管理员未配置 Google ID 绑定功能')">{{ $t('settings.other.bind') }}</Button>
-        </div>
+        <template v-for="account in oauthAccounts" :key="account.code">
+          <div class="border-t border-border"></div>
+          <div class="flex h-12 items-center gap-2 px-3">
+            <ColorfulIcon :icon="oauthIcon(account.code)" :color="oauthColor(account.code)" class="size-6" />
+            <span class="text-sm font-medium">{{ account.name }}</span>
+            <div class="flex-1"></div>
+            <span class="text-xs text-gray-500 dark:text-gray-300">
+              {{ account.linked ? '已关联' : account.enabled ? '未关联' : '未启用' }}
+            </span>
+            <Button
+              v-if="account.linked"
+              variant="ghost"
+              class="h-8 text-red-600 hover:text-red-700"
+              :disabled="Boolean(oauthBusy)"
+              @click="askUnlink(account)"
+            >解绑</Button>
+            <Button
+              v-else
+              variant="ghost"
+              class="h-8 text-blue-500 hover:text-blue-600"
+              :disabled="Boolean(oauthBusy)"
+              @click="account.enabled ? startOAuthBind(account) : toast.info('该登录方式未启用')"
+            >
+              <Spinner v-if="oauthBusy === account.code" class="mr-1 size-3.5" />
+              绑定
+            </Button>
+          </div>
+        </template>
         <div class="border-t border-border"></div>
         <div class="flex items-center px-3 h-12 gap-2">
           <ColorfulIcon :icon="IconMail" color="#0EA5E9" class="size-6" />
@@ -306,10 +320,28 @@
     </Dialog>
     <AccountSecurityDialog v-model:open="securityOpen" :mode="securityMode" @updated="onProfileUpdated" />
   </div>
+
+    <Dialog v-model:open="oauthUnlinkOpen">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>解绑账号</DialogTitle>
+          <DialogDescription>
+            解绑后，将无法使用 {{ oauthUnlinkTarget?.name }} 登录此账户。确定解绑吗？
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" :disabled="Boolean(oauthBusy)" @click="oauthUnlinkOpen = false">取消</Button>
+          <Button variant="destructive" :disabled="Boolean(oauthBusy)" @click="confirmUnlink">
+            <Spinner v-if="oauthBusy" class="mr-2 size-4" />
+            解绑
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import ColorfulIcon from '@/components/ui/colorful-icon/ColorfulIcon.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
 import { Button } from '@/components/ui/button'
@@ -333,6 +365,8 @@ import {
   IconPhone,
   IconBrandAppleFilled,
   IconBrandGoogleFilled,
+  IconBrandGithub,
+  IconLink,
   IconMail,
   IconKey,
   IconShieldCheck,
@@ -358,6 +392,7 @@ import { toast } from 'vue-sonner'
 import { useUserStore } from '@/stores/user'
 import { AVATAR_OPTIONS, avatarPath, avatarThumbnailFromUrl, avatarThumbPath } from '@/lib/avatars'
 import { userApi } from '@/api'
+import { oauthApi, type UserOAuthAccount } from '@/api/oauth'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -484,6 +519,71 @@ async function saveNickname(): Promise<void> {
 
 const securityOpen = ref(false)
 const securityMode = ref<'password' | 'twofa' | 'email' | 'delete' | 'models'>('password')
+const oauthAccounts = ref<UserOAuthAccount[]>([])
+const oauthLoading = ref(false)
+const oauthBusy = ref('')
+const oauthUnlinkOpen = ref(false)
+const oauthUnlinkTarget = ref<UserOAuthAccount | null>(null)
+const oauthIcons: Record<string, any> = {
+  GOOGLE: IconBrandGoogleFilled,
+  APPLE: IconBrandAppleFilled,
+  GITHUB: IconBrandGithub,
+  OIDC: IconLink,
+}
+const oauthColors: Record<string, string> = {
+  GOOGLE: '#EA4335',
+  APPLE: '#111827',
+  GITHUB: '#6B7280',
+  OIDC: '#6366F1',
+}
+function oauthIcon(code: string) {
+  return oauthIcons[code] || IconLink
+}
+function oauthColor(code: string) {
+  return oauthColors[code] || '#6366F1'
+}
+async function loadOAuthAccounts() {
+  oauthLoading.value = true
+  try {
+    oauthAccounts.value = await oauthApi.userAccounts()
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '加载第三方账号失败')
+  } finally {
+    oauthLoading.value = false
+  }
+}
+async function startOAuthBind(account: UserOAuthAccount) {
+  if (!account.enabled || oauthBusy.value) return
+  oauthBusy.value = account.code
+  try {
+    const redirectUri = `${window.location.origin}/oauth/callback?provider=${account.code}`
+    const url = await oauthApi.userAuthorizeUrl(account.code, redirectUri)
+    window.location.href = url
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '无法发起关联')
+    oauthBusy.value = ''
+  }
+}
+function askUnlink(account: UserOAuthAccount) {
+  oauthUnlinkTarget.value = account
+  oauthUnlinkOpen.value = true
+}
+async function confirmUnlink() {
+  const account = oauthUnlinkTarget.value
+  if (!account) return
+  oauthBusy.value = account.code
+  try {
+    await oauthApi.unlinkAccount(account.code)
+    toast.success(`已解绑 ${account.name} 账号`)
+    oauthUnlinkOpen.value = false
+    await loadOAuthAccounts()
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '解绑失败')
+  } finally {
+    oauthBusy.value = ''
+  }
+}
+onMounted(loadOAuthAccounts)
 const autoWebSearch = computed(() => Boolean(userStore.profile?.autoWebSearch))
 const savingPreference = ref(false)
 

@@ -154,7 +154,7 @@ async function handleSubmit(): Promise<void> {
           欢迎回来
         </CardTitle>
         <CardDescription>
-          登录 {{ siteStore.siteName }}，继续您的知识库之旅
+          登录 {{ siteStore.siteName }}，继续您的工作
         </CardDescription>
       </CardHeader>
       <CardContent>

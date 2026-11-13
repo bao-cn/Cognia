@@ -55,6 +55,11 @@ export interface LoginResult {
   user: UserProfile
 }
 
+export interface AvailabilityResult {
+  available: boolean
+  message?: string
+}
+
 export interface RegisterPayload {
   username: string
   nickname?: string
@@ -966,6 +971,31 @@ export interface ChatMessageAttachment {
   key?: string
 }
 
+export interface ChatMessageMetrics {
+  cache?: {
+    hitType?: 'SEMANTIC' | 'RETRIEVAL' | 'NONE'
+    similarity?: number
+    cacheKey?: string
+    hits?: number
+    requests?: number
+    hitRate?: number
+  }
+  context?: {
+    usedTokens?: number
+    maxTokens?: number
+    percent?: number
+    compressionThreshold?: number
+    compressed?: boolean
+    droppedMessages?: number
+  }
+  usage?: {
+    promptTokens?: number
+    completionTokens?: number
+    cacheHitTokens?: number
+    cacheMissTokens?: number
+  }
+}
+
 export interface ChatConversationMessage {
   id: string
   role: 'user' | 'assistant'
@@ -975,6 +1005,7 @@ export interface ChatConversationMessage {
   attachments?: ChatMessageAttachment[]
   createTime?: string
   favorited?: boolean
+  metrics?: ChatMessageMetrics
 }
 
 export interface ChatConversationDetail extends ChatConversation {

@@ -34,6 +34,10 @@ function openEdit(p: AdminOAuthProvider) {
 }
 async function save() {
   if (!editing.value) return
+  if (form.redirectUri.trim() && !/^https?:\/\/[^\s/]+/i.test(form.redirectUri.trim())) {
+    toast.error('固定回调地址必须是完整的 http(s) 地址')
+    return
+  }
   saving.value = true
   try {
     const p = await oauthApi.updateProvider(editing.value.code, { ...form, clientSecret: form.clientSecret || undefined, clearClientSecret: clearSecret.value || undefined })
@@ -86,7 +90,7 @@ onMounted(load)
           <div class="grid gap-2"><Label>Token URI</Label><Input v-model="form.tokenUri" /></div>
           <div class="grid gap-2 md:col-span-2"><Label>UserInfo URI</Label><Input v-model="form.userinfoUri" /></div>
           <div class="grid gap-2"><Label>Scopes</Label><Input v-model="form.scopes" /></div>
-          <div class="grid gap-2"><Label>固定回调地址（可选）</Label><Input v-model="form.redirectUri" placeholder="默认使用前端回调地址" /></div>
+          <div class="grid gap-2"><Label>固定回调地址（可选）</Label><Input v-model="form.redirectUri" placeholder="默认使用前端回调地址" /><p class="text-xs text-muted-foreground">填写后优先使用，必须与第三方平台登记的 Redirect URI 完全一致，包括协议、域名、端口、路径、查询参数和大小写。</p></div>
           <div class="grid gap-2"><Label>用户名 Claim</Label><Input v-model="form.usernameClaim" /></div>
           <div class="grid gap-2"><Label>邮箱 Claim</Label><Input v-model="form.emailClaim" /></div>
           <div class="grid gap-2"><Label>昵称 Claim</Label><Input v-model="form.nameClaim" /></div>

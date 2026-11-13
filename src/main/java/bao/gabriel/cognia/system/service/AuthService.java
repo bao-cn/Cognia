@@ -13,6 +13,7 @@ import bao.gabriel.cognia.system.dto.auth.LoginResponse;
 import bao.gabriel.cognia.system.dto.auth.RegisterRequest;
 import bao.gabriel.cognia.system.dto.auth.SendCodeRequest;
 import bao.gabriel.cognia.system.dto.auth.SendCodeResponse;
+import bao.gabriel.cognia.system.dto.auth.AvailabilityResponse;
 import bao.gabriel.cognia.system.dto.user.UserCreateRequest;
 import bao.gabriel.cognia.system.dto.user.UserResponse;
 import bao.gabriel.cognia.system.entity.User;
@@ -51,6 +52,34 @@ public class AuthService {
 
     public SendCodeResponse sendRegisterCode(SendCodeRequest request, String clientIp) {
         return verificationCodeService.sendRegisterCode(request.email(), clientIp, request.turnstileToken());
+    }
+
+    public AvailabilityResponse checkEmail(String email) {
+        String value = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+        if (!value.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            return AvailabilityResponse.fail("邮箱格式不正确");
+        }
+        if (!settingService.isRegistrationEmailAllowed(value)) {
+            return AvailabilityResponse.fail("该邮箱不在允许注册的范围内");
+        }
+        return userService.isEmailAvailable(value)
+                ? AvailabilityResponse.ok()
+                : AvailabilityResponse.fail("该邮箱已被注册");
+    }
+
+    public AvailabilityResponse checkUsername(String username) {
+        String value = username == null ? "" : username.trim();
+        if (!value.matches("^[a-zA-Z][a-zA-Z0-9_]{2,31}$")) {
+            return AvailabilityResponse.fail("唯一标识需以字母开头，只能包含字母、数字、下划线，长度 3-32");
+        }
+        if (!userService.isUsernameAvailable(value)) {
+            return AvailabilityResponse.fail("该唯一标识已被占用");
+        }
+        return AvailabilityResponse.ok();
+    }
+
+    public java.util.List<String> usernameSuggestions(String base) {
+        return userService.suggestUsernames(base);
     }
 
     public UserResponse register(RegisterRequest request) {

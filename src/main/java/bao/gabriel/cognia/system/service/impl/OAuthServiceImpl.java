@@ -2,10 +2,12 @@ package bao.gabriel.cognia.system.service.impl;
 
 import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.security.LoginUser;
-import bao.gabriel.cognia.security.TokenPair;
 import bao.gabriel.cognia.security.TokenService;
 import bao.gabriel.cognia.security.SecurityCryptoService;
+import bao.gabriel.cognia.system.dto.auth.LoginResponse;
 import bao.gabriel.cognia.system.dto.oauth.AdminOAuthProviderResponse;
+import bao.gabriel.cognia.system.dto.oauth.OAuthCallbackResponse;
+import bao.gabriel.cognia.system.dto.oauth.UserOAuthAccountResponse;
 import bao.gabriel.cognia.system.dto.oauth.PublicOAuthProvider;
 import bao.gabriel.cognia.system.dto.oauth.UpdateOAuthProviderRequest;
 import bao.gabriel.cognia.system.dto.user.UserCreateRequest;
@@ -30,6 +32,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
@@ -44,6 +47,9 @@ import java.util.UUID;
 public class OAuthServiceImpl implements OAuthService {
 
     private static final String STATE_PREFIX = "oauth:state:";
+    private static final String LINK_PREFIX = "oauth:link:";
+    private static final String REGISTER_PREFIX = "oauth:register:";
+    private static final Duration LINK_TTL = Duration.ofMinutes(10);
     private final OAuthProviderMapper providerMapper;
     private final UserOAuthIdentityMapper identityMapper;
     private final UserMapper userMapper;
@@ -71,7 +77,7 @@ public class OAuthServiceImpl implements OAuthService {
         if (request.tokenUri() != null) provider.setTokenUri(blankToNull(request.tokenUri()));
         if (request.userinfoUri() != null) provider.setUserinfoUri(blankToNull(request.userinfoUri()));
         if (request.scopes() != null) provider.setScopes(request.scopes().trim());
-        if (request.redirectUri() != null) provider.setRedirectUri(blankToNull(request.redirectUri()));
+        if (request.redirectUri() != null) provider.setRedirectUri(normalizeRedirectUri(request.redirectUri()));
         if (request.usernameClaim() != null) provider.setUsernameClaim(request.usernameClaim().trim());
         if (request.emailClaim() != null) provider.setEmailClaim(request.emailClaim().trim());
         if (request.nameClaim() != null) provider.setNameClaim(request.nameClaim().trim());
@@ -90,31 +96,91 @@ public class OAuthServiceImpl implements OAuthService {
 
     @Override
     public String authorizeUrl(String code, String redirectUri) {
+        return authorizeUrl(code, redirectUri, null);
+    }
+
+    @Override
+    public String authorizeUrl(String code, String redirectUri, String intent) {
         OAuthProvider provider = require(code);
+        return buildAuthorizeUrl(provider, redirectUri, null, intent);
+    }
+
+    @Override
+    public String userAuthorizeUrl(Long userId, String code, String redirectUri) {
+        OAuthProvider provider = require(code);
+        if (!provider.enabled()) throw BusinessException.badRequest("该登录方式未启用");
+        return buildAuthorizeUrl(provider, redirectUri, userId, null);
+    }
+
+    private String buildAuthorizeUrl(OAuthProvider provider, String redirectUri, Long bindUserId, String intent) {
         if (!provider.enabled()) throw BusinessException.badRequest("该登录方式未启用");
         resolveEndpoints(provider);
         if (!StringUtils.hasText(provider.getAuthorizationUri()) || !StringUtils.hasText(provider.getClientId())) {
             throw BusinessException.badRequest("该登录方式尚未配置完整");
         }
+        String effectiveRedirect = StringUtils.hasText(provider.getRedirectUri())
+                ? provider.getRedirectUri().trim() : redirectUri;
+        if (!isAbsoluteHttpUrl(effectiveRedirect)) {
+            throw BusinessException.badRequest("回调地址无效，请检查登录方式配置");
+        }
         String state = UUID.randomUUID().toString().replace("-", "");
-        redis.opsForValue().set(STATE_PREFIX + state, code + "|" + redirectUri, Duration.ofMinutes(10));
+        String payload = provider.getCode() + "|" + effectiveRedirect + "|"
+                + (bindUserId == null ? "" : bindUserId) + "|" + (intent == null ? "" : intent);
+        redis.opsForValue().set(STATE_PREFIX + state, payload, Duration.ofMinutes(10));
         return UriComponentsBuilder.fromUriString(provider.getAuthorizationUri())
                 .queryParam("response_type", "code")
                 .queryParam("client_id", provider.getClientId())
-                .queryParam("redirect_uri", redirectUri)
+                .queryParam("redirect_uri", effectiveRedirect)
                 .queryParam("scope", provider.getScopes())
                 .queryParam("state", state)
                 .build().encode().toUriString();
     }
 
     @Override
-    public TokenPair callback(String code, String state) {
+    public List<UserOAuthAccountResponse> userAccounts(Long userId) {
+        List<OAuthProvider> providers = providerMapper.selectList(new LambdaQueryWrapper<OAuthProvider>()
+                .orderByAsc(OAuthProvider::getId));
+        return providers.stream().map(provider -> {
+            UserOAuthIdentity identity = identityMapper.selectOne(new LambdaQueryWrapper<UserOAuthIdentity>()
+                    .eq(UserOAuthIdentity::getUserId, userId)
+                    .eq(UserOAuthIdentity::getProvider, provider.getCode())
+                    .last("LIMIT 1"));
+            String linkedAt = identity == null || identity.getCreateTime() == null ? null
+                    : identity.getCreateTime().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            return new UserOAuthAccountResponse(provider.getCode(), provider.getName(), provider.getProviderType(),
+                    provider.enabled(), identity != null, identity == null ? null : identity.getEmail(), linkedAt);
+        }).toList();
+    }
+
+    @Override
+    public void unlinkAccount(Long userId, String code) {
+        String providerCode = code.toUpperCase();
+        UserOAuthIdentity identity = identityMapper.selectOne(new LambdaQueryWrapper<UserOAuthIdentity>()
+                .eq(UserOAuthIdentity::getUserId, userId)
+                .eq(UserOAuthIdentity::getProvider, providerCode)
+                .last("LIMIT 1"));
+        if (identity == null) throw BusinessException.notFound("尚未关联该第三方账户");
+        User user = userMapper.selectById(userId);
+        if (user == null) throw BusinessException.notFound("账户不存在");
+        long linkedCount = identityMapper.selectCount(new LambdaQueryWrapper<UserOAuthIdentity>()
+                .eq(UserOAuthIdentity::getUserId, userId));
+        if (linkedCount <= 1 && !StringUtils.hasText(user.getPassword())) {
+            throw BusinessException.badRequest("请先设置登录密码，再解除最后一个第三方账号");
+        }
+        identityMapper.deleteById(identity.getId());
+    }
+
+    @Override
+    public OAuthCallbackResponse callback(String code, String state) {
         if (!StringUtils.hasText(state)) throw BusinessException.badRequest("登录状态无效");
         String raw = redis.opsForValue().get(STATE_PREFIX + state);
         if (raw == null) throw BusinessException.badRequest("登录状态已过期，请重试");
         redis.delete(STATE_PREFIX + state);
-        String providerCode = raw.substring(0, raw.indexOf('|'));
-        String redirectUri = raw.substring(raw.indexOf('|') + 1);
+        String[] parts = raw.split("\\|", -1);
+        String providerCode = parts[0];
+        String redirectUri = parts.length > 1 ? parts[1] : "";
+        Long bindUserId = parts.length > 2 && StringUtils.hasText(parts[2]) ? Long.valueOf(parts[2]) : null;
+        String intent = parts.length > 3 ? parts[3] : "";
         OAuthProvider provider = require(providerCode);
         resolveEndpoints(provider);
         String accessToken = exchangeToken(provider, code, redirectUri);
@@ -124,50 +190,171 @@ public class OAuthServiceImpl implements OAuthService {
         String email = first(claims, provider.getEmailClaim());
         String name = first(claims, provider.getNameClaim());
         String username = first(claims, provider.getUsernameClaim());
+
+        if (bindUserId != null) {
+            User target = userMapper.selectById(bindUserId);
+            if (target == null || !target.isEnabled()) throw BusinessException.badRequest("账户不可用");
+            UserOAuthIdentity bound = identityMapper.selectOne(new LambdaQueryWrapper<UserOAuthIdentity>()
+                    .eq(UserOAuthIdentity::getProvider, provider.getCode())
+                    .eq(UserOAuthIdentity::getSubject, subject));
+            if (bound != null) {
+                if (!bound.getUserId().equals(bindUserId)) throw BusinessException.conflict("该第三方账户已关联其他用户");
+                return OAuthCallbackResponse.linked(email, provider.getName());
+            }
+            linkIdentity(provider, target, subject, email);
+            return OAuthCallbackResponse.linked(email, provider.getName());
+        }
+
         UserOAuthIdentity identity = identityMapper.selectOne(new LambdaQueryWrapper<UserOAuthIdentity>()
                 .eq(UserOAuthIdentity::getProvider, provider.getCode())
                 .eq(UserOAuthIdentity::getSubject, subject));
-        User user;
         if (identity != null) {
-            user = userMapper.selectById(identity.getUserId());
-            if (user == null) throw BusinessException.badRequest("关联账户不存在");
-        } else {
-            if (!provider.autoCreate()) throw BusinessException.badRequest("该账户尚未注册");
-            user = findOrCreateUser(provider, subject, email, name, username);
-            identity = new UserOAuthIdentity();
-            identity.setUserId(user.getId());
-            identity.setProvider(provider.getCode());
-            identity.setSubject(subject);
-            identity.setEmail(email);
-            identity.setCreateTime(java.time.LocalDateTime.now());
-            identityMapper.insert(identity);
+            User linked = userMapper.selectById(identity.getUserId());
+            if (linked == null) throw BusinessException.badRequest("关联账户不存在");
+            return OAuthCallbackResponse.loggedIn(login(linked, provider));
         }
+
+        if (StringUtils.hasText(email)) {
+            User existing = findByEmail(email);
+            if (existing != null) {
+                if (!emailTrusted(claims)) {
+                    throw BusinessException.badRequest("第三方账户邮箱尚未验证，无法关联现有账户");
+                }
+                if (!existing.isEnabled()) throw BusinessException.badRequest("关联账户不可用");
+                String token = UUID.randomUUID().toString().replace("-", "");
+                Map<String, String> ticket = new LinkedHashMap<>();
+                ticket.put("provider", provider.getCode());
+                ticket.put("subject", subject);
+                ticket.put("email", email);
+                ticket.put("userId", String.valueOf(existing.getId()));
+                redis.opsForValue().set(LINK_PREFIX + token, JSON.toJSONString(ticket), LINK_TTL);
+                return OAuthCallbackResponse.linkRequired(token, email, provider.getName());
+            }
+        }
+
+        boolean registration = "register".equals(intent);
+        if (!provider.autoCreate() && !registration) throw BusinessException.badRequest("该账户尚未注册");
+        String base = oauthUsernameBase(provider, email, username, subject);
+        if (!userService.isUsernameAvailable(base)) {
+            String token = UUID.randomUUID().toString().replace("-", "");
+            Map<String, String> ticket = new LinkedHashMap<>();
+            ticket.put("provider", provider.getCode());
+            ticket.put("subject", subject);
+            ticket.put("email", email == null ? "" : email);
+            ticket.put("name", name == null ? "" : name);
+            redis.opsForValue().set(REGISTER_PREFIX + token, JSON.toJSONString(ticket), LINK_TTL);
+            return OAuthCallbackResponse.registrationRequired(token, email, provider.getName(),
+                    userService.suggestUsernames(base));
+        }
+        User user = createOAuthUser(provider, subject, email, name, base);
+        linkIdentity(provider, user, subject, email);
+        return OAuthCallbackResponse.loggedIn(login(user, provider));
+    }
+
+    @Override
+    public OAuthCallbackResponse completeRegistration(String registrationToken, String username) {
+        if (!StringUtils.hasText(registrationToken)) throw BusinessException.badRequest("注册请求无效");
+        String raw = redis.opsForValue().get(REGISTER_PREFIX + registrationToken);
+        if (raw == null) throw BusinessException.badRequest("注册请求已过期，请重新使用第三方账号注册");
+        Map<String, String> ticket = JSON.parseObject(raw, new com.alibaba.fastjson2.TypeReference<Map<String, String>>() {});
+        String providerCode = ticket.get("provider");
+        String subject = ticket.get("subject");
+        String email = ticket.get("email");
+        String name = ticket.get("name");
+        OAuthProvider provider = require(providerCode);
+        String candidate = username == null ? "" : username.trim();
+        if (!candidate.matches("^[a-zA-Z][a-zA-Z0-9_]{2,31}$")) {
+            throw BusinessException.badRequest("唯一标识需以字母开头，只能包含字母、数字、下划线，长度 3-32");
+        }
+        userService.assertUsernameAvailable(candidate, null);
+        if (StringUtils.hasText(email) && !userService.isEmailAvailable(email)) {
+            throw BusinessException.conflict("该邮箱已被注册，请直接登录");
+        }
+        UserOAuthIdentity existing = identityMapper.selectOne(new LambdaQueryWrapper<UserOAuthIdentity>()
+                .eq(UserOAuthIdentity::getProvider, provider.getCode())
+                .eq(UserOAuthIdentity::getSubject, subject));
+        if (existing != null) throw BusinessException.conflict("该第三方账户已注册，请直接登录");
+        String mail = StringUtils.hasText(email) ? email : candidate + "@oauth.local";
+        String nickname = StringUtils.hasText(name) ? name : candidate;
+        var created = userService.createUser(new UserCreateRequest(candidate, nickname, mail, null, null, 1, null));
+        User user = userMapper.selectById(Long.valueOf(created.id()));
+        linkIdentity(provider, user, subject, email);
+        redis.delete(REGISTER_PREFIX + registrationToken);
+        return OAuthCallbackResponse.loggedIn(login(user, provider));
+    }
+
+    @Override
+    public OAuthCallbackResponse link(String linkToken) {
+        if (!StringUtils.hasText(linkToken)) throw BusinessException.badRequest("关联请求无效");
+        String raw = redis.opsForValue().getAndDelete(LINK_PREFIX + linkToken);
+        if (raw == null) throw BusinessException.badRequest("关联请求已过期，请重新登录");
+        Map<String, String> ticket = JSON.parseObject(raw, new com.alibaba.fastjson2.TypeReference<Map<String, String>>() {});
+        String providerCode = ticket.get("provider");
+        String subject = ticket.get("subject");
+        String email = ticket.get("email");
+        Long userId = Long.valueOf(ticket.get("userId"));
+        OAuthProvider provider = require(providerCode);
+        User user = userMapper.selectById(userId);
+        if (user == null || !user.isEnabled()) throw BusinessException.badRequest("关联账户不可用");
+
+        UserOAuthIdentity existing = identityMapper.selectOne(new LambdaQueryWrapper<UserOAuthIdentity>()
+                .eq(UserOAuthIdentity::getProvider, provider.getCode())
+                .eq(UserOAuthIdentity::getSubject, subject));
+        if (existing != null) {
+            if (!existing.getUserId().equals(userId)) throw BusinessException.conflict("该第三方账户已关联其他用户");
+            return OAuthCallbackResponse.loggedIn(login(user, provider));
+        }
+        linkIdentity(provider, user, subject, email);
+        return OAuthCallbackResponse.loggedIn(login(user, provider));
+    }
+
+    private LoginResponse login(User user, OAuthProvider provider) {
         User fresh = userMapper.selectById(user.getId());
         if (fresh == null || !fresh.isEnabled()) throw BusinessException.badRequest("账户不可用");
         LoginUser loginUser = userService.buildLoginUser(fresh);
-        return tokenService.issue(loginUser, true, null, "oauth:" + provider.getCode());
+        var tokens = tokenService.issue(loginUser, true, null, "oauth:" + provider.getCode());
+        return new LoginResponse(tokens.accessToken(), tokens.refreshToken(), tokens.tokenType(),
+                tokens.expiresIn(), tokens.refreshExpiresIn(), userService.getProfile(fresh.getId()));
     }
 
-    private User findOrCreateUser(OAuthProvider provider, String subject, String email, String name, String username) {
-        if (StringUtils.hasText(email)) {
-            User existing = userMapper.selectOne(new LambdaQueryWrapper<User>()
-                    .eq(User::getEmail, email.toLowerCase()).eq(User::getIsDeleted, false).last("LIMIT 1"));
-            if (existing != null) return existing;
+    private void linkIdentity(OAuthProvider provider, User user, String subject, String email) {
+        UserOAuthIdentity identity = new UserOAuthIdentity();
+        identity.setUserId(user.getId());
+        identity.setProvider(provider.getCode());
+        identity.setSubject(subject);
+        identity.setEmail(email);
+        identity.setCreateTime(java.time.LocalDateTime.now());
+        try {
+            identityMapper.insert(identity);
+        } catch (org.springframework.dao.DuplicateKeyException ex) {
+            throw BusinessException.conflict("该第三方账户已关联其他用户");
         }
+    }
+
+    private User findByEmail(String email) {
+        return userMapper.selectOne(new LambdaQueryWrapper<User>()
+                .eq(User::getEmail, email.toLowerCase()).eq(User::getIsDeleted, false).last("LIMIT 1"));
+    }
+
+    private boolean emailTrusted(Map<String, Object> claims) {
+        Object verified = claims.get("email_verified");
+        if (verified == null) return true;
+        return Boolean.parseBoolean(String.valueOf(verified));
+    }
+
+    private String oauthUsernameBase(OAuthProvider provider, String email, String username, String subject) {
         String base = StringUtils.hasText(email) ? email.split("@")[0]
                 : (StringUtils.hasText(username) ? username : provider.getCode().toLowerCase() + "_" + subject);
         base = base.replaceAll("[^a-zA-Z0-9_]", "_").replaceAll("^[^a-zA-Z]+", "u");
         if (base.length() < 3) base = "u" + base;
-        base = base.substring(0, Math.min(base.length(), 24));
-        String candidate = base;
-        int suffix = 1;
-        while (userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getUsername, candidate)) > 0) {
-            candidate = base + "_" + suffix++;
-        }
+        return base.substring(0, Math.min(base.length(), 24));
+    }
+
+    private User createOAuthUser(OAuthProvider provider, String subject, String email, String name, String candidate) {
         String mail = StringUtils.hasText(email) ? email : candidate + "@oauth.local";
         String nickname = StringUtils.hasText(name) ? name : candidate;
         var created = userService.createUser(new UserCreateRequest(candidate, nickname, mail, null, null, 1, null));
-        return userMapper.selectById(created.id());
+        return userMapper.selectById(Long.valueOf(created.id()));
     }
 
     private String exchangeToken(OAuthProvider provider, String code, String redirectUri) {
@@ -238,7 +425,11 @@ public class OAuthServiceImpl implements OAuthService {
                             .retrieve().body(new org.springframework.core.ParameterizedTypeReference<>() {});
                     if (emails != null) {
                         for (Map<String, Object> item : emails) {
-                            if (Boolean.TRUE.equals(item.get("primary"))) { claims.put("email", item.get("email")); break; }
+                            if (Boolean.TRUE.equals(item.get("primary"))) {
+                                claims.put("email", item.get("email"));
+                                claims.put("email_verified", item.get("verified"));
+                                break;
+                            }
                         }
                     }
                 } catch (Exception ignored) { }
@@ -294,6 +485,27 @@ public class OAuthServiceImpl implements OAuthService {
     private String stringValue(Object value) { return value == null ? null : String.valueOf(value); }
 
     private String blankToNull(String value) { return StringUtils.hasText(value) ? value.trim() : null; }
+
+    private String normalizeRedirectUri(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        String trimmed = value.trim();
+        if (!isAbsoluteHttpUrl(trimmed)) {
+            throw BusinessException.badRequest("回调地址必须是完整的 http(s) 地址");
+        }
+        return trimmed;
+    }
+
+    private boolean isAbsoluteHttpUrl(String value) {
+        if (!StringUtils.hasText(value) || value.chars().anyMatch(Character::isWhitespace)) return false;
+        try {
+            URI uri = URI.create(value);
+            String scheme = uri.getScheme();
+            return ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    && StringUtils.hasText(uri.getHost());
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
 
     private Map<String, Object> decodeJwtPayload(String token) {
         try {

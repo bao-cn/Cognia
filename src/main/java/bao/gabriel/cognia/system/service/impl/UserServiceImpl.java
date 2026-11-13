@@ -41,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -421,6 +422,57 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (teamCount != null && teamCount > 0) {
             throw BusinessException.conflict("该标识已被团队使用");
         }
+    }
+
+    @Override
+    public boolean isUsernameAvailable(String username) {
+        String value = username == null ? "" : username.trim();
+        if (value.isEmpty() || ReservedNames.isReserved(value)) {
+            return false;
+        }
+        long count = baseMapper.countByUsernameIncludingDeleted(value);
+        if (count > 0) {
+            return false;
+        }
+        Long teamCount = teamMapper.countBySlugIncludingDeleted(value.toLowerCase(java.util.Locale.ROOT));
+        return teamCount == null || teamCount == 0;
+    }
+
+    @Override
+    public boolean isEmailAvailable(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        Long count = baseMapper.selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getEmail, normalizeEmail(email)));
+        return count == null || count == 0;
+    }
+
+    @Override
+    public List<String> suggestUsernames(String base) {
+        String stem = base == null ? "" : base.trim().toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9_]", "_")
+                .replaceAll("^[^a-z]+", "");
+        if (stem.length() < 3) {
+            stem = "user" + stem;
+        }
+        stem = stem.substring(0, Math.min(stem.length(), 24));
+        List<String> result = new ArrayList<>();
+        if (isUsernameAvailable(stem)) {
+            result.add(stem);
+        }
+        int suffix = 1;
+        while (result.size() < 3 && suffix < 1000) {
+            String candidate = stem + suffix;
+            if (candidate.length() > 32) {
+                candidate = stem.substring(0, Math.max(3, 32 - String.valueOf(suffix).length())) + suffix;
+            }
+            if (isUsernameAvailable(candidate)) {
+                result.add(candidate);
+            }
+            suffix++;
+        }
+        return result;
     }
 
     @Override

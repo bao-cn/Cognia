@@ -6,6 +6,7 @@ import bao.gabriel.cognia.system.dto.auth.LoginRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginResponse;
 import bao.gabriel.cognia.system.dto.auth.RefreshTokenRequest;
 import bao.gabriel.cognia.system.dto.auth.RegisterRequest;
+import bao.gabriel.cognia.system.dto.auth.AvailabilityResponse;
 import bao.gabriel.cognia.system.dto.auth.SendCodeRequest;
 import bao.gabriel.cognia.system.dto.auth.SendCodeResponse;
 import bao.gabriel.cognia.system.dto.user.UserResponse;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -35,6 +37,21 @@ public class AuthController {
     public ApiResponse<SendCodeResponse> sendRegisterCode(@Valid @RequestBody SendCodeRequest request,
                                                           HttpServletRequest httpRequest) {
         return ApiResponse.success(authService.sendRegisterCode(request, WebUtils.getClientIp(httpRequest)));
+    }
+
+    @GetMapping("/register/check-email")
+    public ApiResponse<AvailabilityResponse> checkEmail(@RequestParam String email) {
+        return ApiResponse.success(authService.checkEmail(email));
+    }
+
+    @GetMapping("/register/check-username")
+    public ApiResponse<AvailabilityResponse> checkUsername(@RequestParam String username) {
+        return ApiResponse.success(authService.checkUsername(username));
+    }
+
+    @GetMapping("/register/suggestions")
+    public ApiResponse<java.util.List<String>> suggestions(@RequestParam(required = false) String base) {
+        return ApiResponse.success(authService.usernameSuggestions(base));
     }
 
     @PostMapping("/register")
