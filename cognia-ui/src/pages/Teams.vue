@@ -2,13 +2,9 @@
   <div class="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 pb-12 md:p-8">
     <section class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div class="flex flex-col gap-2">
-        <div class="flex items-center gap-2">
-          <Badge variant="outline" class="rounded-full">团队空间</Badge>
-          <span class="text-xs text-muted-foreground">邀请制 · 每个团队都是独立的知识库</span>
-        </div>
         <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">我的团队</h1>
         <p class="max-w-2xl text-sm leading-6 text-muted-foreground">
-          团队是知识库的归属单位。即使只有你一个人，也从一个自己的团队开始。
+          团队是知识的归属单位。
         </p>
       </div>
       <Button class="rounded-full" @click="handleCreateClick">
@@ -72,7 +68,7 @@
             <Badge v-if="team.role === 'OWNER'" variant="secondary" class="rounded-full text-[10px]">创建者</Badge>
             <Badge v-else variant="outline" class="rounded-full text-[10px]">成员</Badge>
           </div>
-          <p class="mt-1 truncate text-xs text-muted-foreground">团队 ID：{{ team.id }} · {{ team.memberCount }} 位成员</p>
+          <p class="mt-1 truncate text-xs text-muted-foreground">@{{ team.slug }} · {{ team.memberCount }} 位成员</p>
           <p class="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{{ team.description || '这个团队还没有介绍。' }}</p>
         </div>
         <IconChevronRight class="mt-1 size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
@@ -101,7 +97,7 @@
           <div class="grid gap-2">
             <Label for="team-slug">团队标识</Label>
             <Input id="team-slug" v-model="form.slug" maxlength="64" placeholder="例如：product-design（唯一，创建后不可修改）" />
-            <p class="text-xs text-muted-foreground">用于团队展示，团队详情页通过系统生成的团队 ID 访问。</p>
+            <p class="text-xs text-muted-foreground">用于团队展示，团队详情页通过唯一标识访问。</p>
           </div>
           <div class="grid gap-2">
             <Label for="team-description">团队介绍</Label>
