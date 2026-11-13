@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS sys_user
     remark          VARCHAR(255)
 );
 
+ALTER TABLE sys_user ALTER COLUMN password DROP NOT NULL;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_username
     ON sys_user (username) WHERE is_deleted = FALSE;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_email
@@ -331,35 +333,8 @@ $terms$, 1, NOW(), NOW(), NOW())
 ON CONFLICT (doc_type) DO NOTHING;
 
 INSERT INTO sys_legal_document (id, doc_type, title, content, version, published_at, create_time, update_time)
-VALUES (3, 'OPEN_SOURCE', '开放源代码许可', $license$
-# Cognia 开放源代码许可
-
-本页面列出 Cognia 使用或分发的主要开源软件。各组件的完整许可文本、版权声明与源码地址以其官方仓库为准。
-
-## 核心框架
-
-- Vue.js — MIT License
-- Vite — MIT License
-- Electron — MIT License
-- Spring Boot — Apache License 2.0
-- PostgreSQL — PostgreSQL License
-- MyBatis-Plus — Apache License 2.0
-
-## 界面与内容
-
-- Tailwind CSS — MIT License
-- Reka UI — MIT License
-- Tabler Icons — MIT License
-- Shiki — MIT License
-- KaTeX — MIT License
-- Markdown-It — MIT License
-
-## 说明
-
-本页面仅用于开源许可信息展示，不构成需要用户确认的协议。若需获取某一组件的完整许可文本，请访问对应项目的官方代码仓库。
-$license$, 1, NOW(), NOW(), NOW())
+VALUES (3, 'OPEN_SOURCE', '开放源代码许可', '', 2, NOW(), NOW(), NOW())
 ON CONFLICT (doc_type) DO NOTHING;
-
 
 -- ---------------------------------------------------------------------------
 -- Configurable HTML mail templates. Content is an HTML fragment; the server

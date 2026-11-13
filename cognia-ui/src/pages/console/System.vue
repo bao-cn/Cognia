@@ -652,7 +652,7 @@
             <AlertDescription class="flex items-start gap-2">
               <IconAlertTriangle class="mt-0.5 size-4 shrink-0" />
               <span>
-                隐私政策与用户协议保存内容后会自动发布新版本，所有用户需要重新阅读并同意；开源许可仅更新展示内容，不会触发重新同意。
+                隐私政策与用户协议保存内容后会自动发布新版本，所有用户需要重新阅读并同意；开放源代码许可随程序版本分发，仅可查看，不可编辑或修订。
               </span>
             </AlertDescription>
           </Alert>
@@ -666,13 +666,21 @@
               <div class="flex items-center gap-2">
                 <h2 class="text-sm font-semibold">{{ legalDocs[type].title || type }}</h2>
                 <Badge variant="outline">v{{ legalDocs[type].version }}</Badge>
-                <Badge v-if="type === 'OPEN_SOURCE'" variant="secondary">无需同意</Badge>
+                <Badge v-if="type === 'OPEN_SOURCE'" variant="secondary">随程序分发</Badge>
               </div>
               <span class="text-xs text-muted-foreground">
                 <template v-if="legalDocs[type].updatedAt">更新于 {{ legalDocs[type].updatedAt }}</template>
               </span>
             </header>
-            <div class="flex flex-col gap-3 p-4">
+            <div v-if="type === 'OPEN_SOURCE'" class="flex flex-col gap-3 p-4">
+              <p class="text-sm text-muted-foreground">
+                此文档随程序版本分发，仅用于查看；管理员不可编辑或修订。
+              </p>
+              <div class="max-h-[60vh] overflow-y-auto rounded-lg border bg-background p-4 text-sm leading-7">
+                <Markdown :text="legalDocs[type].content" />
+              </div>
+            </div>
+            <div v-else class="flex flex-col gap-3 p-4">
               <div class="grid gap-2">
                 <Label :for="`legal-title-${type}`">文档标题</Label>
                 <Input :id="`legal-title-${type}`" v-model="legalDocs[type].title" />
@@ -701,7 +709,7 @@
                   @click="askPublish(type)"
                 >
                   <Spinner v-if="legalSaving && publishTarget === type" class="mr-2" />
-                  {{ type === 'OPEN_SOURCE' ? '保存修订' : '保存并发布修订' }}
+                  保存并发布修订
                 </Button>
               </div>
             </div>
@@ -714,11 +722,8 @@
     <Dialog v-model:open="publishDialogOpen">
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{{ publishTarget === 'OPEN_SOURCE' ? '保存开源许可' : '发布法律条款修订' }}</DialogTitle>
-          <DialogDescription v-if="publishTarget === 'OPEN_SOURCE'">
-            即将更新《{{ publishTargetDoc?.title }}》。开源许可仅用于展示，不会要求用户重新同意。是否继续？
-          </DialogDescription>
-          <DialogDescription v-else>
+          <DialogTitle>发布法律条款修订</DialogTitle>
+          <DialogDescription>
             即将发布《{{ publishTargetDoc?.title }}》。所有在线用户（包括您）都需要重新同意，
             不同意的用户将被退出登录。是否继续？
           </DialogDescription>
@@ -730,7 +735,7 @@
           <Button variant="outline" :disabled="legalSaving" @click="publishDialogOpen = false">取消</Button>
           <Button variant="destructive" :disabled="legalSaving" @click="confirmPublish">
             <Spinner v-if="legalSaving" class="mr-2" />
-            {{ publishTarget === 'OPEN_SOURCE' ? '确认保存' : '确认发布' }}
+            确认发布
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1408,6 +1413,7 @@ function openPreview(type: LegalDocType): void {
 }
 
 function askPublish(type: LegalDocType): void {
+  if (type === 'OPEN_SOURCE') return
   publishTarget.value = type
   publishError.value = ''
   publishDialogOpen.value = true

@@ -97,6 +97,9 @@ public class LegalServiceImpl implements LegalService {
     @Transactional
     public LegalDocumentResponse publish(String type, UpdateLegalDocumentRequest request, Long operatorId) {
         String normalizedType = normalizeType(type);
+        if (LegalDocument.TYPE_OPEN_SOURCE.equals(normalizedType)) {
+            throw BusinessException.forbidden("开放源代码许可随程序分发，不支持在线编辑或修订");
+        }
         LegalDocument document = ensureDocument(normalizedType);
         boolean contentChanged = !Objects.equals(document.getContent(), request.content());
 
