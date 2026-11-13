@@ -11,6 +11,7 @@ import {
   IconDownload,
   IconArrowUpRight,
   IconUser,
+  IconUsers,
   IconArchive,
 } from "@tabler/icons-vue"
 
@@ -107,6 +108,10 @@ async function handleLogout(): Promise<void> {
             <DropdownMenuItem v-if="userStore.profile" @click="router.push(`/${userStore.profile.username}`)">
               <IconUser />
               我的主页
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="router.push('/teams')">
+              <IconUsers />
+              我的团队
             </DropdownMenuItem>
             <DropdownMenuItem @click="router.push('/favorites')">
               <IconBookmark />
