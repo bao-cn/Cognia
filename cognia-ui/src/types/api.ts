@@ -46,6 +46,18 @@ export interface LoginPayload {
   twoFactorCode?: string
 }
 
+export interface LoginOptions {
+  hasPassword: boolean
+  twoFactorEnabled: boolean
+}
+
+export interface LoginTwoFactorPayload {
+  account: string
+  code: string
+  rememberMe?: boolean
+  turnstileToken?: string
+}
+
 export interface LoginResult {
   accessToken: string
   refreshToken: string
@@ -155,6 +167,7 @@ export interface PublicSiteSettings {
   registrationEmailWhitelistEnabled: boolean
   registerEmailCaptchaEnabled: boolean
   loginCaptchaEnabled: boolean
+  twoFactorEnabled: boolean
   appleLoginEnabled: boolean
   googleLoginEnabled: boolean
   turnstileConfigured: boolean
@@ -176,6 +189,7 @@ export interface AdminSiteSettings {
   registrationEmailVerification: boolean
   registerEmailCaptchaEnabled: boolean
   loginCaptchaEnabled: boolean
+  twoFactorEnabled: boolean
   registrationEmailWhitelistEnabled: boolean
   registrationEmailWhitelist: string[]
   appleLoginEnabled: boolean
@@ -211,6 +225,7 @@ export interface UpdateSiteSettingsPayload {
   registrationEmailVerification?: boolean
   registerEmailCaptchaEnabled?: boolean
   loginCaptchaEnabled?: boolean
+  twoFactorEnabled?: boolean
   registrationEmailWhitelistEnabled?: boolean
   registrationEmailWhitelist?: string[]
   appleLoginEnabled?: boolean
@@ -592,6 +607,33 @@ export interface ChannelCard {
   updateTime: string
   featured?: boolean
   webSearchEnabled?: boolean
+  archived?: boolean
+}
+
+export interface ChannelAboutContributor {
+  id: string
+  username: string
+  nickname: string
+  avatar?: string
+  documentCount: number
+}
+
+export interface ChannelAboutFileType {
+  type: string
+  count: number
+  size: number
+}
+
+export interface ChannelAbout {
+  description?: string
+  hasReadme: boolean
+  readmeDocumentId?: string
+  readmeName?: string
+  archived: boolean
+  subscriberCount: number
+  notifyCount: number
+  contributors: ChannelAboutContributor[]
+  fileTypes: ChannelAboutFileType[]
 }
 
 export interface DiscoverChannel extends ChannelCard {
@@ -687,6 +729,7 @@ export interface ChannelDetail {
   canManage: boolean
   canNotify: boolean
   canViewInsights: boolean
+  about: ChannelAbout
 }
 
 export interface CreateChannelPayload {
@@ -701,7 +744,7 @@ export interface CreateChannelPayload {
 export interface UpdateChannelPayload {
   name: string
   description?: string
-  isPublic: boolean
+  isPublic?: boolean
   webSearchEnabled?: boolean
 }
 
@@ -718,6 +761,21 @@ export interface RecycleBinEntry {
   deleteTime: string
   retentionDays: number
   expiresAt?: string
+}
+
+export interface AdminRecycleBinEntry extends RecycleBinEntry {
+  ownerName?: string
+  channelName?: string
+  channelSlug?: string
+  deletedByName?: string
+}
+
+export interface RecycleChannelOption {
+  id: string
+  name: string
+  slug: string
+  ownerType: 'USER' | 'TEAM'
+  ownerName?: string
 }
 
 export type ProviderProtocol = 'OPENAI_CHAT' | 'OPENAI_RESPONSE' | 'ANTHROPIC_MESSAGES'

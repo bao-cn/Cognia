@@ -20,11 +20,15 @@ public interface MinioStorageService {
 
     StoredObjectResponse uploadAtKey(MultipartFile file, String key, UploadProgressListener listener);
 
+    StoredObjectResponse uploadAssetAtKey(MultipartFile file, String key, UploadProgressListener listener);
+
     StoredObjectResponse uploadChatImage(MultipartFile file, String key, UploadProgressListener listener);
 
     void copyChatImage(String sourceKey, String targetKey);
 
     byte[] readObject(String key);
+
+    void deleteObject(String key);
 
     StoredObjectResponse uploadBytesAtKey(byte[] bytes, String key, String contentType);
 

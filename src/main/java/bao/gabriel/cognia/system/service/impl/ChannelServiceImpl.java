@@ -3,15 +3,16 @@ package bao.gabriel.cognia.system.service.impl;
 import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.common.storage.UploadProgressListener;
 import bao.gabriel.cognia.common.util.ReservedNames;
+import bao.gabriel.cognia.system.dto.channel.ChannelAboutResponse;
 import bao.gabriel.cognia.system.dto.channel.ChannelDetailResponse;
 import bao.gabriel.cognia.system.dto.channel.ChannelDocumentResponse;
 import bao.gabriel.cognia.system.dto.channel.ChannelSummaryResponse;
 import bao.gabriel.cognia.system.dto.channel.CreateChannelRequest;
 import bao.gabriel.cognia.system.dto.channel.CreateFolderRequest;
 import bao.gabriel.cognia.system.dto.channel.FolderResponse;
-import bao.gabriel.cognia.system.dto.channel.UpdateAgentMetaRequest;
 import bao.gabriel.cognia.system.dto.channel.UpdateChannelRequest;
 import bao.gabriel.cognia.system.entity.Channel;
+import bao.gabriel.cognia.system.entity.ChannelNotifySubscription;
 import bao.gabriel.cognia.system.entity.ChannelSubscription;
 import bao.gabriel.cognia.system.entity.Folder;
 import bao.gabriel.cognia.system.entity.KbDocument;
@@ -19,6 +20,7 @@ import bao.gabriel.cognia.system.entity.Team;
 import bao.gabriel.cognia.system.entity.TeamMember;
 import bao.gabriel.cognia.system.entity.User;
 import bao.gabriel.cognia.system.mapper.ChannelMapper;
+import bao.gabriel.cognia.system.mapper.ChannelNotifySubscriptionMapper;
 import bao.gabriel.cognia.system.mapper.ChannelSubscriptionMapper;
 import bao.gabriel.cognia.system.mapper.FolderMapper;
 import bao.gabriel.cognia.system.mapper.KbDocumentMapper;
@@ -31,6 +33,8 @@ import bao.gabriel.cognia.system.service.DocumentStateMachine;
 import bao.gabriel.cognia.system.service.FileDeletionService;
 import bao.gabriel.cognia.system.service.MinioStorageService;
 import bao.gabriel.cognia.system.service.SiteSettingService;
+import bao.gabriel.cognia.system.service.TwoFactorService;
+import bao.gabriel.cognia.system.service.UserService;
 import bao.gabriel.cognia.system.dto.storage.StoredObjectResponse;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
@@ -40,14 +44,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -56,12 +65,18 @@ import java.util.regex.Pattern;
 public class ChannelServiceImpl implements ChannelService {
 
     private static final Pattern OWNER_TYPE = Pattern.compile("^(USER|TEAM)$");
+    private static final Pattern MARKDOWN_ASSET = Pattern.compile(
+            "(!?\\[[^\\]]*\\]\\()(\\s*)((?:\\./|/)?assets/[^)\\s]+)(\\s*\\))");
+    private static final Pattern HTML_ASSET = Pattern.compile(
+            "(<img\\b[^>]*\\bsrc=[\"'])((?:\\./|/)?assets/[^\"']+)([\"'])",
+            Pattern.CASE_INSENSITIVE);
     private static final Set<String> WRITE_ROLES = Set.of(
             TeamMember.ROLE_OWNER, TeamMember.ROLE_MANAGER, TeamMember.ROLE_EDITOR,
             "MAINTAINER");
 
     private final ChannelMapper channelMapper;
     private final ChannelSubscriptionMapper subscriptionMapper;
+    private final ChannelNotifySubscriptionMapper notifySubscriptionMapper;
     private final FolderMapper folderMapper;
     private final KbDocumentMapper documentMapper;
     private final UserMapper userMapper;
@@ -72,6 +87,8 @@ public class ChannelServiceImpl implements ChannelService {
     private final FileDeletionService deletionService;
     private final DocumentStateMachine stateMachine;
     private final SiteSettingService siteSettingService;
+    private final UserService userService;
+    private final TwoFactorService twoFactorService;
 
     @Override
     public List<ChannelSummaryResponse> list(String ownerType, Long ownerId, Long viewerId) {
@@ -95,7 +112,9 @@ public class ChannelServiceImpl implements ChannelService {
         Channel channel = requireChannel(channelId);
         Access access = access(channel, viewerId);
         if (!access.read()) {
-            throw BusinessException.notFound("频道不存在");
+            throw BusinessException.forbidden(channel.archived()
+                    ? "频道已存档，暂无法访问"
+                    : !channel.isPublic() ? "频道已转为私密，暂无法访问" : "无权访问该频道");
         }
         List<FolderResponse> folders = folderMapper.selectList(new LambdaQueryWrapper<Folder>()
                         .eq(Folder::getChannelId, channelId)
@@ -104,7 +123,7 @@ public class ChannelServiceImpl implements ChannelService {
         List<ChannelDocumentResponse> documents = documents(channelId, viewerId, null);
         return new ChannelDetailResponse(toSummary(channel, viewerId), folders, documents,
                 access.write(), access.manage(), access.member() || access.write(),
-                access.member() || access.write());
+                access.member() || access.write(), about(channel, documents));
     }
 
     @Override
@@ -160,9 +179,6 @@ public class ChannelServiceImpl implements ChannelService {
         }
         channel.setName(request.name().trim());
         channel.setDescription(trimToNull(request.description()));
-        if (request.isPublic() != null) {
-            channel.setIsPublic(request.isPublic());
-        }
         if (request.webSearchEnabled() != null) {
             channel.setWebSearchEnabled(request.webSearchEnabled());
         }
@@ -230,6 +246,7 @@ public class ChannelServiceImpl implements ChannelService {
         if (!access.write()) {
             throw BusinessException.forbidden("你没有在该频道创建文件夹的权限");
         }
+        ensureNotArchived(channel, "频道已存档，取消存档后才能新建文件夹");
         Folder parent = null;
         int depth = 1;
         if (request.parentId() != null) {
@@ -271,6 +288,7 @@ public class ChannelServiceImpl implements ChannelService {
         if (!access.write()) {
             throw BusinessException.forbidden("你没有删除文件夹的权限");
         }
+        ensureNotArchived(channel, "频道已存档，取消存档后才能删除文件夹");
         Folder folder = folderMapper.selectById(folderId);
         if (folder == null || !channelId.equals(folder.getChannelId())) {
             throw BusinessException.notFound("文件夹不存在");
@@ -295,6 +313,7 @@ public class ChannelServiceImpl implements ChannelService {
         if (!access.write()) {
             throw BusinessException.forbidden("你没有上传文档的权限");
         }
+        ensureNotArchived(channel, "频道已存档，取消存档后才能上传文件");
         if (file == null || file.isEmpty()) {
             throw BusinessException.badRequest("请选择要上传的文档");
         }
@@ -305,65 +324,78 @@ public class ChannelServiceImpl implements ChannelService {
                 throw BusinessException.badRequest("文件夹不存在");
             }
         }
+        String originalName = StringUtils.hasText(file.getOriginalFilename())
+                ? file.getOriginalFilename().trim() : "未命名文档";
         String base = "kb/" + ownerHandle(channel) + "/" + channel.getSlug();
         if (folder != null) {
             base += "/" + folderPath(folder);
         }
-        String extension = extensionOf(file.getOriginalFilename());
-        String key = base + "/" + UUID.randomUUID().toString().replace("-", "")
-                + (extension.isEmpty() ? "" : "." + extension);
-        StoredObjectResponse stored = storageService.uploadAtKey(file, key, UploadProgressListener.NOOP);
+        String extension = extensionOf(originalName);
+        String markdownKind = folder == null ? markdownKind(originalName) : null;
+        boolean asset = folder != null && isRootAssetsFolder(folder);
+        boolean skipIngestion = markdownKind != null || asset;
+        String key = base + "/" + (skipIngestion
+                ? safeObjectName(originalName, extension)
+                : UUID.randomUUID().toString().replace("-", "") + (extension.isEmpty() ? "" : "." + extension));
+        if (asset) {
+            long duplicates = documentMapper.selectCount(new LambdaQueryWrapper<KbDocument>()
+                    .eq(KbDocument::getChannelId, channelId)
+                    .eq(KbDocument::getFolderId, folderId)
+                    .eq(KbDocument::getName, originalName)
+                    .ne(KbDocument::getStatus, DocumentStateMachine.DocumentStatus.DELETED.name()));
+            if (duplicates > 0) {
+                throw BusinessException.conflict("assets 目录下已存在同名文件");
+            }
+        }
+        KbDocument existingMarkdown = markdownKind == null
+                ? null : findRootMarkdown(channelId, "AGENT".equals(markdownKind));
+        String previousKey = existingMarkdown == null ? null : existingMarkdown.getObjectKey();
+        StoredObjectResponse stored = (asset || markdownKind != null)
+                ? storageService.uploadAssetAtKey(file, key, UploadProgressListener.NOOP)
+                : storageService.uploadAtKey(file, key, UploadProgressListener.NOOP);
         LocalDateTime now = LocalDateTime.now();
-        KbDocument document = new KbDocument();
-        document.setOwnerType(channel.getOwnerType());
-        document.setOwnerId(channel.getOwnerId());
-        document.setChannelId(channelId);
-        document.setFolderId(folderId);
-        String originalName = file.getOriginalFilename() == null ? "未命名文档" : file.getOriginalFilename();
+        KbDocument document = existingMarkdown == null ? new KbDocument() : existingMarkdown;
+        if (existingMarkdown == null) {
+            document.setOwnerType(channel.getOwnerType());
+            document.setOwnerId(channel.getOwnerId());
+            document.setChannelId(channelId);
+            document.setFolderId(folderId);
+            document.setCreatedBy(userId);
+            document.setCreateTime(now);
+            document.setVersion(1);
+        } else if (previousKey != null && !previousKey.equals(stored.key())) {
+            deleteObjectQuietly(previousKey);
+            document.setVersion(document.getVersion() == null ? 2 : document.getVersion() + 1);
+        }
         document.setName(originalName);
         document.setTitle(StringUtils.hasText(title) ? title.trim() : originalName);
         document.setDocumentType(StringUtils.hasText(documentType) ? documentType.trim() : extension);
         document.setAuthor(ownerHandle(channel));
         document.setExpirationTime(parseDateTime(expirationTime));
-        document.setVersion(1);
         document.setObjectKey(stored.key());
         document.setOriginalKey(stored.key());
         document.setSize(stored.size());
         document.setContentType(stored.contentType());
-        document.setStatus(DocumentStateMachine.DocumentStatus.PENDING.name());
         document.setRetryCount(0);
-        document.setCreatedBy(userId);
-        document.setCreateTime(now);
+        document.setErrorMessage(null);
         document.setUpdateTime(now);
-        documentMapper.insert(document);
-        ingestionService.ingest(document.getId());
+        if (skipIngestion) {
+            document.setStatus(DocumentStateMachine.DocumentStatus.READY.name());
+            document.setProcessedAt(now);
+        } else {
+            document.setStatus(DocumentStateMachine.DocumentStatus.PENDING.name());
+            document.setProcessedAt(null);
+        }
+        if (existingMarkdown == null) {
+            documentMapper.insert(document);
+        } else {
+            documentMapper.updateById(document);
+        }
+        if (!skipIngestion) {
+            ingestionService.ingest(document.getId());
+        }
         KbDocument saved = documentMapper.selectById(document.getId());
         return toDocument(saved == null ? document : saved);
-    }
-
-    @Override
-    @Transactional
-    public ChannelDocumentResponse uploadMarkdown(Long userId, Long channelId, String kind, MultipartFile file) {
-        Channel channel = requireChannel(channelId);
-        Access access = access(channel, userId);
-        if (!access.write()) {
-            throw BusinessException.forbidden("你没有修改频道文档的权限");
-        }
-        String normalized = "AGENT".equalsIgnoreCase(kind) ? "AGENT" : "README";
-        if (file == null || file.isEmpty()) {
-            throw BusinessException.badRequest("请选择 Markdown 文件");
-        }
-        String key = "kb/" + ownerHandle(channel) + "/" + channel.getSlug() + "/" + normalized + ".md";
-        storageService.uploadAtKey(file, key, UploadProgressListener.NOOP);
-        if ("AGENT".equals(normalized)) {
-            channel.setAgentKey(key);
-            applyAgentFrontmatter(channel, file);
-        } else {
-            channel.setReadmeKey(key);
-        }
-        channel.setUpdateTime(LocalDateTime.now());
-        channelMapper.updateById(channel);
-        return toDocumentFromMarkdown(normalized, key, file);
     }
 
     @Override
@@ -371,10 +403,36 @@ public class ChannelServiceImpl implements ChannelService {
         Channel channel = requireChannel(channelId);
         Access access = access(channel, viewerId);
         if (!access.read()) {
-            throw BusinessException.notFound("频道不存在");
+            throw BusinessException.forbidden(channel.archived()
+                    ? "频道已存档，暂无法访问"
+                    : !channel.isPublic() ? "频道已转为私密，暂无法访问" : "无权访问该频道");
         }
         boolean agent = "AGENT".equalsIgnoreCase(kind);
         return readMarkdownContent(channel, agent);
+    }
+
+    @Override
+    public String readDocumentMarkdown(Long channelId, Long documentId, Long viewerId) {
+        Channel channel = requireChannel(channelId);
+        if (!access(channel, viewerId).read()) {
+            throw BusinessException.forbidden(channel.archived()
+                    ? "频道已存档，暂无法访问"
+                    : !channel.isPublic() ? "频道已转为私密，暂无法访问" : "无权访问该频道");
+        }
+        KbDocument document = documentId == null ? null : documentMapper.selectById(documentId);
+        if (document == null || !channelId.equals(document.getChannelId())
+                || DocumentStateMachine.DocumentStatus.DELETED.name().equals(document.getStatus())) {
+            throw BusinessException.notFound("文档不存在");
+        }
+        if (document.getFolderId() == null && "readme".equals(markdownBaseName(document.getName()))) {
+            return readMarkdownContent(channel, false);
+        }
+        try {
+            return new String(storageService.readObject(document.getObjectKey()), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (RuntimeException ex) {
+            log.warn("Unable to read markdown document {}: {}", documentId, ex.getMessage());
+            throw BusinessException.notFound("文档内容不可用");
+        }
     }
 
     @Override
@@ -449,14 +507,13 @@ public class ChannelServiceImpl implements ChannelService {
 
     private String readMarkdownContent(Channel channel, boolean agent) {
         KbDocument rootDocument = findRootMarkdown(channel.getId(), agent);
-        String key = rootDocument != null && StringUtils.hasText(rootDocument.getObjectKey())
-                ? rootDocument.getObjectKey()
-                : (agent ? channel.getAgentKey() : channel.getReadmeKey());
+        String key = rootDocument == null ? null : rootDocument.getObjectKey();
         if (!StringUtils.hasText(key)) {
             return "";
         }
         try {
-            return new String(storageService.readObject(key), StandardCharsets.UTF_8);
+            String content = new String(storageService.readObject(key), StandardCharsets.UTF_8);
+            return agent ? content : rewriteReadmeAssets(channel, content);
         } catch (RuntimeException ex) {
             log.warn("Unable to read channel markdown for channel {}: {}", channel.getId(), ex.getMessage());
             return "";
@@ -464,8 +521,8 @@ public class ChannelServiceImpl implements ChannelService {
     }
 
     /**
-     * Root-folder markdown documents named readme(.md)/agent(.md) override the
-     * key stored on the channel row.
+     * Root-folder documents whose basename is readme/agent override the key
+     * stored on the channel row. Matching ignores case and the file extension.
      */
     private KbDocument findRootMarkdown(Long channelId, boolean agent) {
         String statusDeleted = DocumentStateMachine.DocumentStatus.DELETED.name();
@@ -473,12 +530,10 @@ public class ChannelServiceImpl implements ChannelService {
                 .eq(KbDocument::getChannelId, channelId)
                 .isNull(KbDocument::getFolderId)
                 .ne(KbDocument::getStatus, statusDeleted)
-                .apply("LOWER(name) IN ('readme', 'readme.md', 'agent', 'agent.md')")
                 .orderByAsc(KbDocument::getId));
-        List<String> names = agent ? List.of("agent", "agent.md") : List.of("readme", "readme.md");
+        String wanted = agent ? "agent" : "readme";
         return candidates.stream()
-                .filter(doc -> doc.getName() != null
-                        && names.contains(doc.getName().trim().toLowerCase(Locale.ROOT)))
+                .filter(doc -> wanted.equals(markdownBaseName(doc.getName())))
                 .findFirst()
                 .orElse(null);
     }
@@ -488,7 +543,9 @@ public class ChannelServiceImpl implements ChannelService {
         Channel channel = requireChannel(channelId);
         Access access = access(channel, viewerId);
         if (!access.read()) {
-            throw BusinessException.notFound("频道不存在");
+            throw BusinessException.forbidden(channel.archived()
+                    ? "频道已存档，暂无法访问"
+                    : !channel.isPublic() ? "频道已转为私密，暂无法访问" : "无权访问该频道");
         }
         return documentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
                         .eq(KbDocument::getChannelId, channelId)
@@ -527,30 +584,12 @@ public class ChannelServiceImpl implements ChannelService {
         if (!access.write()) {
             throw BusinessException.forbidden("你没有删除文档的权限");
         }
+        ensureNotArchived(channel, "频道已存档，取消存档后才能删除文档");
         KbDocument document = documentMapper.selectById(documentId);
         if (document == null || !channelId.equals(document.getChannelId())) {
             throw BusinessException.notFound("文档不存在");
         }
         deletionService.logicalDelete(document, userId);
-    }
-
-    @Override
-    @Transactional
-    public ChannelSummaryResponse updateAgentMeta(Long userId, Long channelId, UpdateAgentMetaRequest request) {
-        Channel channel = requireChannel(channelId);
-        Access access = access(channel, userId);
-        if (!access.write()) {
-            throw BusinessException.forbidden("你没有修改 AGENT.md 的权限");
-        }
-        channel.setAgentName(trimToNull(request.name()));
-        channel.setAgentDescription(trimToNull(request.description()));
-        channel.setAgentTags(trimToNull(request.tags()));
-        channel.setUpdateTime(LocalDateTime.now());
-        channelMapper.updateById(channel);
-        if (channel.getAgentKey() != null) {
-            rewriteAgentMarkdown(channel);
-        }
-        return toSummary(channel);
     }
 
     @Override
@@ -560,6 +599,7 @@ public class ChannelServiceImpl implements ChannelService {
         if (!access.write()) {
             throw BusinessException.forbidden("你没有重试文档的权限");
         }
+        ensureNotArchived(channel, "频道已存档，取消存档后才能重试文档");
         KbDocument document = documentMapper.selectById(documentId);
         if (document == null || !channelId.equals(document.getChannelId())) {
             throw BusinessException.notFound("文档不存在");
@@ -567,6 +607,148 @@ public class ChannelServiceImpl implements ChannelService {
         stateMachine.retry(document);
         documentMapper.updateById(document);
         ingestionService.ingest(document.getId());
+    }
+
+
+    @Override
+    @Transactional
+    public ChannelSummaryResponse setVisibility(Long userId, Long channelId, boolean isPublic, String verificationCode) {
+        Channel channel = requireChannel(channelId);
+        Access access = access(channel, userId);
+        if (!access.manage()) {
+            throw BusinessException.forbidden("只有频道归属者可以修改频道可见性");
+        }
+        if (channel.isPublic() == isPublic) {
+            return toSummary(channel, userId);
+        }
+        if (isPublic && !channel.isPublic()) {
+            requireDangerVerification(userId, verificationCode);
+        }
+        channel.setIsPublic(isPublic);
+        channel.setUpdateTime(LocalDateTime.now());
+        channelMapper.updateById(channel);
+        return toSummary(channel, userId);
+    }
+
+    @Override
+    @Transactional
+    public ChannelSummaryResponse setArchived(Long userId, Long channelId, boolean archived, String verificationCode) {
+        Channel channel = requireChannel(channelId);
+        Access access = access(channel, userId);
+        if (!access.manage()) {
+            throw BusinessException.forbidden("只有频道归属者可以存档频道");
+        }
+        if (channel.archived() == archived) {
+            return toSummary(channel, userId);
+        }
+        requireDangerVerification(userId, verificationCode);
+        channel.setArchived(archived);
+        channel.setUpdateTime(LocalDateTime.now());
+        channelMapper.updateById(channel);
+        return toSummary(channel, userId);
+    }
+
+    private void ensureNotArchived(Channel channel, String message) {
+        if (channel.archived()) {
+            throw BusinessException.forbidden(message);
+        }
+    }
+
+    private void requireDangerVerification(Long userId, String verificationCode) {
+        User user = userId == null ? null : userMapper.selectById(userId);
+        if (user == null) {
+            throw BusinessException.notFound("用户不存在");
+        }
+        if (Boolean.TRUE.equals(user.getTwoFactorEnabled())) {
+            if (!StringUtils.hasText(verificationCode)) {
+                throw BusinessException.badRequest("请输入两步验证码");
+            }
+            if (!twoFactorService.verify(user, verificationCode)) {
+                throw BusinessException.badRequest("两步验证码不正确");
+            }
+            return;
+        }
+        if (!StringUtils.hasText(user.getPassword())) {
+            throw BusinessException.badRequest("当前账号未设置密码，请先设置密码或开启两步验证");
+        }
+        if (!StringUtils.hasText(verificationCode)) {
+            throw BusinessException.badRequest("请输入登录密码");
+        }
+        if (!userService.matchesPassword(userId, verificationCode)) {
+            throw BusinessException.badRequest("密码不正确");
+        }
+    }
+
+    private ChannelAboutResponse about(Channel channel, List<ChannelDocumentResponse> documents) {
+        long subscriberCount = subscriptionMapper.selectCount(new LambdaQueryWrapper<ChannelSubscription>()
+                .eq(ChannelSubscription::getChannelId, channel.getId()));
+        long notifyCount = notifySubscriptionMapper.selectCount(new LambdaQueryWrapper<ChannelNotifySubscription>()
+                .eq(ChannelNotifySubscription::getChannelId, channel.getId()));
+        KbDocument readme = findRootMarkdown(channel.getId(), false);
+        String readmeDocumentId = readme == null ? null : String.valueOf(readme.getId());
+        String readmeName = readme == null ? null : readme.getName();
+        boolean hasReadme = readme != null;
+
+        List<ChannelAboutResponse.Contributor> contributors = new ArrayList<>();
+        if (Channel.OWNER_USER.equals(channel.getOwnerType())) {
+            User owner = userMapper.selectById(channel.getOwnerId());
+            if (owner != null) {
+                contributors.add(contributor(owner, documents.size()));
+            }
+        } else {
+            Map<Long, Long> counts = new LinkedHashMap<>();
+            List<KbDocument> entities = documentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
+                    .eq(KbDocument::getChannelId, channel.getId())
+                    .ne(KbDocument::getStatus, DocumentStateMachine.DocumentStatus.DELETED.name()));
+            for (KbDocument entity : entities) {
+                if (entity.getCreatedBy() != null) {
+                    counts.merge(entity.getCreatedBy(), 1L, Long::sum);
+                }
+            }
+            counts.entrySet().stream()
+                    .sorted(Map.Entry.<Long, Long>comparingByValue(Comparator.reverseOrder()))
+                    .limit(12)
+                    .forEach(entry -> {
+                        User user = userMapper.selectById(entry.getKey());
+                        if (user != null) {
+                            contributors.add(contributor(user, entry.getValue()));
+                        }
+                    });
+        }
+
+        Map<String, long[]> byType = new LinkedHashMap<>();
+        for (ChannelDocumentResponse document : documents) {
+            String type = normalizedDocumentType(document);
+            long[] stat = byType.computeIfAbsent(type, key -> new long[2]);
+            stat[0] += 1;
+            stat[1] += document.size();
+        }
+        List<ChannelAboutResponse.FileType> fileTypes = byType.entrySet().stream()
+                .map(entry -> new ChannelAboutResponse.FileType(entry.getKey(), entry.getValue()[0], entry.getValue()[1]))
+                .sorted(Comparator.comparingLong(ChannelAboutResponse.FileType::count).reversed()
+                        .thenComparing(ChannelAboutResponse.FileType::type))
+                .toList();
+
+        return new ChannelAboutResponse(channel.getDescription(), hasReadme, readmeDocumentId, readmeName,
+                channel.archived(), subscriberCount, notifyCount, contributors, fileTypes);
+    }
+
+    private ChannelAboutResponse.Contributor contributor(User user, long count) {
+        return new ChannelAboutResponse.Contributor(
+                String.valueOf(user.getId()), user.getUsername(),
+                StringUtils.hasText(user.getNickname()) ? user.getNickname() : user.getUsername(),
+                user.getAvatar(), count);
+    }
+
+    private String normalizedDocumentType(ChannelDocumentResponse document) {
+        String type = document.documentType();
+        if (!StringUtils.hasText(type)) {
+            type = extensionOf(document.name());
+        }
+        if (!StringUtils.hasText(type)) {
+            return "other";
+        }
+        return type.toLowerCase(Locale.ROOT).replaceAll("^.*/", "");
     }
 
     private Channel requireChannel(Long channelId) {
@@ -633,7 +815,7 @@ public class ChannelServiceImpl implements ChannelService {
                 channel.getReadmeKey(), channel.getAgentKey(), channel.getAgentName(),
                 channel.getAgentDescription(), channel.getAgentTags(),
                 siteSettingService.formatDateTime(channel.getUpdateTime()),
-                channel.webSearchEnabled(), channel.featured(), subscribed);
+                channel.webSearchEnabled(), channel.featured(), subscribed, channel.archived());
     }
 
     private FolderResponse toFolder(Folder folder) {
@@ -652,12 +834,6 @@ public class ChannelServiceImpl implements ChannelService {
                 siteSettingService.formatDateTime(document.getExpirationTime()),
                 siteSettingService.formatDateTime(document.getCreateTime()),
                 siteSettingService.formatDateTime(document.getProcessedAt()));
-    }
-
-    private ChannelDocumentResponse toDocumentFromMarkdown(String kind, String key, MultipartFile file) {
-        return new ChannelDocumentResponse(kind, kind + ".md", null, file.getSize(),
-                "text/markdown", "READY", null, 0, kind, "markdown", null,
-                siteSettingService.formatDateTime(LocalDateTime.now()), null);
     }
 
     private LocalDateTime parseDateTime(String value) {
@@ -707,57 +883,152 @@ public class ChannelServiceImpl implements ChannelService {
         return sanitized.isEmpty() ? "folder" : sanitized;
     }
 
-    private void applyAgentFrontmatter(Channel channel, MultipartFile file) {
-        try {
-            String text = new String(file.getBytes(), StandardCharsets.UTF_8);
-            if (!text.startsWith("---")) {
-                return;
-            }
-            int end = text.indexOf("\n---", 3);
-            if (end < 0) {
-                return;
-            }
-            String frontmatter = text.substring(3, end);
-            for (String line : frontmatter.split("\\R")) {
-                int colon = line.indexOf(':');
-                if (colon < 0) {
-                    continue;
-                }
-                String key = line.substring(0, colon).trim();
-                String value = line.substring(colon + 1).trim().replaceAll("^['\"]|['\"]$", "");
-                switch (key) {
-                    case "name" -> channel.setAgentName(value);
-                    case "description" -> channel.setAgentDescription(value);
-                    case "tags" -> channel.setAgentTags(value);
-                    default -> {
+    private String markdownKind(String filename) {
+        String base = markdownBaseName(filename);
+        if ("agent".equals(base)) {
+            return "AGENT";
+        }
+        return "readme".equals(base) ? "README" : null;
+    }
+
+    private String markdownBaseName(String filename) {
+        if (!StringUtils.hasText(filename)) {
+            return "";
+        }
+        String name = filename.trim();
+        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        if (slash >= 0) {
+            name = name.substring(slash + 1);
+        }
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) {
+            name = name.substring(0, dot);
+        }
+        return name.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String safeObjectName(String filename, String extension) {
+        String name = filename == null ? "" : filename.trim();
+        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        if (slash >= 0) {
+            name = name.substring(slash + 1);
+        }
+        name = name.replaceAll("[\\x00-\\x1f\\x7f]", "").trim();
+        if (name.isEmpty() || ".".equals(name) || "..".equals(name)) {
+            name = "file" + (extension.isEmpty() ? "" : "." + extension);
+        }
+        if (name.length() > 180) {
+            String suffix = extension.isEmpty() ? "" : "." + extension;
+            name = name.substring(0, 180 - suffix.length()) + suffix;
+        }
+        return name;
+    }
+
+    private boolean isRootAssetsFolder(Folder folder) {
+        return folder != null && folder.getParentId() == null
+                && "assets".equalsIgnoreCase(folder.getName() == null ? "" : folder.getName().trim());
+    }
+
+    private String rewriteReadmeAssets(Channel channel, String content) {
+        if (!StringUtils.hasText(content) || !content.toLowerCase(Locale.ROOT).contains("assets/")) {
+            return content;
+        }
+        Folder assetsFolder = folderMapper.selectOne(new LambdaQueryWrapper<Folder>()
+                .eq(Folder::getChannelId, channel.getId())
+                .isNull(Folder::getParentId)
+                .apply("LOWER(name) = 'assets'")
+                .last("LIMIT 1"));
+        if (assetsFolder == null) {
+            return content;
+        }
+        Map<String, String> keys = new HashMap<>();
+        documentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
+                        .eq(KbDocument::getChannelId, channel.getId())
+                        .eq(KbDocument::getFolderId, assetsFolder.getId())
+                        .ne(KbDocument::getStatus, DocumentStateMachine.DocumentStatus.DELETED.name()))
+                .forEach(doc -> {
+                    if (StringUtils.hasText(doc.getName()) && StringUtils.hasText(doc.getObjectKey())) {
+                        keys.putIfAbsent(doc.getName(), doc.getObjectKey());
                     }
-                }
+                });
+        if (keys.isEmpty()) {
+            return content;
+        }
+        return rewriteAssetPattern(HTML_ASSET, MARKDOWN_ASSET, channel, keys, content);
+    }
+
+    private String rewriteAssetPattern(Pattern html, Pattern markdown, Channel channel,
+                                       Map<String, String> keys, String content) {
+        String rewritten = replaceAssetMatches(html, channel, keys, content, 2, 3);
+        return replaceAssetMatches(markdown, channel, keys, rewritten, 3, 4);
+    }
+
+    private String replaceAssetMatches(Pattern pattern, Channel channel, Map<String, String> keys,
+                                       String content, int pathGroup, int suffixGroup) {
+        Matcher matcher = pattern.matcher(content);
+        StringBuffer output = new StringBuffer();
+        while (matcher.find()) {
+            String url = assetUrl(channel, keys, matcher.group(pathGroup));
+            if (url == null) {
+                matcher.appendReplacement(output, Matcher.quoteReplacement(matcher.group()));
+            } else {
+                matcher.appendReplacement(output, Matcher.quoteReplacement(
+                        matcher.group(1) + url + matcher.group(suffixGroup)));
             }
-        } catch (Exception ex) {
-            log.debug("Unable to parse AGENT.md frontmatter", ex);
+        }
+        matcher.appendTail(output);
+        return output.toString();
+    }
+
+    private String assetUrl(Channel channel, Map<String, String> keys, String rawPath) {
+        String path = rawPath == null ? "" : rawPath.trim();
+        while (path.startsWith("./")) {
+            path = path.substring(2);
+        }
+        while (path.startsWith("/")) {
+            path = path.substring(1);
+        }
+        int query = path.indexOf('?');
+        if (query >= 0) {
+            path = path.substring(0, query);
+        }
+        int fragment = path.indexOf('#');
+        if (fragment >= 0) {
+            path = path.substring(0, fragment);
+        }
+        if (!path.startsWith("assets/")) {
+            return null;
+        }
+        String name = path.substring("assets/".length());
+        try {
+            name = URLDecoder.decode(name, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ignored) {
+            // keep the literal path
+        }
+        String decodedName = name;
+        String key = keys.get(decodedName);
+        if (key == null) {
+            key = keys.entrySet().stream()
+                    .filter(entry -> entry.getKey().equalsIgnoreCase(decodedName))
+                    .map(Map.Entry::getValue)
+                    .findFirst().orElse(null);
+        }
+        if (key == null) {
+            return null;
+        }
+        try {
+            return storageService.presignedUrl(key, 3600);
+        } catch (RuntimeException ex) {
+            log.debug("Unable to sign README asset for channel {}: {}", channel.getId(), ex.getMessage());
+            return null;
         }
     }
 
-    private void rewriteAgentMarkdown(Channel channel) {
-        String frontmatter = """
-                ---
-                name: %s
-                description: %s
-                tags: %s
-                ---
-
-                # %s
-
-                %s
-                """.formatted(nullToEmpty(channel.getAgentName()), nullToEmpty(channel.getAgentDescription()),
-                nullToEmpty(channel.getAgentTags()), nullToEmpty(channel.getName()),
-                nullToEmpty(channel.getAgentDescription()));
-        // Persisting the canonical AGENT.md is best-effort; metadata is already saved.
+    private void deleteObjectQuietly(String key) {
         try {
-            byte[] bytes = frontmatter.getBytes(StandardCharsets.UTF_8);
-            storageService.uploadBytesAtKey(bytes, channel.getAgentKey(), "text/markdown");
-        } catch (Exception ex) {
-            log.warn("Unable to rewrite AGENT.md for channel {}: {}", channel.getId(), ex.getMessage());
+            storageService.deleteObject(key);
+        } catch (RuntimeException ex) {
+            log.warn("Unable to delete replaced markdown object {}: {}", key, ex.getMessage());
         }
     }
 
@@ -774,10 +1045,6 @@ public class ChannelServiceImpl implements ChannelService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
-    }
-
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 
     private record Access(boolean read, boolean write, boolean manage, boolean member) {

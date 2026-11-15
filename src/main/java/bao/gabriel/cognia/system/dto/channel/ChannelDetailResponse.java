@@ -9,6 +9,7 @@ public record ChannelDetailResponse(
         boolean canWrite,
         boolean canManage,
         boolean canNotify,
-        boolean canViewInsights
+        boolean canViewInsights,
+        ChannelAboutResponse about
 ) {
 }

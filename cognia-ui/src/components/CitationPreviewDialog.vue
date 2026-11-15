@@ -5,11 +5,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button'
 import Markdown from './Markdown.vue'
 import { documentApi } from '@/api/document'
+import { channelApi } from '@/api/channel'
 import type { CitationSource } from '@/api/chat'
 
 const props = defineProps<{
   open: boolean
   source: CitationSource | null
+  showIndex?: boolean
 }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
@@ -83,7 +85,15 @@ async function load() {
     downloadUrl.value = URL.createObjectURL(blob)
 
     if (ext === 'md' || ext === 'markdown' || contentType.includes('markdown')) {
-      markdownText.value = await blob.text()
+      if (source.channelId) {
+        try {
+          markdownText.value = await channelApi.documentMarkdown(String(source.channelId), String(source.documentId))
+        } catch {
+          markdownText.value = await blob.text()
+        }
+      } else {
+        markdownText.value = await blob.text()
+      }
       view.value = 'markdown'
       return
     }
@@ -150,7 +160,7 @@ onBeforeUnmount(() => {
     <DialogContent class="flex h-[86vh] max-w-[min(1100px,94vw)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,94vw)]">
       <DialogHeader class="border-b px-5 py-4">
         <DialogTitle class="flex items-center gap-2 text-base">
-          <span class="inline-flex size-6 items-center justify-center rounded bg-primary/10 text-xs font-semibold text-primary">
+          <span v-if="showIndex !== false" class="inline-flex size-6 items-center justify-center rounded bg-primary/10 text-xs font-semibold text-primary">
             {{ source?.index }}
           </span>
           <span class="truncate">{{ title }}</span>

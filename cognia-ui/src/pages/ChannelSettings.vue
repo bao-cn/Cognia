@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { channelApi, profileApi } from '@/api'
+import { useUserStore } from '@/stores/user'
 import type { ChannelCard, ChannelDetail } from '@/types/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -14,22 +15,18 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  IconAlertTriangle, IconArrowLeft, IconBook, IconCloudUpload, IconCode, IconPin, IconRefresh,
+  IconAlertTriangle, IconArrowLeft, IconLock, IconRefresh,
   IconSettings, IconTrash,
 } from '@tabler/icons-vue'
 
 const props = defineProps<{ embedded?: boolean }>()
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(true)
 const error = ref('')
 const detail = ref<ChannelDetail | null>(null)
 const saving = ref(false)
-const pinning = ref(false)
-const agentSaving = ref(false)
-const markdownUploading = ref(false)
-const readmeInput = ref<HTMLInputElement | null>(null)
-const agentInput = ref<HTMLInputElement | null>(null)
 const deleteOpen = ref(false)
 const deleting = ref(false)
 const notifyForm = reactive({ title: '', content: '' })
@@ -42,18 +39,13 @@ const canManage = computed(() => detail.value?.canManage ?? false)
 const canNotify = computed(() => detail.value?.canNotify ?? false)
 const channelPath = computed(() => `/${ownerParam.value}/${slugParam.value}`)
 
-const form = reactive({ name: '', description: '', isPublic: true, webSearchEnabled: true })
-const agentForm = reactive({ name: '', description: '', tags: '' })
+const form = reactive({ name: '', description: '', webSearchEnabled: true })
 
 function fill(value: ChannelDetail) {
   detail.value = value
   form.name = value.channel.name
   form.description = value.channel.description ?? ''
-  form.isPublic = value.channel.isPublic
   form.webSearchEnabled = value.channel.webSearchEnabled ?? true
-  agentForm.name = value.channel.agentName ?? ''
-  agentForm.description = value.channel.agentDescription ?? ''
-  agentForm.tags = value.channel.agentTags ?? ''
 }
 
 async function load() {
@@ -88,7 +80,6 @@ async function saveBasic() {
     await channelApi.update(channel.value.id, {
       name: form.name.trim(),
       description: form.description.trim(),
-      isPublic: form.isPublic,
       webSearchEnabled: form.webSearchEnabled,
     })
     fill(await channelApi.detail(channel.value.id))
@@ -100,61 +91,57 @@ async function saveBasic() {
   }
 }
 
-async function togglePin() {
+type DangerAction = 'make-public' | 'make-private' | 'archive' | 'unarchive'
+const dangerOpen = ref(false)
+const dangerAction = ref<DangerAction>('make-public')
+const verificationCode = ref('')
+const dangerBusy = ref(false)
+const needsVerification = computed(() => dangerAction.value !== 'make-private')
+const dangerTitle = computed(() => ({
+  'make-public': '设为公开频道',
+  'make-private': '转为私密频道',
+  archive: '存档频道',
+  unarchive: '取消存档',
+}[dangerAction.value]))
+const dangerDescription = computed(() => ({
+  'make-public': '公开后所有访问者都能查看和检索频道内容。为确认身份，请输入登录密码或两步验证码。',
+  'make-private': '转为私密后，已订阅用户会保留订阅状态，但无法再访问或检索该频道，直到频道再次公开。',
+  archive: '存档后，频道将暂停文件上传、删除和整理，订阅者仍可查看和检索。请输入登录密码或两步验证码。',
+  unarchive: '取消存档后，频道将恢复文件管理能力。请输入登录密码或两步验证码。',
+}[dangerAction.value]))
+
+function openDanger(action: DangerAction) {
+  dangerAction.value = action
+  verificationCode.value = ''
+  dangerOpen.value = true
+}
+
+async function confirmDanger() {
   if (!channel.value) return
-  pinning.value = true
+  dangerBusy.value = true
   try {
-    await channelApi.setPinned(channel.value.id, !channel.value.pinned)
-    fill(await channelApi.detail(channel.value.id))
-    toast.success(channel.value.pinned ? '已取消置顶' : '频道已置顶')
+    if (dangerAction.value === 'make-public' || dangerAction.value === 'make-private') {
+      const updated = await channelApi.setVisibility(
+        channel.value.id,
+        dangerAction.value === 'make-public',
+        needsVerification.value ? verificationCode.value.trim() : undefined,
+      )
+      detail.value = { ...detail.value!, channel: { ...detail.value!.channel, ...updated } }
+      toast.success(updated.isPublic ? '频道已设为公开' : '频道已转为私密')
+    } else {
+      const updated = await channelApi.setArchived(
+        channel.value.id,
+        dangerAction.value === 'archive',
+        verificationCode.value.trim(),
+      )
+      detail.value = { ...detail.value!, channel: { ...detail.value!.channel, ...updated } }
+      toast.success(updated.archived ? '频道已存档' : '频道已取消存档')
+    }
+    dangerOpen.value = false
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : '操作失败')
   } finally {
-    pinning.value = false
-  }
-}
-
-function pickMarkdown(kind: 'README' | 'AGENT') {
-  if (kind === 'README') readmeInput.value?.click()
-  else agentInput.value?.click()
-}
-
-async function onMarkdownSelected(event: Event, kind: 'README' | 'AGENT') {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file || !channel.value) return
-  if (!file.name.toLowerCase().endsWith('.md')) {
-    toast.error('请选择 .md 文件')
-    return
-  }
-  markdownUploading.value = true
-  try {
-    await channelApi.uploadMarkdown(channel.value.id, kind, file)
-    fill(await channelApi.detail(channel.value.id))
-    toast.success(`${kind}.md 已更新`)
-  } catch (cause) {
-    toast.error(cause instanceof Error ? cause.message : '上传失败')
-  } finally {
-    markdownUploading.value = false
-  }
-}
-
-async function saveAgent() {
-  if (!channel.value) return
-  agentSaving.value = true
-  try {
-    await channelApi.updateAgent(channel.value.id, {
-      name: agentForm.name.trim(),
-      description: agentForm.description.trim(),
-      tags: agentForm.tags.trim(),
-    })
-    fill(await channelApi.detail(channel.value.id))
-    toast.success('AGENT 元信息已更新')
-  } catch (cause) {
-    toast.error(cause instanceof Error ? cause.message : '保存失败')
-  } finally {
-    agentSaving.value = false
+    dangerBusy.value = false
   }
 }
 
@@ -219,10 +206,9 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             <IconSettings class="size-5 text-muted-foreground" />频道设置
             <Badge variant="outline">{{ channel.isPublic ? '公开' : '私密' }}</Badge>
           </h1>
-          <p class="text-sm text-muted-foreground">管理频道基本信息、置顶、AGENT 元信息与删除操作。</p>
+          <p class="text-sm text-muted-foreground">管理频道基本信息、展示与删除操作。</p>
         </div>
         <div class="flex items-center gap-2">
-          <Badge v-if="channel.pinned" variant="secondary" class="h-8 px-3">已置顶</Badge>
           <Button variant="outline" size="sm" :disabled="loading" @click="load">
             <IconRefresh class="mr-1 size-4" />重新加载
           </Button>
@@ -247,18 +233,11 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             <div class="grid gap-2">
               <Label>频道标识</Label>
               <Input :model-value="channel.slug" disabled />
-              <p class="text-xs text-muted-foreground">用于 /{{ ownerParam }}/{{ channel.slug }}</p>
+              <p class="text-xs text-muted-foreground">用于 /{{ ownerParam }}/{{ channel.slug }}，创建后不可修改</p>
             </div>
             <div class="grid gap-2 md:col-span-2">
               <Label for="channel-description">频道简介</Label>
               <Textarea id="channel-description" v-model="form.description" rows="3" maxlength="512" />
-            </div>
-            <div class="flex items-center justify-between gap-4 md:col-span-2">
-              <div>
-                <p class="text-sm font-medium">公开频道</p>
-                <p class="text-xs text-muted-foreground">关闭后仅所有者与团队成员可以访问。</p>
-              </div>
-              <Switch v-model="form.isPublic" />
             </div>
             <div class="flex items-center justify-between gap-4 md:col-span-2">
               <div>
@@ -271,78 +250,6 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
           <div class="flex justify-end border-t px-4 py-3">
             <Button :disabled="saving" @click="saveBasic">
               <Spinner v-if="saving" class="mr-2" />保存设置
-            </Button>
-          </div>
-        </section>
-
-        <section class="rounded-xl border bg-card">
-          <header class="flex flex-col gap-1 border-b px-4 py-3">
-            <h2 class="flex items-center gap-2 text-sm font-semibold"><IconPin class="size-4" />置顶展示</h2>
-            <p class="text-xs text-muted-foreground">置顶频道会出现在主页的 Pinned 频道中，最多 4 个。</p>
-          </header>
-          <div class="flex items-center justify-between gap-4 p-4">
-            <div>
-              <p class="text-sm font-medium">{{ channel.pinned ? '已置顶' : '未置顶' }}</p>
-              <p class="text-xs text-muted-foreground">每个所有者最多置顶 4 个频道。</p>
-            </div>
-            <Button variant="outline" size="sm" :disabled="pinning" @click="togglePin">
-              <Spinner v-if="pinning" class="mr-2" />
-              <IconPin v-else class="mr-1 size-4" />{{ channel.pinned ? '取消置顶' : '置顶频道' }}
-            </Button>
-          </div>
-        </section>
-
-        <section class="rounded-xl border bg-card">
-          <header class="flex flex-col gap-1 border-b px-4 py-3">
-            <h2 class="flex items-center gap-2 text-sm font-semibold"><IconBook class="size-4" />说明文档</h2>
-            <p class="text-xs text-muted-foreground">README.md 会展示在频道页底部；AGENT.md 描述频道结构和检索规则。上传新文件会替换原有内容。</p>
-          </header>
-          <div class="grid gap-3 p-4 md:grid-cols-2">
-            <div class="flex flex-col items-start gap-2 rounded-lg border p-3">
-              <div>
-                <p class="text-sm font-medium">README.md</p>
-                <p class="text-xs text-muted-foreground">频道介绍，支持 Markdown，展示给所有可访问者。</p>
-              </div>
-              <Button variant="outline" size="sm" :disabled="markdownUploading" @click="pickMarkdown('README')">
-                <IconCloudUpload class="mr-1 size-4" />上传 / 替换
-              </Button>
-            </div>
-            <div class="flex flex-col items-start gap-2 rounded-lg border p-3">
-              <div>
-                <p class="text-sm font-medium">AGENT.md</p>
-                <p class="text-xs text-muted-foreground">频道结构、检索规则与 frontmatter 元信息。</p>
-              </div>
-              <Button variant="outline" size="sm" :disabled="markdownUploading" @click="pickMarkdown('AGENT')">
-                <IconCloudUpload class="mr-1 size-4" />上传 / 替换
-              </Button>
-            </div>
-          </div>
-          <input ref="readmeInput" type="file" accept=".md" class="hidden" @change="onMarkdownSelected($event, 'README')" />
-          <input ref="agentInput" type="file" accept=".md" class="hidden" @change="onMarkdownSelected($event, 'AGENT')" />
-        </section>
-
-        <section class="rounded-xl border bg-card">
-          <header class="flex flex-col gap-1 border-b px-4 py-3">
-            <h2 class="flex items-center gap-2 text-sm font-semibold"><IconCode class="size-4" />AGENT.md 元信息</h2>
-            <p class="text-xs text-muted-foreground">保存后会更新频道的 Agent 说明，聊天时会优先参考这些信息。</p>
-          </header>
-          <div class="grid gap-4 p-4 md:grid-cols-2">
-            <div class="grid gap-2">
-              <Label for="agent-name">name</Label>
-              <Input id="agent-name" v-model="agentForm.name" maxlength="128" />
-            </div>
-            <div class="grid gap-2">
-              <Label for="agent-tags">tags</Label>
-              <Input id="agent-tags" v-model="agentForm.tags" placeholder="检索, 文档, 规范" />
-            </div>
-            <div class="grid gap-2 md:col-span-2">
-              <Label for="agent-description">description</Label>
-              <Textarea id="agent-description" v-model="agentForm.description" rows="3" maxlength="512" />
-            </div>
-          </div>
-          <div class="flex justify-end border-t px-4 py-3">
-            <Button variant="outline" :disabled="agentSaving" @click="saveAgent">
-              <Spinner v-if="agentSaving" class="mr-2" />保存元信息
             </Button>
           </div>
         </section>
@@ -374,19 +281,67 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             <h2 class="flex items-center gap-2 text-sm font-semibold text-destructive">
               <IconAlertTriangle class="size-4" />危险操作
             </h2>
-            <p class="text-xs text-muted-foreground">删除后频道不可恢复；频道中的文档会移入文档回收站，可在保留期内恢复或永久删除。</p>
+            <p class="text-xs text-muted-foreground">这些操作会影响所有访问者，请谨慎确认。删除后频道不可恢复；频道中的文档会移入文档回收站，可在保留期内恢复或永久删除。</p>
           </header>
-          <div class="flex flex-wrap items-center justify-between gap-3 p-4">
-            <div>
-              <p class="text-sm font-medium">删除频道</p>
-              <p class="text-xs text-muted-foreground">请确认频道中的文档已备份。</p>
+          <div class="flex flex-col divide-y">
+            <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div>
+                <p class="text-sm font-medium">频道可见性</p>
+                <p class="text-xs text-muted-foreground">
+                  当前{{ channel.isPublic ? '公开' : '私密' }}。转为私密后，订阅者保留订阅但无法访问或检索；再次公开需要验证身份。
+                </p>
+              </div>
+              <Button variant="outline" size="sm" @click="openDanger(channel.isPublic ? 'make-private' : 'make-public')">
+                <IconLock class="mr-1 size-4" />{{ channel.isPublic ? '转为私密' : '设为公开' }}
+              </Button>
             </div>
-            <Button variant="destructive" size="sm" @click="deleteOpen = true">
-              <IconTrash class="mr-1 size-4" />删除频道
-            </Button>
+            <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div>
+                <p class="text-sm font-medium">频道存档</p>
+                <p class="text-xs text-muted-foreground">
+                  当前{{ channel.archived ? '已存档' : '活跃' }}。存档期间暂停文件上传与管理，订阅者仍可查看和检索。
+                </p>
+              </div>
+              <Button variant="outline" size="sm" @click="openDanger(channel.archived ? 'unarchive' : 'archive')">
+                {{ channel.archived ? '取消存档' : '存档频道' }}
+              </Button>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div>
+                <p class="text-sm font-medium">删除频道</p>
+                <p class="text-xs text-muted-foreground">请确认频道中的文档已备份。</p>
+              </div>
+              <Button variant="destructive" size="sm" @click="deleteOpen = true">
+                <IconTrash class="mr-1 size-4" />删除频道
+              </Button>
+            </div>
           </div>
         </section>
       </fieldset>
+
+      <Dialog v-model:open="dangerOpen">
+        <DialogContent class="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{{ dangerTitle }}</DialogTitle>
+            <DialogDescription>{{ dangerDescription }}</DialogDescription>
+          </DialogHeader>
+          <div v-if="needsVerification" class="grid gap-2 py-2">
+            <Label for="channel-verification">
+              {{ userStore.profile?.twoFactorEnabled ? '两步验证码' : '登录密码' }}
+            </Label>
+            <Input id="channel-verification" v-model="verificationCode"
+              :type="userStore.profile?.twoFactorEnabled ? 'text' : 'password'"
+              :placeholder="userStore.profile?.twoFactorEnabled ? '6 位验证码' : '请输入当前账号密码'"
+              autocomplete="off" @keyup.enter="confirmDanger" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" :disabled="dangerBusy" @click="dangerOpen = false">取消</Button>
+            <Button :disabled="dangerBusy || (needsVerification && !verificationCode.trim())" @click="confirmDanger">
+              <Spinner v-if="dangerBusy" class="mr-2" />确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog v-model:open="deleteOpen">
         <DialogContent class="sm:max-w-md">

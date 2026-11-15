@@ -2,6 +2,7 @@
 import { Markdown } from '@comark/vue'
 import { computed, provide } from 'vue'
 import MarkdownCodeBlock from './MarkdownCodeBlock.vue'
+import MarkdownLink from './MarkdownLink.vue'
 
 const props = defineProps<{
   text: string
@@ -31,7 +32,7 @@ provide('markdown-open-fence', openFence)
       <Markdown
         class="typeset typeset-docs"
         :value="text"
-        :components="{ pre: MarkdownCodeBlock }"
+        :components="{ pre: MarkdownCodeBlock, a: MarkdownLink }"
         :streaming="streaming"
       />
     </Suspense>

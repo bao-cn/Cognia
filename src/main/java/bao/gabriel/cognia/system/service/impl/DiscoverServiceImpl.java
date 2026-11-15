@@ -113,8 +113,7 @@ public class DiscoverServiceImpl implements DiscoverService {
         LinkedHashSet<Long> orderedIds = subscriptions.stream().map(ChannelSubscription::getChannelId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         Map<Long, Channel> channels = channelMapper.selectList(new LambdaQueryWrapper<Channel>()
-                        .in(Channel::getId, orderedIds)
-                        .eq(Channel::getIsPublic, true))
+                        .in(Channel::getId, orderedIds))
                 .stream().collect(Collectors.toMap(Channel::getId, channel -> channel));
         List<Long> channelIds = orderedIds.stream().filter(channels::containsKey).toList();
         Map<Long, Long> subscriptionCounts = countSubscriptions(subscriptionMapper.selectList(

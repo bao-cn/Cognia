@@ -5,8 +5,6 @@ import bao.gabriel.cognia.security.SecurityUtils;
 import bao.gabriel.cognia.system.dto.channel.*;
 import bao.gabriel.cognia.system.service.ChannelNotificationService;
 import bao.gabriel.cognia.system.service.ChannelService;
-import bao.gabriel.cognia.system.service.TwoFactorService;
-import bao.gabriel.cognia.system.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -20,8 +18,6 @@ import java.util.List;
 public class ChannelController {
 
     private final ChannelService channelService;
-    private final TwoFactorService twoFactorService;
-    private final UserService userService;
     private final ChannelNotificationService channelNotificationService;
 
     @GetMapping("/owner/{ownerType}/{ownerId}")
@@ -51,6 +47,20 @@ public class ChannelController {
     @PutMapping("/{id}/pin")
     public ApiResponse<ChannelSummaryResponse> setPinned(@PathVariable Long id, @RequestParam boolean pinned) {
         return ApiResponse.success(channelService.setPinned(SecurityUtils.getUserId(), id, pinned));
+    }
+
+    @PutMapping("/{id}/visibility")
+    public ApiResponse<ChannelSummaryResponse> setVisibility(@PathVariable Long id,
+                                                             @Valid @RequestBody ChannelVisibilityRequest request) {
+        return ApiResponse.success(channelService.setVisibility(
+                SecurityUtils.getUserId(), id, request.isPublic(), request.verificationCode()));
+    }
+
+    @PutMapping("/{id}/archive")
+    public ApiResponse<ChannelSummaryResponse> setArchived(@PathVariable Long id,
+                                                           @Valid @RequestBody ChannelArchiveRequest request) {
+        return ApiResponse.success(channelService.setArchived(
+                SecurityUtils.getUserId(), id, request.archived(), request.verificationCode()));
     }
 
     @DeleteMapping("/{id}")
@@ -89,17 +99,16 @@ public class ChannelController {
                 SecurityUtils.getUserId(), id, folderId, file, title, documentType, expirationTime));
     }
 
-    @PostMapping("/{id}/markdown")
-    public ApiResponse<ChannelDocumentResponse> uploadMarkdown(@PathVariable Long id,
-                                                              @RequestParam String kind,
-                                                              @RequestParam("file") MultipartFile file) {
-        return ApiResponse.success(channelService.uploadMarkdown(SecurityUtils.getUserId(), id, kind, file));
-    }
-
     @GetMapping("/{id}/markdown/{kind}")
     public ApiResponse<String> markdown(@PathVariable Long id, @PathVariable String kind) {
         Long viewerId = SecurityUtils.getLoginUserOrNull() == null ? null : SecurityUtils.getUserId();
         return ApiResponse.success(channelService.readMarkdown(id, viewerId, kind));
+    }
+
+    @GetMapping("/{id}/documents/{documentId}/markdown")
+    public ApiResponse<String> documentMarkdown(@PathVariable Long id, @PathVariable Long documentId) {
+        Long viewerId = SecurityUtils.getLoginUserOrNull() == null ? null : SecurityUtils.getUserId();
+        return ApiResponse.success(channelService.readDocumentMarkdown(id, documentId, viewerId));
     }
 
     @DeleteMapping("/{id}/documents/{documentId}")
@@ -112,12 +121,6 @@ public class ChannelController {
     public ApiResponse<Void> retry(@PathVariable Long id, @PathVariable Long documentId) {
         channelService.retryDocument(SecurityUtils.getUserId(), id, documentId);
         return ApiResponse.success();
-    }
-
-    @PutMapping("/{id}/agent")
-    public ApiResponse<ChannelSummaryResponse> updateAgent(@PathVariable Long id,
-                                                           @Valid @RequestBody UpdateAgentMetaRequest request) {
-        return ApiResponse.success(channelService.updateAgentMeta(SecurityUtils.getUserId(), id, request));
     }
 
     @PutMapping("/{id}/web-search")

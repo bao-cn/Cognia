@@ -48,6 +48,7 @@ public class Channel {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private LocalDateTime featuredTime;
     private Boolean webSearchEnabled;
+    private Boolean archived;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -61,5 +62,9 @@ public class Channel {
 
     public boolean webSearchEnabled() {
         return !Boolean.FALSE.equals(webSearchEnabled);
+    }
+
+    public boolean archived() {
+        return Boolean.TRUE.equals(archived);
     }
 }

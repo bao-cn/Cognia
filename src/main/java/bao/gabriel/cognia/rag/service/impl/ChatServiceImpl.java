@@ -1002,19 +1002,22 @@ public class ChatServiceImpl implements ChatService {
                                     String conversationPublicId) {
         ArrayNode messages = mapper.createArrayNode();
         PromptSetting prompt = promptSettingService.getSetting();
+        List<Long> channelIds = request.channelIds() == null ? List.of()
+                : request.channelIds().stream().filter(id -> id != null).distinct().sorted().toList();
         StringBuilder system = new StringBuilder();
+        // Keep the channel AGENT block at the very top of the system prefix. It is
+        // stable for a fixed channel selection and must precede all request-specific
+        // context so providers can reuse the longest possible cached prefix.
+        if (!channelIds.isEmpty()) {
+            String agentPrompt = channelService.agentPrompt(channelIds, userId);
+            if (StringUtils.hasText(agentPrompt)) {
+                system.append("Channel AGENT knowledge:\n").append(agentPrompt).append("\n\n");
+            }
+        }
         appendPrompt(system, prompt.getSystemPrompt());
         appendPrompt(system, prompt.getRagPrompt());
         appendPrompt(system, prompt.getExpiredPrompt());
         appendPrompt(system, prompt.getToolPrompt());
-        List<Long> channelIds = request.channelIds() == null ? List.of()
-                : request.channelIds().stream().filter(id -> id != null).distinct().sorted().toList();
-        if (!channelIds.isEmpty()) {
-            String agentPrompt = channelService.agentPrompt(channelIds, userId);
-            if (StringUtils.hasText(agentPrompt)) {
-                system.append("\n\nChannel AGENT knowledge:\n").append(agentPrompt);
-            }
-        }
         // Keep the system prompt byte-stable for the whole conversation: retrieved
         // chunks change on nearly every turn and must live at the tail, otherwise
         // the provider's prefix cache is invalidated before the first user turn.

@@ -2,10 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { channelApi, dashboardApi, discoverApi, profileApi } from '@/api'
-import type { ChannelDetail, ChannelDocument, ChannelFolder, ChannelInsights } from '@/types/api'
+import { channelApi, dashboardApi, discoverApi, profileApi, recycleApi } from '@/api'
+import type { ChannelDetail, ChannelDocument, ChannelFolder, ChannelInsights, OwnerProfile, RecycleBinEntry } from '@/types/api'
 import DashboardTrendChart from '@/components/DashboardTrendChart.vue'
 import ChannelSettings from '@/pages/ChannelSettings.vue'
+import CitationPreviewDialog from '@/components/CitationPreviewDialog.vue'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,10 +17,12 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import Markdown from '@/components/Markdown.vue'
 import {
-  IconBook, IconBookmark, IconBookmarkFilled, IconChartBar, IconChevronRight, IconCloudUpload,
-  IconEye, IconEyeOff, IconFile, IconFileText, IconFolder, IconFolderPlus, IconInfoCircle,
-  IconPlus, IconRefresh, IconSettings, IconTrash, IconAlertTriangle, IconCheck,
+  IconAlertTriangle, IconArrowLeft, IconArrowRight, IconArrowUp, IconBookmark, IconBookmarkFilled,
+  IconActivity, IconBook, IconChartBar, IconCheck, IconChevronRight, IconCloudUpload, IconEye, IconEyeOff, IconFileText,
+  IconFolder, IconFolderPlus, IconLayoutGrid, IconList, IconPin, IconPlus, IconRefresh,
+  IconSettings, IconStar, IconTrash,
 } from '@tabler/icons-vue'
+import type { CitationSource } from '@/types/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,7 +30,12 @@ const router = useRouter()
 const loading = ref(true)
 const error = ref('')
 const detail = ref<ChannelDetail | null>(null)
-const selectedFolder = ref<string | null>(null)
+const viewMode = ref<'grid' | 'list'>(localStorage.getItem('cognia.channel.viewMode') === 'grid' ? 'grid' : 'list')
+
+function setViewMode(mode: 'grid' | 'list') {
+  viewMode.value = mode
+  localStorage.setItem('cognia.channel.viewMode', mode)
+}
 
 const ownerParam = computed(() => String(route.params.owner ?? ''))
 const slugParam = computed(() => String(route.params.channelSlug ?? ''))
@@ -34,7 +44,12 @@ const ownerPath = computed(() => `/${ownerParam.value}`)
 const canWrite = computed(() => detail.value?.canWrite ?? false)
 const canManage = computed(() => detail.value?.canManage ?? false)
 const canViewInsights = computed(() => detail.value?.canViewInsights ?? false)
-const activeView = ref<'documents' | 'insights' | 'settings'>('documents')
+const about = computed(() => detail.value?.about)
+const ownerProfile = ref<OwnerProfile | null>(null)
+const activeView = ref<'documents' | 'insights' | 'settings' | 'recycle'>('documents')
+const recycleEntries = ref<RecycleBinEntry[]>([])
+const recycleLoading = ref(false)
+const restoringId = ref<string | null>(null)
 const insights = ref<ChannelInsights | null>(null)
 const insightsLoading = ref(false)
 
@@ -50,13 +65,43 @@ async function openInsights() {
     insightsLoading.value = false
   }
 }
+
+async function openRecycle() {
+  activeView.value = 'recycle'
+  await loadRecycle()
+}
+
+async function loadRecycle() {
+  if (!channel.value) return
+  recycleLoading.value = true
+  try {
+    recycleEntries.value = await recycleApi.listByChannel(channel.value.id)
+  } catch (err: any) {
+    toast.error(err?.message || '加载回收站失败')
+  } finally {
+    recycleLoading.value = false
+  }
+}
+
+async function restoreRecycleEntry(entry: RecycleBinEntry) {
+  if (!channel.value) return
+  restoringId.value = entry.id
+  try {
+    await recycleApi.restoreChannel(channel.value.id, entry.id)
+    toast.success('文件已恢复')
+    await Promise.all([loadRecycle(), load()])
+  } catch (err: any) {
+    toast.error(err?.message || '恢复失败')
+  } finally {
+    restoringId.value = null
+  }
+}
 const subscribed = ref(false)
 const notifySubscribed = ref(false)
 const engagementBusy = ref(false)
+const pinning = ref(false)
 
 async function loadEngagement() {
-  if (!channel.value?.isPublic)
-    return
   try {
     const list = await discoverApi.subscriptions()
     const found = list.find(item => item.id === channel.value?.id)
@@ -72,12 +117,42 @@ async function toggleSubscribe() {
     if (subscribed.value) await discoverApi.unsubscribe(channel.value.id)
     else await discoverApi.subscribe(channel.value.id)
     subscribed.value = !subscribed.value
+    detail.value = await channelApi.detail(channel.value.id)
     toast.success(subscribed.value ? '已订阅频道' : '已取消订阅')
   } catch (err: any) {
     toast.error(err?.message || '操作失败')
   } finally {
     engagementBusy.value = false
   }
+}
+
+async function togglePin() {
+  if (!channel.value) return
+  pinning.value = true
+  try {
+    await channelApi.setPinned(channel.value.id, !channel.value.pinned)
+    detail.value = await channelApi.detail(channel.value.id)
+    toast.success(channel.value?.pinned ? '频道已置顶' : '已取消置顶')
+  } catch (err: any) {
+    toast.error(err?.message || '操作失败')
+  } finally {
+    pinning.value = false
+  }
+}
+
+function formatCompact(value: number) {
+  const count = Number(value || 0)
+  if (count < 1000) return String(count)
+  if (count < 1_000_000) {
+    const formatted = (count / 1000).toFixed(count >= 10_000 ? 0 : 1).replace(/\.0$/, '')
+    return `${formatted}k`
+  }
+  const formatted = (count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1).replace(/\.0$/, '')
+  return `${formatted}M`
+}
+
+function formatDetailed(value: number) {
+  return new Intl.NumberFormat('en-US').format(Number(value || 0))
 }
 
 async function toggleNotify() {
@@ -87,6 +162,7 @@ async function toggleNotify() {
     if (notifySubscribed.value) await discoverApi.unsubscribeNotify(channel.value.id)
     else await discoverApi.subscribeNotify(channel.value.id)
     notifySubscribed.value = !notifySubscribed.value
+    detail.value = await channelApi.detail(channel.value.id)
     toast.success(notifySubscribed.value ? '已开启频道通知' : '已关闭频道通知')
   } catch (err: any) {
     toast.error(err?.message || '操作失败')
@@ -95,9 +171,27 @@ async function toggleNotify() {
   }
 }
 
-const currentFolder = computed(() =>
-  detail.value?.folders.find(folder => folder.id === selectedFolder.value) ?? null,
-)
+const folderPathParam = computed(() => {
+  const raw = route.params.folderPath
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : []
+  return values.flatMap(value => String(value).split('/')).filter(Boolean)
+})
+
+const folderTrail = computed<ChannelFolder[]>(() => {
+  const folders = detail.value?.folders ?? []
+  const trail: ChannelFolder[] = []
+  let parentId: string | null = null
+  for (const name of folderPathParam.value) {
+    const folder = folders.find(item => (item.parentId ?? null) === parentId && item.name === name)
+    if (!folder) break
+    trail.push(folder)
+    parentId = folder.id
+  }
+  return trail
+})
+
+const currentFolder = computed(() => folderTrail.value.at(-1) ?? null)
+const selectedFolder = computed(() => currentFolder.value?.id ?? null)
 
 const allDocuments = computed(() => detail.value?.documents ?? [])
 const currentDocuments = computed(() => {
@@ -109,16 +203,50 @@ const visibleFolders = computed(() =>
   (detail.value?.folders ?? []).filter(folder => (folder.parentId ?? null) === selectedFolder.value),
 )
 const documentCount = computed(() => currentDocuments.value.length)
+const folderCount = computed(() => visibleFolders.value.length)
 
 function folderDocumentCount(folder: ChannelFolder) {
   return allDocuments.value.filter(document => document.folderId === folder.id).length
+}
+
+function pathForTrail(trail: ChannelFolder[]) {
+  const suffix = trail.map(folder => `/${encodeURIComponent(folder.name)}`).join('')
+  return `/${ownerParam.value}/${slugParam.value}${suffix}`
+}
+
+function trailForFolder(folder: ChannelFolder | null) {
+  const folders = detail.value?.folders ?? []
+  if (!folder) return []
+  const trail: ChannelFolder[] = []
+  let current: ChannelFolder | undefined = folder
+  const seen = new Set<string>()
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id)
+    trail.unshift(current)
+    current = current.parentId ? folders.find(item => item.id === current?.parentId) : undefined
+  }
+  return trail
+}
+
+function goFolder(folder: ChannelFolder | null) {
+  void router.push(pathForTrail(trailForFolder(folder)))
+}
+
+function goUp() {
+  const parentId = currentFolder.value?.parentId ?? null
+  if (!parentId) {
+    void router.push(pathForTrail([]))
+    return
+  }
+  const parent = (detail.value?.folders ?? []).find(folder => folder.id === parentId) ?? null
+  goFolder(parent)
 }
 
 const readmeContent = ref('')
 const readmeLoading = ref(false)
 
 async function loadReadme(channelId: string) {
-  if (!detail.value?.channel) {
+  if (!detail.value?.channel || !detail.value.about?.hasReadme) {
     readmeContent.value = ''
     return
   }
@@ -156,6 +284,7 @@ async function load() {
   error.value = ''
   try {
     const profile = await profileApi.get(ownerParam.value)
+    ownerProfile.value = profile
     const channels = await channelApi.list(profile.type, profile.id)
     const target = channels.find(item => item.slug === slugParam.value)
     if (!target) {
@@ -174,10 +303,6 @@ async function load() {
   }
 }
 
-
-function selectFolder(folder: ChannelFolder | null) {
-  selectedFolder.value = folder?.id ?? null
-}
 
 const createFolderOpen = ref(false)
 const folderName = ref('')
@@ -201,8 +326,8 @@ async function createFolder() {
       name: folderName.value.trim(),
     })
     detail.value = await channelApi.detail(channel.value.id)
-    selectedFolder.value = folder.id
     createFolderOpen.value = false
+    goFolder((detail.value?.folders ?? []).find(item => item.id === folder.id) ?? folder)
     toast.success('文件夹已创建')
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : '创建文件夹失败')
@@ -214,9 +339,14 @@ async function createFolder() {
 async function deleteFolder(folder: ChannelFolder) {
   if (!channel.value) return
   try {
+    const parentId = folder.parentId ?? null
+    const deletingCurrent = folderTrail.value.some(item => item.id === folder.id)
     await channelApi.deleteFolder(channel.value.id, folder.id)
-    if (selectedFolder.value === folder.id) selectedFolder.value = null
     detail.value = await channelApi.detail(channel.value.id)
+    if (deletingCurrent) {
+      const parent = parentId ? (detail.value?.folders ?? []).find(item => item.id === parentId) ?? null : null
+      goFolder(parent)
+    }
     toast.success('文件夹已删除')
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : '删除文件夹失败')
@@ -394,6 +524,58 @@ async function confirmDelete() {
 
 const uploadTargetLabel = computed(() => currentFolder.value?.name ?? '根目录')
 
+const previewOpen = ref(false)
+const previewDocument = ref<ChannelDocument | null>(null)
+const previewSource = computed<CitationSource | null>(() => {
+  const document = previewDocument.value
+  if (!document) return null
+  return {
+    index: 0,
+    documentId: document.id,
+    channelId: channel.value?.id,
+    channelName: channel.value?.name,
+    fileName: document.name,
+    title: document.title || document.name,
+    documentType: document.documentType,
+  }
+})
+
+function openDocument(document: ChannelDocument) {
+  previewDocument.value = document
+  previewOpen.value = true
+}
+
+function baseName(name: string) {
+  return name.toLowerCase().replace(/\.[^.]+$/, '')
+}
+
+const readmeDocument = computed(() => allDocuments.value.find(document =>
+  !document.folderId && baseName(document.name) === 'readme'))
+
+function openReadme() {
+  if (readmeDocument.value) openDocument(readmeDocument.value)
+  else toast.info('README 暂不可预览')
+}
+
+const contributorLink = (username: string) => `/${username}`
+
+function formatFileType(type: string) {
+  const value = (type || 'file').toLowerCase()
+  return value.length <= 3 ? value.toUpperCase() : value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+const FILE_TYPE_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#8b5cf6', '#ef4444', '#84cc16', '#f97316', '#14b8a6']
+const fileTypeSegments = computed(() => {
+  const types = about.value?.fileTypes ?? []
+  const total = types.reduce((sum, item) => sum + item.count, 0) || 1
+  return types.map((item, index) => ({
+    ...item,
+    color: FILE_TYPE_COLORS[index % FILE_TYPE_COLORS.length],
+    percent: (item.count / total) * 100,
+    label: formatFileType(item.type),
+  }))
+})
+
 onMounted(load)
 watch(() => [route.params.owner, route.params.channelSlug], load)
 </script>
@@ -421,24 +603,36 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             <span>{{ channel.slug }}</span>
           </div>
           <h1 class="flex items-center gap-2 text-xl font-semibold">
-            <IconFolder class="size-5 text-muted-foreground" /><span data-i18n-skip>{{ channel.name }}</span>
+            <Avatar class="size-6">
+              <AvatarImage :src="ownerProfile?.avatar || '/logo.png'" :alt="ownerProfile?.nickname || channel.name" class="object-cover" />
+              <AvatarFallback class="text-[10px]">{{ (ownerProfile?.nickname || channel.name).slice(0, 1).toUpperCase() }}</AvatarFallback>
+            </Avatar>
+            <span data-i18n-skip>{{ channel.name }}</span>
             <Badge :variant="channel.isPublic ? 'secondary' : 'outline'">{{ channel.isPublic ? '公开' : '私密' }}</Badge>
           </h1>
-          <p class="max-w-2xl text-sm text-muted-foreground">{{ channel.description || '这个频道还没有简介。' }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <template v-if="channel.isPublic">
-            <Button variant="outline" size="sm" :disabled="engagementBusy" :aria-pressed="subscribed" @click="toggleSubscribe">
-              <IconBookmarkFilled v-if="subscribed" class="mr-1 size-4 text-primary" />
-              <IconBookmark v-else class="mr-1 size-4" />
-              {{ subscribed ? '已订阅' : '订阅' }}
-            </Button>
-            <Button variant="outline" size="sm" :disabled="engagementBusy" :aria-pressed="notifySubscribed" @click="toggleNotify">
-              <IconEye v-if="notifySubscribed" class="mr-1 size-4 text-primary" />
-              <IconEyeOff v-else class="mr-1 size-4" />
-              {{ notifySubscribed ? '通知已开启' : '接收通知' }}
-            </Button>
-          </template>
+          <Button v-if="canManage" variant="outline" size="sm" :disabled="pinning" @click="togglePin">
+            <IconPin class="mr-1 size-4" />{{ channel.pinned ? '取消置顶' : '置顶' }}
+          </Button>
+          <Button v-if="subscribed || channel.isPublic" variant="outline" size="sm"
+            :disabled="engagementBusy" :aria-pressed="subscribed" @click="toggleSubscribe">
+            <IconBookmarkFilled v-if="subscribed" class="mr-1 size-4 text-primary" />
+            <IconBookmark v-else class="mr-1 size-4" />
+            {{ subscribed ? (channel.isPublic ? '已订阅' : '取消订阅') : '订阅' }}
+            <Badge variant="secondary" class="ml-1 h-5 min-w-5 justify-center px-1.5 text-[10px]">
+              {{ formatCompact(about?.subscriberCount ?? 0) }}
+            </Badge>
+          </Button>
+          <Button v-if="notifySubscribed || channel.isPublic" variant="outline" size="sm"
+            :disabled="engagementBusy" :aria-pressed="notifySubscribed" @click="toggleNotify">
+            <IconEye v-if="notifySubscribed" class="mr-1 size-4 text-primary" />
+            <IconEyeOff v-else class="mr-1 size-4" />
+            {{ notifySubscribed ? (channel.isPublic ? '通知已开启' : '关闭通知') : '接收通知' }}
+            <Badge variant="secondary" class="ml-1 h-5 min-w-5 justify-center px-1.5 text-[10px]">
+              {{ formatCompact(about?.notifyCount ?? 0) }}
+            </Badge>
+          </Button>
           <input ref="fileInput" type="file" multiple class="hidden" @change="onFileSelected" />
         </div>
       </div>
@@ -457,9 +651,20 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
           @click="activeView = 'settings'">
           <IconSettings class="size-4" />频道设置
         </button>
+        <button v-if="canManage" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
+          :class="activeView === 'recycle' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+          @click="openRecycle">
+          <IconTrash class="size-4" />回收站
+          <Badge v-if="recycleEntries.length" variant="secondary" class="h-5 min-w-5 px-1.5 text-[10px]">{{ recycleEntries.length }}</Badge>
+        </button>
       </div>
 
       <template v-if="activeView === 'documents'">
+      <div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div class="flex min-w-0 flex-col gap-4">
+      <Alert v-if="channel.archived">
+        <AlertDescription>频道已存档，暂停上传与文件管理；订阅者仍可查看和检索。取消存档后可继续编辑。</AlertDescription>
+      </Alert>
 
       <div v-if="uploading" class="rounded-xl border bg-card p-4">
         <div class="mb-2 flex items-center justify-between text-sm">
@@ -471,160 +676,279 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
         </div>
       </div>
 
-      <div class="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <div class="flex flex-col gap-4">
-          <section class="rounded-xl border bg-card">
-            <header class="flex items-center justify-between border-b px-3 py-2.5">
-              <h2 class="text-sm font-semibold">目录</h2>
-              <Button v-if="canWrite" variant="ghost" size="icon" class="size-7" @click="openCreateFolder">
-                <IconFolderPlus class="size-4" />
+      <section class="min-w-0 overflow-hidden rounded-xl border bg-card">
+        <header class="flex flex-col gap-3 border-b px-4 py-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex min-w-0 items-center gap-1">
+              <Button variant="ghost" size="icon" class="size-8" title="后退" @click="router.back()">
+                <IconArrowLeft class="size-4" />
               </Button>
-            </header>
-            <div class="flex flex-col gap-0.5 p-2">
-              <button type="button"
-                class="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition"
-                :class="selectedFolder === null ? 'bg-muted font-medium' : 'hover:bg-muted/60'"
-                @click="selectFolder(null)">
-                <IconFile class="size-4 text-muted-foreground" />全部文件
-                <span class="ml-auto text-xs text-muted-foreground">{{ documentCount }}</span>
-              </button>
-              <div v-for="folder in detail?.folders ?? []" :key="folder.id" class="group flex items-center">
-                <button type="button"
-                  class="flex flex-1 items-center gap-2 rounded-md py-1.5 pr-1 text-left text-sm transition"
-                  :class="selectedFolder === folder.id ? 'bg-muted font-medium' : 'hover:bg-muted/60'"
-                  :style="{ paddingLeft: `${8 + (folder.depth - 1) * 12}px` }"
-                  @click="selectFolder(folder)">
-                  <IconFolder class="size-4 text-muted-foreground" />
-                  <span class="truncate">{{ folder.name }}</span>
+              <Button variant="ghost" size="icon" class="size-8" title="前进" @click="router.forward()">
+                <IconArrowRight class="size-4" />
+              </Button>
+              <Button variant="ghost" size="icon" class="size-8" title="上一级" :disabled="!currentFolder" @click="goUp">
+                <IconArrowUp class="size-4" />
+              </Button>
+              <nav class="ml-1 flex min-w-0 items-center gap-1 text-sm" aria-label="目录导航">
+                <button type="button" class="truncate rounded px-1 py-0.5 hover:bg-muted" @click="goFolder(null)">
+                  {{ channel.name }}
                 </button>
-                <Button v-if="canWrite" variant="ghost" size="icon"
-                  class="size-6 opacity-0 group-hover:opacity-100" @click="deleteFolder(folder)">
-                  <IconTrash class="size-3.5" />
+                <template v-for="folder in folderTrail" :key="folder.id">
+                  <IconChevronRight class="size-3.5 shrink-0 text-muted-foreground" />
+                  <button type="button" class="truncate rounded px-1 py-0.5 hover:bg-muted" @click="goFolder(folder)">
+                    {{ folder.name }}
+                  </button>
+                </template>
+              </nav>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
+              <div class="mr-1 flex items-center rounded-md border p-0.5" role="group" aria-label="显示方式">
+                <Button variant="ghost" size="icon" class="size-7" :class="viewMode === 'grid' ? 'bg-muted' : ''" title="平铺" @click="setViewMode('grid')">
+                  <IconLayoutGrid class="size-4" />
+                </Button>
+                <Button variant="ghost" size="icon" class="size-7" :class="viewMode === 'list' ? 'bg-muted' : ''" title="列表" @click="setViewMode('list')">
+                  <IconList class="size-4" />
                 </Button>
               </div>
-            </div>
-          </section>
-
-        </div>
-
-        <section class="min-w-0 rounded-xl border bg-card">
-          <header class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
-            <div>
-              <h2 class="flex items-center gap-2 text-sm font-semibold">
-                <IconFolder class="size-4" />{{ currentFolder?.name || '全部文件' }}
-              </h2>
-              <p class="mt-0.5 text-xs text-muted-foreground">{{ documentCount }} 个文档 · 上传后自动处理，可用于检索</p>
-            </div>
-            <div class="flex items-center gap-2">
               <Button variant="outline" size="sm" :disabled="loading" @click="load">
                 <IconRefresh class="mr-1 size-4" />刷新
               </Button>
-              <Button v-if="canWrite" size="sm" :disabled="uploading" @click="triggerUpload">
+              <Button v-if="canWrite && !channel.archived" variant="outline" size="sm" :disabled="uploading" @click="openCreateFolder">
+                <IconFolderPlus class="mr-1 size-4" />新建文件夹
+              </Button>
+              <Button v-if="canWrite && !channel.archived" size="sm" :disabled="uploading" @click="triggerUpload">
                 <IconPlus class="mr-1 size-4" />添加
               </Button>
             </div>
-          </header>
-
-          <div v-if="visibleFolders.length" class="border-b p-4">
-            <div class="mb-2 flex items-center justify-between">
-              <h3 class="text-xs font-medium text-muted-foreground">文件夹</h3>
-              <span class="text-xs text-muted-foreground">{{ visibleFolders.length }}</span>
-            </div>
-            <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              <button v-for="folder in visibleFolders" :key="folder.id" type="button"
-                class="flex items-center gap-3 rounded-lg border p-3 text-left transition hover:border-primary/40 hover:bg-muted/40"
-                @click="selectFolder(folder)">
-                <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <IconFolder class="size-4" />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium">{{ folder.name }}</p>
-                  <p class="text-xs text-muted-foreground">{{ folderDocumentCount(folder) }} 个文档</p>
-                </div>
-                <IconChevronRight class="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            </div>
           </div>
+          <div class="flex flex-wrap items-center justify-between gap-1 text-xs text-muted-foreground">
+            <span>{{ folderCount }} 个文件夹 · {{ documentCount }} 个文件</span>
+            <span class="hidden sm:inline">双击文件夹进入，双击文件预览</span>
+          </div>
+        </header>
 
-          <div v-if="!currentDocuments.length && !visibleFolders.length" class="flex flex-col items-center gap-3 px-4 py-16 text-center">
-            <div class="flex size-12 items-center justify-center rounded-full bg-muted">
-              <IconFileText class="size-6 text-muted-foreground" />
-            </div>
-            <div>
-              <p class="text-sm font-medium">这里还没有文档</p>
-              <p class="mt-1 text-xs text-muted-foreground">上传 PDF、Markdown、TXT 等文件，系统会自动解析并处理，完成后即可用于检索。</p>
-            </div>
+        <div v-if="!visibleFolders.length && !currentDocuments.length" class="flex flex-col items-center gap-3 px-4 py-16 text-center">
+          <div class="flex size-12 items-center justify-center rounded-full bg-muted">
+            <IconFolder class="size-6 text-muted-foreground" />
+          </div>
+          <div>
+            <p class="text-sm font-medium">{{ currentFolder ? '这个文件夹还是空的' : '这里还没有文件' }}</p>
+            <p class="mt-1 text-xs text-muted-foreground">上传 PDF、Markdown、TXT 等文件，或新建文件夹整理内容。</p>
+          </div>
+          <div v-if="canWrite && !channel.archived" class="flex gap-2">
+            <Button variant="outline" size="sm" @click="openCreateFolder">
+              <IconFolderPlus class="mr-1 size-4" />新建文件夹
+            </Button>
             <Button v-if="canWrite" variant="outline" size="sm" @click="triggerUpload">
-              <IconCloudUpload class="mr-1 size-4" />上传第一个文档
+              <IconCloudUpload class="mr-1 size-4" />上传文件
+            </Button>
+          </div>
+        </div>
+
+        <div v-else-if="viewMode === 'grid'" class="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div v-for="folder in visibleFolders" :key="`folder-${folder.id}`"
+            class="group relative flex cursor-default items-center gap-3 rounded-lg border p-3 transition hover:border-primary/40 hover:bg-muted/40"
+            @dblclick="goFolder(folder)">
+            <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <IconFolder class="size-4" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium">{{ folder.name }}</p>
+              <p class="text-xs text-muted-foreground">{{ folderDocumentCount(folder) }} 个文件</p>
+            </div>
+            <Button v-if="canWrite" variant="ghost" size="icon"
+              class="absolute right-1 top-1 size-7 opacity-100 text-muted-foreground hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100"
+              title="删除文件夹" @click.stop="deleteFolder(folder)">
+              <IconTrash class="size-3.5" />
             </Button>
           </div>
 
-          <div v-else-if="currentDocuments.length" class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="border-b bg-muted/40 text-xs text-muted-foreground">
-                <tr>
-                  <th class="px-4 py-2.5 text-left font-medium">文件</th>
-                  <th class="px-3 py-2.5 text-left font-medium">大小</th>
-                  <th class="px-3 py-2.5 text-left font-medium">状态</th>
-                  <th class="px-3 py-2.5 text-left font-medium">时效</th>
-                  <th class="px-3 py-2.5 text-left font-medium">上传时间</th>
-                  <th class="px-3 py-2.5 text-right font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y">
-                <tr v-for="document in currentDocuments" :key="document.id" class="hover:bg-muted/30">
-                  <td class="max-w-[280px] px-4 py-3">
-                    <div class="flex items-center gap-2">
-                      <IconFileText class="size-4 shrink-0 text-muted-foreground" />
-                      <span class="truncate font-medium">{{ document.name }}</span>
-                    </div>
-                    <p v-if="document.errorMessage" class="mt-1 truncate text-xs text-destructive" :title="document.errorMessage">
-                      {{ document.errorMessage }}
-                    </p>
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-3 text-muted-foreground">{{ formatBytes(document.size) }}</td>
-                  <td class="whitespace-nowrap px-3 py-3">
-                    <Badge :variant="statusOf(document).variant" class="gap-1">
-                      <Spinner v-if="document.status === 'PROCESSING'" class="size-3" />
-                      <IconCheck v-else-if="document.status === 'READY'" class="size-3" />
-                      <IconAlertTriangle v-else-if="document.status === 'FAILED'" class="size-3" />
-                      {{ statusOf(document).label }}
-                    </Badge>
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">
-                    <span v-if="document.expirationTime">{{ document.expirationTime }}</span>
-                    <span v-else class="text-muted-foreground/60">长期</span>
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ document.createTime || '-' }}</td>
-                  <td class="whitespace-nowrap px-3 py-3">
-                    <div class="flex justify-end gap-1">
-                      <Button v-if="document.status === 'FAILED' && canWrite" variant="ghost" size="sm" @click="retryDocument(document)">
-                        <IconRefresh class="mr-1 size-3.5" />重试
-                      </Button>
-                      <Button v-if="canWrite" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" @click="askDelete(document)">
-                        <IconTrash class="size-4" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div v-for="document in currentDocuments" :key="`doc-${document.id}`"
+            class="group relative flex cursor-default flex-col gap-2 rounded-lg border p-3 transition hover:border-primary/40 hover:bg-muted/40"
+            @dblclick="openDocument(document)">
+            <div class="flex min-w-0 items-center gap-2 pr-12">
+              <IconFileText class="size-4 shrink-0 text-muted-foreground" />
+              <span class="truncate text-sm font-medium" :title="document.name">{{ document.name }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>{{ formatBytes(document.size) }}</span>
+              <Badge :variant="statusOf(document).variant" class="gap-1">
+                <Spinner v-if="document.status === 'PROCESSING'" class="size-3" />
+                <IconCheck v-else-if="document.status === 'READY'" class="size-3" />
+                <IconAlertTriangle v-else-if="document.status === 'FAILED'" class="size-3" />
+                {{ statusOf(document).label }}
+              </Badge>
+            </div>
+            <p v-if="document.errorMessage" class="truncate text-xs text-destructive" :title="document.errorMessage">
+              {{ document.errorMessage }}
+            </p>
+            <div class="absolute right-1 top-1 flex items-center gap-0.5">
+              <Button v-if="document.status === 'FAILED' && canWrite" variant="ghost" size="icon" class="size-7"
+                title="重试" @click.stop="retryDocument(document)">
+                <IconRefresh class="size-3.5" />
+              </Button>
+              <Button v-if="canWrite" variant="ghost" size="icon"
+                class="size-7 text-muted-foreground hover:text-destructive" title="删除" @click.stop="askDelete(document)">
+                <IconTrash class="size-3.5" />
+              </Button>
+            </div>
           </div>
-        </section>
-      </div>
+        </div>
+
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="border-b bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th class="px-4 py-2.5 text-left font-medium">名称</th>
+                <th class="px-3 py-2.5 text-left font-medium">类型</th>
+                <th class="px-3 py-2.5 text-left font-medium">大小</th>
+                <th class="px-3 py-2.5 text-left font-medium">状态</th>
+                <th class="px-3 py-2.5 text-left font-medium">上传时间</th>
+                <th class="px-3 py-2.5 text-right font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y">
+              <tr v-for="folder in visibleFolders" :key="`folder-${folder.id}`" class="cursor-default hover:bg-muted/30" @dblclick="goFolder(folder)">
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <IconFolder class="size-4 shrink-0 text-primary" />
+                    <span class="truncate font-medium">{{ folder.name }}</span>
+                  </div>
+                </td>
+                <td class="px-3 py-3 text-xs text-muted-foreground">文件夹</td>
+                <td class="px-3 py-3 text-muted-foreground">{{ folderDocumentCount(folder) }} 个文件</td>
+                <td class="px-3 py-3 text-xs text-muted-foreground">-</td>
+                <td class="px-3 py-3 text-xs text-muted-foreground">-</td>
+                <td class="whitespace-nowrap px-3 py-3">
+                  <div class="flex justify-end">
+                    <Button v-if="canWrite" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
+                      title="删除文件夹" @click.stop="deleteFolder(folder)">
+                      <IconTrash class="size-4" />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-for="document in currentDocuments" :key="document.id" class="cursor-default hover:bg-muted/30" @dblclick="openDocument(document)">
+                <td class="max-w-[320px] px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <IconFileText class="size-4 shrink-0 text-muted-foreground" />
+                    <span class="truncate font-medium">{{ document.name }}</span>
+                  </div>
+                  <p v-if="document.errorMessage" class="mt-1 truncate text-xs text-destructive" :title="document.errorMessage">
+                    {{ document.errorMessage }}
+                  </p>
+                </td>
+                <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ document.documentType || '文件' }}</td>
+                <td class="whitespace-nowrap px-3 py-3 text-muted-foreground">{{ formatBytes(document.size) }}</td>
+                <td class="whitespace-nowrap px-3 py-3">
+                  <Badge :variant="statusOf(document).variant" class="gap-1">
+                    <Spinner v-if="document.status === 'PROCESSING'" class="size-3" />
+                    <IconCheck v-else-if="document.status === 'READY'" class="size-3" />
+                    <IconAlertTriangle v-else-if="document.status === 'FAILED'" class="size-3" />
+                    {{ statusOf(document).label }}
+                  </Badge>
+                </td>
+                <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ document.createTime || '-' }}</td>
+                <td class="whitespace-nowrap px-3 py-3">
+                  <div class="flex justify-end gap-1">
+                    <Button v-if="document.status === 'FAILED' && canWrite" variant="ghost" size="sm" @click.stop="retryDocument(document)">
+                      <IconRefresh class="mr-1 size-3.5" />重试
+                    </Button>
+                    <Button v-if="canWrite" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
+                      title="删除" @click.stop="askDelete(document)">
+                      <IconTrash class="size-4" />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section v-if="readmeContent" class="rounded-xl border bg-card">
-        <header class="flex items-center justify-between border-b px-4 py-3">
-          <h2 class="flex items-center gap-2 text-sm font-semibold"><IconBook class="size-4" />README.md</h2>
-        </header>
         <div class="p-4">
           <Markdown :text="readmeContent" />
         </div>
       </section>
+      </div>
 
-      <div class="flex items-center gap-2 text-xs text-muted-foreground">
-        <IconInfoCircle class="size-3.5" />
-        AGENT.md 会被检索系统优先读取，用于描述频道结构与检索规则。
+      <aside class="flex flex-col gap-4 xl:sticky xl:top-4">
+        <section class="rounded-xl p-5">
+          <h2 class="text-base font-semibold">关于</h2>
+          <p class="mt-3 whitespace-pre-line text-sm leading-relaxed" data-i18n-skip>{{ about?.description || '这个频道还没有简介。' }}</p>
+
+          <div class="mt-5 flex flex-col gap-3 text-sm">
+            <button type="button" class="flex items-center gap-2.5 text-left transition"
+              :class="about?.hasReadme ? 'text-foreground hover:text-primary' : 'text-muted-foreground'"
+              :disabled="!about?.hasReadme" @click="openReadme">
+              <IconBook class="size-4 shrink-0" />
+              <span>{{ about?.hasReadme ? 'Readme' : 'Not Readme' }}</span>
+            </button>
+            <div class="flex items-center gap-2.5 text-muted-foreground">
+              <IconActivity class="size-4 shrink-0" />
+              <span>{{ about?.archived ? '已存档' : '活跃的频道' }}</span>
+            </div>
+            <div class="flex items-center gap-2.5 text-muted-foreground">
+              <IconStar class="size-4 shrink-0" />
+              <span>{{ formatDetailed(about?.subscriberCount ?? 0) }}个订阅</span>
+            </div>
+            <div class="flex items-center gap-2.5 text-muted-foreground">
+              <IconEye class="size-4 shrink-0" />
+              <span>{{ formatDetailed(about?.notifyCount ?? 0) }}个通知订阅</span>
+            </div>
+            <button type="button" class="mt-1 text-left text-sm text-muted-foreground transition hover:text-foreground" @click="toast.info('举报功能暂未上线')">
+              举报频道
+            </button>
+          </div>
+
+          <div class="my-5 border-t" />
+
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold">贡献者</h3>
+            <Badge variant="secondary" class="h-5 min-w-5 rounded-full px-1.5 text-[10px] tabular-nums">{{ about?.contributors.length ?? 0 }}</Badge>
+          </div>
+          <div v-if="(about?.contributors.length ?? 0) >= 5" class="mt-4 flex flex-wrap gap-2">
+            <router-link v-for="person in about?.contributors" :key="person.id" :to="contributorLink(person.username)"
+              class="rounded-full transition hover:opacity-80" :title="person.nickname">
+              <Avatar class="size-9">
+                <AvatarImage :src="person.avatar || '/logo.png'" :alt="person.nickname" />
+                <AvatarFallback>{{ person.nickname.slice(0, 1).toUpperCase() }}</AvatarFallback>
+              </Avatar>
+            </router-link>
+          </div>
+          <div v-else-if="about?.contributors.length" class="mt-4 flex flex-col gap-3">
+            <router-link v-for="person in about.contributors" :key="person.id" :to="contributorLink(person.username)"
+              class="flex items-center gap-2.5 rounded-md px-0.5 py-0.5 transition hover:bg-muted/50">
+              <Avatar class="size-8">
+                <AvatarImage :src="person.avatar || '/logo.png'" :alt="person.nickname" />
+                <AvatarFallback>{{ person.nickname.slice(0, 1).toUpperCase() }}</AvatarFallback>
+              </Avatar>
+              <span class="min-w-0 truncate text-sm font-medium" data-i18n-skip>{{ person.nickname }}</span>
+              <span v-if="person.username && person.username !== person.nickname" class="min-w-0 truncate text-xs text-muted-foreground" data-i18n-skip>@{{ person.username }}</span>
+            </router-link>
+          </div>
+          <p v-else class="mt-4 text-xs text-muted-foreground">暂无贡献者。</p>
+
+          <div class="my-5 border-t" />
+
+          <h3 class="text-sm font-semibold">文档构成</h3>
+          <div v-if="fileTypeSegments.length" class="mt-3 flex flex-col gap-3">
+            <div class="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div v-for="item in fileTypeSegments" :key="item.type" class="h-full" :style="{ width: `${item.percent}%`, backgroundColor: item.color }" :title="`${item.label} ${item.percent.toFixed(1)}%`" />
+            </div>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
+              <span v-for="item in fileTypeSegments" :key="`legend-${item.type}`" class="inline-flex items-center gap-1.5">
+                <span class="size-2 rounded-full" :style="{ backgroundColor: item.color }" />
+                <span class="font-medium">{{ item.label }}</span>
+                <span class="tabular-nums text-muted-foreground">{{ item.percent.toFixed(1) }}%</span>
+              </span>
+            </div>
+          </div>
+          <p v-else class="mt-3 text-xs text-muted-foreground">暂无文件。</p>
+        </section>
+      </aside>
       </div>
       </template>
 
@@ -676,13 +1000,50 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
       <div v-else-if="activeView === 'settings'">
         <ChannelSettings embedded />
       </div>
+
+      <div v-else-if="activeView === 'recycle'" class="flex flex-col gap-4">
+        <section class="rounded-xl border bg-card">
+          <header class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+            <div class="flex flex-col gap-1">
+              <h2 class="text-sm font-semibold">回收站</h2>
+              <p class="text-xs text-muted-foreground">删除的文件会保留在回收站，超过保留期后自动永久删除。管理员可在此恢复文件。</p>
+            </div>
+            <Button variant="outline" size="sm" :disabled="recycleLoading" @click="loadRecycle">
+              <IconRefresh class="mr-1 size-4" />刷新
+            </Button>
+          </header>
+          <div v-if="recycleLoading" class="flex h-40 items-center justify-center"><Spinner class="size-5" /></div>
+          <div v-else-if="!recycleEntries.length" class="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground">
+            <IconTrash class="size-7" />
+            <p class="text-sm">回收站是空的</p>
+          </div>
+          <div v-else class="divide-y">
+            <div v-for="entry in recycleEntries" :key="entry.id" class="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div class="flex min-w-0 flex-1 items-center gap-3">
+                <div class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted"><IconFileText class="size-4 text-muted-foreground" /></div>
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-medium">{{ entry.name }}</div>
+                  <div class="mt-0.5 text-xs text-muted-foreground">{{ formatBytes(entry.size) }} · 删除于 {{ entry.deleteTime }} · {{ entry.expiresAt ? `保留至 ${entry.expiresAt}` : `${entry.retentionDays} 天` }}</div>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" :disabled="restoringId === entry.id" @click="restoreRecycleEntry(entry)">
+                <Spinner v-if="restoringId === entry.id" class="mr-1 size-3.5" />
+                <IconRefresh v-else class="mr-1 size-3.5" />
+                恢复
+              </Button>
+            </div>
+          </div>
+        </section>
+      </div>
     </template>
+
+    <CitationPreviewDialog v-model:open="previewOpen" :source="previewSource" :show-index="false" />
 
     <Dialog :open="uploadOpen" @update:open="onUploadOpenChange">
       <DialogContent class="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>上传 {{ uploadItems.length }} 个文件</DialogTitle>
-          <DialogDescription>上传到 {{ uploadTargetLabel }} · 可一次选择多个文件，将逐个上传并处理。</DialogDescription>
+          <DialogDescription>上传到 {{ uploadTargetLabel }} · 可多选文件。</DialogDescription>
         </DialogHeader>
         <div class="max-h-[58vh] space-y-3 overflow-y-auto py-2 pr-1">
           <div v-for="item in uploadItems" :key="item.id" class="rounded-lg border bg-muted/20 p-3">
@@ -746,7 +1107,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>新建文件夹</DialogTitle>
-          <DialogDescription>最多支持 5 层目录（可在系统设置中调整）。</DialogDescription>
+          <DialogDescription>最多支持 5 层目录。</DialogDescription>
         </DialogHeader>
         <div class="grid gap-2 py-2">
           <Label for="folder-name">文件夹名称</Label>

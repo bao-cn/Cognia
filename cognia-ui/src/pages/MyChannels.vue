@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { IconBookmark, IconCompass, IconHash, IconUsers } from '@tabler/icons-vue'
+import { IconBookmark, IconCompass, IconHash, IconLock, IconUsers } from '@tabler/icons-vue'
 import { channelApi, discoverApi, profileApi } from '@/api'
+import { toast } from 'vue-sonner'
 import type { ChannelCard, DiscoverChannel } from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,20 @@ interface OwnedChannel extends ChannelCard { ownerLabel: string; url: string }
 const loading = ref(true)
 const owned = ref<OwnedChannel[]>([])
 const subscribed = ref<DiscoverChannel[]>([])
+const unsubscribing = ref<string | null>(null)
+
+async function unsubscribe(channel: DiscoverChannel) {
+  unsubscribing.value = channel.id
+  try {
+    await discoverApi.unsubscribe(channel.id)
+    subscribed.value = subscribed.value.filter(item => item.id !== channel.id)
+    toast.success('已取消订阅')
+  } catch (err: any) {
+    toast.error(err?.message || '取消订阅失败')
+  } finally {
+    unsubscribing.value = null
+  }
+}
 
 const teamGroups = computed(() => {
   const groups = new Map<string, OwnedChannel[]>()
@@ -55,7 +70,7 @@ onMounted(load)
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="flex flex-col gap-1">
         <h1 class="flex items-center gap-2 text-xl font-semibold"><IconHash class="size-5 text-muted-foreground" />我的频道</h1>
-        <p class="text-sm text-muted-foreground">自己创建、团队共享以及订阅的公开频道。</p>
+        <p class="text-sm text-muted-foreground">自己创建、团队共享以及订阅的频道。</p>
       </div>
       <Button variant="outline" size="sm" as-child>
         <router-link to="/discover"><IconCompass class="mr-1 size-4" />发现广场</router-link>
@@ -106,15 +121,24 @@ onMounted(load)
           还没有订阅频道，去<router-link to="/discover" class="text-primary hover:underline">发现广场</router-link>看看吧
         </div>
         <div v-else class="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-          <router-link v-for="channel in subscribed" :key="channel.id" :to="`/${channel.ownerSlug}/${channel.slug}`"
-            class="rounded-lg border p-3 transition-colors hover:bg-muted/50">
-            <div class="flex items-center gap-2">
+          <div v-for="channel in subscribed" :key="channel.id" class="flex flex-col rounded-lg border p-3 transition-colors hover:bg-muted/50">
+            <router-link v-if="channel.isPublic" :to="`/${channel.ownerSlug}/${channel.slug}`" class="flex items-center gap-2">
               <p class="truncate text-sm font-medium">{{ channel.name }}</p>
               <Badge v-if="channel.featured" variant="secondary" class="shrink-0">精选</Badge>
+            </router-link>
+            <div v-else class="flex items-center gap-2">
+              <p class="truncate text-sm font-medium">{{ channel.name }}</p>
+              <Badge variant="outline" class="shrink-0 gap-1"><IconLock class="size-3" />私密</Badge>
             </div>
             <p class="mt-0.5 truncate text-xs text-muted-foreground">@{{ channel.ownerSlug }}</p>
             <p class="mt-1 line-clamp-2 text-xs text-muted-foreground">{{ channel.description || '暂无简介' }}</p>
-          </router-link>
+            <p v-if="!channel.isPublic" class="mt-1 text-[11px] text-muted-foreground">频道已转为私密，暂无法访问或检索。</p>
+            <div class="mt-2 flex justify-end">
+              <Button variant="ghost" size="sm" class="h-7 text-xs" :disabled="unsubscribing === channel.id" @click="unsubscribe(channel)">
+                取消订阅
+              </Button>
+            </div>
+          </div>
         </div>
       </section>
     </template>

@@ -20,6 +20,7 @@ public record ChannelSummaryResponse(
         String updateTime,
         boolean webSearchEnabled,
         boolean featured,
-        boolean subscribed
+        boolean subscribed,
+        boolean archived
 ) {
 }

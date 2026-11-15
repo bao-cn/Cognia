@@ -14,6 +14,7 @@ import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -78,6 +79,16 @@ public class MinioStorageServiceImpl implements MinioStorageService {
     public StoredObjectResponse uploadAtKey(MultipartFile file, String key, UploadProgressListener listener) {
         StorageSetting setting = requireEnabledSetting();
         validateFile(file, setting);
+        if (key == null || key.isBlank() || key.startsWith("/") || key.contains("..")) {
+            throw BusinessException.badRequest("对象 Key 不合法");
+        }
+        return put(setting, file, key, contentType(file), listener);
+    }
+
+    @Override
+    public StoredObjectResponse uploadAssetAtKey(MultipartFile file, String key, UploadProgressListener listener) {
+        StorageSetting setting = requireEnabledSetting();
+        validateTempFile(file, setting);
         if (key == null || key.isBlank() || key.startsWith("/") || key.contains("..")) {
             throw BusinessException.badRequest("对象 Key 不合法");
         }
@@ -183,6 +194,19 @@ public class MinioStorageServiceImpl implements MinioStorageService {
         // endpoint mint a fresh presigned URL on demand.
         return new StoredObjectResponse(stored.key(), "/api/v1/storage/avatar/" + ownerId,
                 stored.size(), stored.contentType(), stored.uploadedAt());
+    }
+
+    @Override
+    public void deleteObject(String key) {
+        StorageSetting setting = requireConfiguredSetting();
+        try {
+            buildClient(setting).removeObject(RemoveObjectArgs.builder()
+                    .bucket(setting.getBucket())
+                    .object(key)
+                    .build());
+        } catch (Exception ex) {
+            throw BusinessException.badRequest("对象删除失败：" + ex.getMessage());
+        }
     }
 
     @Override

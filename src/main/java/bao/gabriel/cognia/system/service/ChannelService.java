@@ -6,7 +6,6 @@ import bao.gabriel.cognia.system.dto.channel.ChannelSummaryResponse;
 import bao.gabriel.cognia.system.dto.channel.CreateChannelRequest;
 import bao.gabriel.cognia.system.dto.channel.CreateFolderRequest;
 import bao.gabriel.cognia.system.dto.channel.FolderResponse;
-import bao.gabriel.cognia.system.dto.channel.UpdateAgentMetaRequest;
 import bao.gabriel.cognia.system.dto.channel.UpdateChannelRequest;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,6 +28,10 @@ public interface ChannelService {
 
     ChannelSummaryResponse setPinned(Long userId, Long channelId, boolean pinned);
 
+    ChannelSummaryResponse setVisibility(Long userId, Long channelId, boolean isPublic, String verificationCode);
+
+    ChannelSummaryResponse setArchived(Long userId, Long channelId, boolean archived, String verificationCode);
+
     FolderResponse createFolder(Long userId, Long channelId, CreateFolderRequest request);
 
     void deleteFolder(Long userId, Long channelId, Long folderId);
@@ -36,9 +39,9 @@ public interface ChannelService {
     ChannelDocumentResponse uploadDocument(Long userId, Long channelId, Long folderId, MultipartFile file,
                                           String title, String documentType, String expirationTime);
 
-    ChannelDocumentResponse uploadMarkdown(Long userId, Long channelId, String kind, MultipartFile file);
-
     String readMarkdown(Long channelId, Long viewerId, String kind);
+
+    String readDocumentMarkdown(Long channelId, Long documentId, Long viewerId);
 
     List<ChannelDocumentResponse> documents(Long channelId, Long viewerId, Long folderId);
 
@@ -49,8 +52,6 @@ public interface ChannelService {
      * same read rules as the channel itself.
      */
     DocumentContent documentContent(Long documentId, Long viewerId);
-
-    ChannelSummaryResponse updateAgentMeta(Long userId, Long channelId, UpdateAgentMetaRequest request);
 
     void retryDocument(Long userId, Long channelId, Long documentId);
 

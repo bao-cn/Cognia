@@ -27,6 +27,12 @@ export const channelApi = {
   setPinned(id: string, pinned: boolean): Promise<ChannelCard> {
     return http.put<ChannelCard>(`/channels/${id}/pin`, undefined, { params: { pinned } })
   },
+  setVisibility(id: string, isPublic: boolean, verificationCode?: string): Promise<ChannelCard> {
+    return http.put<ChannelCard>(`/channels/${id}/visibility`, { isPublic, verificationCode })
+  },
+  setArchived(id: string, archived: boolean, verificationCode?: string): Promise<ChannelCard> {
+    return http.put<ChannelCard>(`/channels/${id}/archive`, { archived, verificationCode })
+  },
   createFolder(channelId: string, payload: { parentId?: string; name: string }): Promise<ChannelFolder> {
     return http.post<ChannelFolder>(`/channels/${channelId}/folders`, payload)
   },
@@ -61,14 +67,6 @@ export const channelApi = {
       },
     })
   },
-  uploadMarkdown(channelId: string, kind: 'README' | 'AGENT', file: File): Promise<void> {
-    const form = new FormData()
-    form.append('file', file)
-    return http.post<void>(`/channels/${channelId}/markdown?kind=${kind}`, form, {
-      timeout: 120000,
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-  },
   deleteDocument(channelId: string, documentId: string): Promise<void> {
     return http.delete<void>(`/channels/${channelId}/documents/${documentId}`)
   },
@@ -76,16 +74,13 @@ export const channelApi = {
   readMarkdown(channelId: string, kind: 'README' | 'AGENT'): Promise<string> {
     return http.get<string>(`/channels/${channelId}/markdown/${kind}`)
   },
+  documentMarkdown(channelId: string, documentId: string): Promise<string> {
+    return http.get<string>(`/channels/${channelId}/documents/${documentId}/markdown`)
+  },
   retryDocument(channelId: string, documentId: string): Promise<ChannelDocument> {
     return http.post<ChannelDocument>(`/channels/${channelId}/documents/${documentId}/retry`)
   },
   sendNotification(channelId: string, payload: { title: string; content: string }): Promise<void> {
     return http.post<void>(`/channels/${channelId}/notifications`, payload)
-  },
-  updateAgent(
-    channelId: string,
-    payload: { name?: string; description?: string; tags?: string },
-  ): Promise<ChannelCard> {
-    return http.put<ChannelCard>(`/channels/${channelId}/agent`, payload)
   },
 }
