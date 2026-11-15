@@ -41,4 +41,12 @@ export default {
   'settings.other.turn_on': 'Turn On',
   'settings.other.turn_off': 'Turn Off',
   'settings.other.manage': 'Manage',
+
+  'profile.identifier': 'ID',
+  'profile.nickname': 'Nickname',
+  'profile.pronouns': 'Pronouns',
+  'profile.pronouns.he': 'He/Him',
+  'profile.pronouns.she': 'She/Her',
+  'profile.pronouns.custom': 'Custom',
+  'profile.pronouns.unspecified': "Don't specify",
 }

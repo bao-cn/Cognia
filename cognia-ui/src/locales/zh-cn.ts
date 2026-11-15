@@ -41,4 +41,12 @@ export default {
   'settings.other.turn_on': '开启',
   'settings.other.turn_off': '关闭',
   'settings.other.manage': '管理',
+
+  'profile.identifier': '标识',
+  'profile.nickname': '昵称',
+  'profile.pronouns': '人称代词',
+  'profile.pronouns.he': '他',
+  'profile.pronouns.she': '她',
+  'profile.pronouns.custom': '自定义',
+  'profile.pronouns.unspecified': '不指定',
 }

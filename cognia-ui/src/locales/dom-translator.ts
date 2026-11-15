@@ -35,6 +35,7 @@ const DYNAMIC_RULES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
   [/^([\d.]+\s?[KMGT]?B) 已存储$/, m => `${m[1]} stored`],
   [/^今日 (\d+) · 7 天 (\d+)$/, m => `Today ${m[1]} · 7 days ${m[2]}`],
   [/^(\d+) 个文件$/, m => `${m[1]} files`],
+  [/^(\d+) 个文件夹 · (\d+) 个文件$/, m => `${m[1]} folders · ${m[2]} files`],
   [/^UP · 连接 (\d+)$/, m => `UP · connections ${m[1]}`],
   [/^UP · 在线 (\d+)$/, m => `UP · online ${m[1]}`],
   [/^IDLE · 队列 (\d+)$/, m => `IDLE · queue ${m[1]}`],
