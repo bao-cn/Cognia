@@ -92,7 +92,7 @@ const routes: Array<RouteRecordRaw> = [
       },
       {
         name: 'ChannelDetail',
-        path: ':owner/:channelSlug',
+        path: ':owner/:channelSlug/:folderPath(.*)*',
         component: () => import('@/pages/ChannelDetail.vue'),
         meta: {
           title: '频道',
@@ -287,6 +287,7 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@/pages/console/RecycleBin.vue'),
         meta: {
           title: '文档回收站',
+          permissions: ['recycle:read', 'settings:read'],
         },
       },
       {
