@@ -139,6 +139,7 @@ ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS registration_email_whiteli
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS registration_email_whitelist VARCHAR(2000);
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS team_creation_limit INTEGER NOT NULL DEFAULT 5;
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS team_join_limit INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Registration email verification requires a usable outbound mail service.
 UPDATE sys_site_setting
@@ -922,6 +923,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_conversation_public_id
 ALTER TABLE kb_channel ADD COLUMN IF NOT EXISTS featured BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE kb_channel ADD COLUMN IF NOT EXISTS featured_time TIMESTAMP;
 ALTER TABLE kb_channel ADD COLUMN IF NOT EXISTS web_search_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE kb_channel ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_kb_channel_featured
     ON kb_channel (featured_time DESC, id DESC) WHERE featured = TRUE;
