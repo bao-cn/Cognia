@@ -33,6 +33,8 @@ public interface SiteSettingService {
 
     boolean isLoginCaptchaEnabled();
 
+    boolean isTwoFactorEnabled();
+
     boolean isTurnstileConfigured();
 
     boolean isRegistrationEmailAllowed(String email);

@@ -64,6 +64,19 @@ export const useUserStore = defineStore('user', {
       }
     },
 
+    async loginTwoFactor(payload: import('@/types/api').LoginTwoFactorPayload): Promise<UserProfile> {
+      this.loading = true
+      try {
+        const result: LoginResult = await authApi.loginTwoFactor(payload)
+        this.applyTokens(result.accessToken, result.refreshToken)
+        this.setProfile(result.user)
+        this.initialized = true
+        return result.user
+      } finally {
+        this.loading = false
+      }
+    },
+
     async register(payload: RegisterPayload): Promise<UserProfile> {
       return authApi.register(payload)
     },

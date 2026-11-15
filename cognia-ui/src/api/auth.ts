@@ -1,8 +1,10 @@
 import { http } from './http'
 import type {
   AvailabilityResult,
+  LoginOptions,
   LoginPayload,
   LoginResult,
+  LoginTwoFactorPayload,
   RegisterPayload,
   SendCodeResult,
   UserProfile,
@@ -26,6 +28,15 @@ export const authApi = {
   },
   login(payload: LoginPayload): Promise<LoginResult> {
     return http.post<LoginResult>('/auth/login', payload)
+  },
+  loginOptions(account: string): Promise<LoginOptions> {
+    return http.post<LoginOptions>('/auth/login/options', { account })
+  },
+  loginTwoFactor(payload: LoginTwoFactorPayload): Promise<LoginResult> {
+    return http.post<LoginResult>('/auth/login/2fa', payload)
+  },
+  verifyRegisterCode(email: string, code: string): Promise<void> {
+    return http.post<void>('/auth/register/verify-code', { email, code })
   },
   refresh(refreshToken: string): Promise<LoginResult> {
     return http.post<LoginResult>('/auth/refresh', { refreshToken })

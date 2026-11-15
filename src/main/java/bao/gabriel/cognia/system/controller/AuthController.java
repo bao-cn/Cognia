@@ -2,7 +2,11 @@ package bao.gabriel.cognia.system.controller;
 
 import bao.gabriel.cognia.common.api.ApiResponse;
 import bao.gabriel.cognia.common.util.WebUtils;
+import bao.gabriel.cognia.system.dto.auth.LoginOptionsRequest;
+import bao.gabriel.cognia.system.dto.auth.LoginOptionsResponse;
 import bao.gabriel.cognia.system.dto.auth.LoginRequest;
+import bao.gabriel.cognia.system.dto.auth.LoginTwoFactorRequest;
+import bao.gabriel.cognia.system.dto.auth.VerifyCodeRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginResponse;
 import bao.gabriel.cognia.system.dto.auth.RefreshTokenRequest;
 import bao.gabriel.cognia.system.dto.auth.RegisterRequest;
@@ -52,6 +56,24 @@ public class AuthController {
     @GetMapping("/register/suggestions")
     public ApiResponse<java.util.List<String>> suggestions(@RequestParam(required = false) String base) {
         return ApiResponse.success(authService.usernameSuggestions(base));
+    }
+
+    @PostMapping("/register/verify-code")
+    public ApiResponse<Void> verifyRegisterCode(@Valid @RequestBody VerifyCodeRequest request) {
+        authService.verifyRegisterCode(request.email(), request.code());
+        return ApiResponse.success();
+    }
+
+    @PostMapping("/login/options")
+    public ApiResponse<LoginOptionsResponse> loginOptions(@Valid @RequestBody LoginOptionsRequest request) {
+        return ApiResponse.success(authService.loginOptions(request.account()));
+    }
+
+    @PostMapping("/login/2fa")
+    public ApiResponse<LoginResponse> loginWithTwoFactor(@Valid @RequestBody LoginTwoFactorRequest request,
+                                                         HttpServletRequest httpRequest) {
+        return ApiResponse.success(authService.loginWithTwoFactor(request,
+                WebUtils.getClientIp(httpRequest), WebUtils.getUserAgent(httpRequest)));
     }
 
     @PostMapping("/register")

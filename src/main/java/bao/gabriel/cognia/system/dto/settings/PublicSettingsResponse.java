@@ -19,6 +19,7 @@ public record PublicSettingsResponse(
         boolean registrationEmailWhitelistEnabled,
         boolean registerEmailCaptchaEnabled,
         boolean loginCaptchaEnabled,
+        boolean twoFactorEnabled,
         boolean appleLoginEnabled,
         boolean googleLoginEnabled,
         boolean turnstileConfigured,

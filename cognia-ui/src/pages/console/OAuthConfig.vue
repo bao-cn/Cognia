@@ -11,6 +11,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { IconBrandGithub, IconKey, IconLogin2, IconRefresh } from '@tabler/icons-vue'
 import { oauthApi, type AdminOAuthProvider } from '@/api/oauth'
+import { settingsApi } from '@/api'
+import type { AdminSiteSettings } from '@/types/api'
 
 const providers = ref<AdminOAuthProvider[]>([])
 const loading = ref(false)
@@ -21,10 +23,18 @@ const editing = ref<AdminOAuthProvider | null>(null)
 const form = reactive({ enabled: false, clientId: '', clientSecret: '', issuer: '', authorizationUri: '', tokenUri: '', userinfoUri: '', scopes: '', redirectUri: '', usernameClaim: '', emailClaim: '', nameClaim: '', autoCreate: true })
 const clearSecret = ref(false)
 const origin = window.location.origin
+const twoFactorEnabled = ref(false)
+const settings = ref<AdminSiteSettings | null>(null)
+const savingTwoFactor = ref(false)
 
 async function load() {
   loading.value = true; error.value = ''
-  try { providers.value = await oauthApi.adminProviders() } catch (e) { error.value = e instanceof Error ? e.message : '加载失败' } finally { loading.value = false }
+  try {
+    const [list, config] = await Promise.all([oauthApi.adminProviders(), settingsApi.getAdmin()])
+    providers.value = list
+    settings.value = config
+    twoFactorEnabled.value = Boolean(config.twoFactorEnabled)
+  } catch (e) { error.value = e instanceof Error ? e.message : '加载失败' } finally { loading.value = false }
 }
 function openEdit(p: AdminOAuthProvider) {
   editing.value = p
@@ -46,6 +56,18 @@ async function save() {
     toast.success('登录方式已更新')
   } catch (e) { toast.error(e instanceof Error ? e.message : '保存失败') } finally { saving.value = false }
 }
+async function toggleTwoFactor(enabled: boolean) {
+  if (!settings.value || savingTwoFactor.value) return
+  savingTwoFactor.value = true
+  try {
+    const updated = await settingsApi.update({ ...settings.value, twoFactorEnabled: enabled })
+    settings.value = updated
+    twoFactorEnabled.value = Boolean(updated.twoFactorEnabled)
+    toast.success(enabled ? '已开启全站两步验证' : '已关闭全站两步验证')
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : '保存失败')
+  } finally { savingTwoFactor.value = false }
+}
 onMounted(load)
 </script>
 
@@ -61,7 +83,20 @@ onMounted(load)
     <Alert><AlertDescription>回调地址格式：<code>{{ origin }}/oauth/callback?provider=CODE</code>，请同步配置到第三方平台。OIDC 可只填 Issuer，系统会自动发现端点。</AlertDescription></Alert>
     <Alert v-if="error" variant="destructive"><AlertDescription>{{ error }}</AlertDescription></Alert>
     <div v-if="loading" class="flex h-40 items-center justify-center"><Spinner /></div>
-    <div v-else class="grid gap-4 md:grid-cols-2">
+    <section v-else class="rounded-xl border bg-card">
+      <header class="flex flex-col gap-1 border-b px-4 py-3">
+        <h2 class="text-sm font-semibold">登录安全</h2>
+        <p class="text-xs text-muted-foreground">开启后，用户可绑定两步验证，并在登录时选择密码或两步验证码登录。</p>
+      </header>
+      <div class="flex items-center justify-between gap-4 p-4">
+        <div class="flex flex-col gap-1">
+          <p class="text-sm font-medium">两步验证（2FA）</p>
+          <p class="text-xs text-muted-foreground">全站开关。关闭后，已绑定的两步验证不会在登录时生效。</p>
+        </div>
+        <Switch :model-value="twoFactorEnabled" :disabled="savingTwoFactor" @update:model-value="toggleTwoFactor" />
+      </div>
+    </section>
+    <div v-if="!loading" class="grid gap-4 md:grid-cols-2">
       <section v-for="p in providers" :key="p.code" class="rounded-xl border bg-card">
         <header class="flex items-center justify-between border-b px-4 py-3">
           <div class="flex items-center gap-2"><IconBrandGithub v-if="p.code === 'GITHUB'" class="size-4" /><IconKey v-else class="size-4" /><h2 class="text-sm font-semibold">{{ p.name }}</h2><Badge variant="outline">{{ p.providerType }}</Badge></div>

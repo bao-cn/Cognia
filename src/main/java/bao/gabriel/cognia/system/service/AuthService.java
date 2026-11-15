@@ -8,7 +8,9 @@ import bao.gabriel.cognia.security.SecurityUtils;
 import bao.gabriel.cognia.security.TokenPair;
 import bao.gabriel.cognia.security.TokenService;
 import bao.gabriel.cognia.security.TurnstileService;
+import bao.gabriel.cognia.system.dto.auth.LoginOptionsResponse;
 import bao.gabriel.cognia.system.dto.auth.LoginRequest;
+import bao.gabriel.cognia.system.dto.auth.LoginTwoFactorRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginResponse;
 import bao.gabriel.cognia.system.dto.auth.RegisterRequest;
 import bao.gabriel.cognia.system.dto.auth.SendCodeRequest;
@@ -82,6 +84,23 @@ public class AuthService {
         return userService.suggestUsernames(base);
     }
 
+    public void verifyRegisterCode(String email, String code) {
+        if (!settingService.isEmailVerificationRequired()) {
+            return;
+        }
+        verificationCodeService.checkRegisterCode(email, code);
+    }
+
+    public LoginOptionsResponse loginOptions(String rawAccount) {
+        String account = rawAccount == null ? "" : rawAccount.trim();
+        User user = account.isEmpty() ? null : userService.findByAccount(account);
+        if (user == null || !user.isEnabled()) {
+            return new LoginOptionsResponse(false, false);
+        }
+        boolean twoFactor = settingService.isTwoFactorEnabled() && Boolean.TRUE.equals(user.getTwoFactorEnabled());
+        return new LoginOptionsResponse(StringUtils.hasText(user.getPassword()), twoFactor);
+    }
+
     public UserResponse register(RegisterRequest request) {
         if (!settingService.isRegistrationEnabled()) {
             throw new BusinessException(ResultCode.FORBIDDEN, "注册功能已关闭");
@@ -144,23 +163,44 @@ public class AuthService {
             throw new BusinessException(ResultCode.ACCOUNT_DISABLED);
         }
 
-        if (Boolean.TRUE.equals(user.getTwoFactorEnabled())) {
-            if (!StringUtils.hasText(request.twoFactorCode())) {
-                throw BusinessException.badRequest("请输入两步验证码");
-            }
-            if (!twoFactorService.verify(user, request.twoFactorCode())) {
-                throw new BusinessException(ResultCode.BAD_CREDENTIALS, "两步验证码不正确");
-            }
-        }
-
         redis.delete(failKey);
+        return completeLogin(user, Boolean.TRUE.equals(request.rememberMe()), clientIp, userAgent);
+    }
+
+    public LoginResponse loginWithTwoFactor(LoginTwoFactorRequest request, String clientIp, String userAgent) {
+        turnstileService.verify(request.turnstileToken(), clientIp, settingService.isLoginCaptchaEnabled());
+        if (!settingService.isTwoFactorEnabled()) {
+            throw BusinessException.badRequest("当前站点未开启两步验证登录");
+        }
+        String account = request.account().trim();
+        String failKey = LOGIN_FAIL_PREFIX + account.toLowerCase(Locale.ROOT);
+        assertNotLocked(failKey);
+        User user = userService.findByAccount(account);
+        if (user == null || !Boolean.TRUE.equals(user.getTwoFactorEnabled())) {
+            throw new BusinessException(ResultCode.BAD_CREDENTIALS, "该账户未开启两步验证");
+        }
+        if (!user.isEnabled()) {
+            throw new BusinessException(ResultCode.ACCOUNT_DISABLED);
+        }
+        if (!twoFactorService.verify(user, request.code())) {
+            int failures = recordFailure(failKey);
+            int remaining = Math.max(0, loginProperties.getMaxFailures() - failures);
+            if (remaining == 0) {
+                throw new BusinessException(ResultCode.ACCOUNT_LOCKED,
+                        "验证码错误次数过多，账户已锁定 " + loginProperties.getLockDuration().toMinutes() + " 分钟");
+            }
+            throw new BusinessException(ResultCode.BAD_CREDENTIALS,
+                    "两步验证码不正确，还可尝试 " + remaining + " 次");
+        }
+        redis.delete(failKey);
+        return completeLogin(user, Boolean.TRUE.equals(request.rememberMe()), clientIp, userAgent);
+    }
+
+    private LoginResponse completeLogin(User user, boolean rememberMe, String clientIp, String userAgent) {
         userService.updateLastLogin(user.getId(), clientIp);
-
         LoginUser loginUser = userService.buildLoginUser(user);
-        TokenPair tokens = tokenService.issue(loginUser, Boolean.TRUE.equals(request.rememberMe()),
-                clientIp, userAgent);
+        TokenPair tokens = tokenService.issue(loginUser, rememberMe, clientIp, userAgent);
         UserResponse profile = userService.getProfile(user.getId());
-
         log.info("User logged in: {} from {}", user.getUsername(), clientIp);
         return new LoginResponse(tokens.accessToken(), tokens.refreshToken(), tokens.tokenType(),
                 tokens.expiresIn(), tokens.refreshExpiresIn(), profile);

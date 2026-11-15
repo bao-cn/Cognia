@@ -181,7 +181,15 @@ public class VerificationCodeService {
     /**
      * Verifies and consumes the registration code.
      */
+    public void checkRegisterCode(String rawEmail, String code) {
+        verifyRegisterCode(rawEmail, code, false);
+    }
+
     public void verifyRegisterCode(String rawEmail, String code) {
+        verifyRegisterCode(rawEmail, code, true);
+    }
+
+    private void verifyRegisterCode(String rawEmail, String code, boolean consume) {
         String email = normalize(rawEmail);
         String codeKey = CODE_KEY + email;
         String stored = redis.opsForValue().get(codeKey);
@@ -207,8 +215,10 @@ public class VerificationCodeService {
             throw BusinessException.badRequest("验证码不正确，还可尝试 " + remaining + " 次");
         }
 
-        redis.delete(codeKey);
-        redis.delete(attemptKey);
+        if (consume) {
+            redis.delete(codeKey);
+            redis.delete(attemptKey);
+        }
     }
 
     private String generateCode(int length) {

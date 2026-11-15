@@ -45,6 +45,7 @@ public record UpdateSettingsRequest(
         Boolean registrationEmailVerification,
         Boolean registerEmailCaptchaEnabled,
         Boolean loginCaptchaEnabled,
+        Boolean twoFactorEnabled,
         Boolean registrationEmailWhitelistEnabled,
 
         @Size(max = 50, message = "邮箱白名单最多 50 项")

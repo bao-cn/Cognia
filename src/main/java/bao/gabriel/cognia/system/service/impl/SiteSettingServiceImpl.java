@@ -83,6 +83,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
                 Boolean.TRUE.equals(setting.getRegistrationEmailWhitelistEnabled()),
                 Boolean.TRUE.equals(setting.getRegisterEmailCaptchaEnabled()),
                 Boolean.TRUE.equals(setting.getLoginCaptchaEnabled()),
+                Boolean.TRUE.equals(setting.getTwoFactorEnabled()),
                 Boolean.TRUE.equals(setting.getAppleLoginEnabled()),
                 Boolean.TRUE.equals(setting.getGoogleLoginEnabled()),
                 isTurnstileConfigured(setting),
@@ -149,6 +150,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
         setting.setRegisterEmailCaptchaEnabled(valueOr(request.registerEmailCaptchaEnabled(),
                 setting.getRegisterEmailCaptchaEnabled()));
         setting.setLoginCaptchaEnabled(valueOr(request.loginCaptchaEnabled(), setting.getLoginCaptchaEnabled()));
+        setting.setTwoFactorEnabled(valueOr(request.twoFactorEnabled(), setting.getTwoFactorEnabled()));
         setting.setRegistrationEmailWhitelistEnabled(valueOr(request.registrationEmailWhitelistEnabled(),
                 setting.getRegistrationEmailWhitelistEnabled()));
         if (request.registrationEmailWhitelist() != null) {
@@ -301,6 +303,11 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     }
 
     @Override
+    public boolean isTwoFactorEnabled() {
+        return getSetting().twoFactorEnabled();
+    }
+
+    @Override
     public boolean isLoginCaptchaEnabled() {
         return Boolean.TRUE.equals(getSetting().getLoginCaptchaEnabled());
     }
@@ -378,6 +385,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
                 Boolean.TRUE.equals(setting.getRegistrationEmailVerification()),
                 Boolean.TRUE.equals(setting.getRegisterEmailCaptchaEnabled()),
                 Boolean.TRUE.equals(setting.getLoginCaptchaEnabled()),
+                Boolean.TRUE.equals(setting.getTwoFactorEnabled()),
                 Boolean.TRUE.equals(setting.getRegistrationEmailWhitelistEnabled()),
                 splitCsv(setting.getRegistrationEmailWhitelist()),
                 Boolean.TRUE.equals(setting.getAppleLoginEnabled()),
@@ -416,6 +424,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
         setting.setRegistrationEmailVerification(false);
         setting.setRegisterEmailCaptchaEnabled(true);
         setting.setLoginCaptchaEnabled(false);
+        setting.setTwoFactorEnabled(false);
         setting.setRegistrationEmailWhitelistEnabled(false);
         setting.setRegistrationEmailWhitelist(null);
         setting.setAppleLoginEnabled(false);

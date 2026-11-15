@@ -321,10 +321,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         User user = requireUser(userId);
         boolean changed = false;
         if (request.username() != null && !request.username().trim().equals(user.getUsername())) {
-            String username = request.username().trim();
-            assertUsernameAvailable(username, userId);
-            user.setUsername(username);
-            changed = true;
+            throw BusinessException.badRequest("用户唯一标识创建后不可修改");
         }
         if (request.nickname() != null) {
             user.setNickname(request.nickname().trim());

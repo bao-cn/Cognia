@@ -46,6 +46,7 @@ public class SiteSetting {
     private Boolean registerEmailCaptchaEnabled;
 
     private Boolean loginCaptchaEnabled;
+    private Boolean twoFactorEnabled;
     private Boolean registrationEmailWhitelistEnabled;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String registrationEmailWhitelist;
@@ -97,6 +98,10 @@ public class SiteSetting {
 
     public boolean loginCaptchaEnabled() {
         return Boolean.TRUE.equals(loginCaptchaEnabled);
+    }
+
+    public boolean twoFactorEnabled() {
+        return Boolean.TRUE.equals(twoFactorEnabled);
     }
 
     public boolean emailWhitelistEnabled() {

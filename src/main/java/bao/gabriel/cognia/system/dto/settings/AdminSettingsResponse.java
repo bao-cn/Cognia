@@ -19,6 +19,7 @@ public record AdminSettingsResponse(
         boolean registrationEmailVerification,
         boolean registerEmailCaptchaEnabled,
         boolean loginCaptchaEnabled,
+        boolean twoFactorEnabled,
         boolean registrationEmailWhitelistEnabled,
         List<String> registrationEmailWhitelist,
         boolean appleLoginEnabled,

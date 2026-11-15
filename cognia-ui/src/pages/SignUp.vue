@@ -4,7 +4,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from "vue"
 import { useRouter } from "vue-router"
 import { toast } from "vue-sonner"
 import { cn } from "cn"
-import { authApi } from "@/api"
+import { authApi, userApi } from "@/api"
 import { oauthApi, type PublicOAuthProvider } from "@/api/oauth"
 import { useUserStore } from "@/stores/user"
 import { useSiteStore } from "@/stores/site"
@@ -27,6 +27,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
+import QrCode from '@/components/QrCode.vue'
 
 const props = defineProps<{
   class?: HTMLAttributes["class"]
@@ -36,7 +37,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const siteStore = useSiteStore()
 
-const step = ref<1 | 2 | 3>(1)
+const step = ref<1 | 2 | 3 | 4>(1)
 const form = reactive({
   email: '',
   password: '',
@@ -47,7 +48,11 @@ const errors = reactive<Record<string, string | undefined>>({})
 const emailChecking = ref(false)
 const usernameChecking = ref(false)
 const submitting = ref(false)
+const verifyingCode = ref(false)
+const bindingTwoFactor = ref(false)
 const sendingCode = ref(false)
+const twoFactorSetup = ref<{ secret: string; otpauthUri: string } | null>(null)
+const twoFactorCode = ref('')
 const countdown = ref(0)
 const devCode = ref('')
 const turnstileToken = ref('')
@@ -76,8 +81,10 @@ const passwordState = computed(() => {
     : { level: 'weak', text: '低强度密码，建议增加长度或混合大小写', className: 'text-amber-600 dark:text-amber-400' }
 })
 
+const totalSteps = computed(() => siteStore.twoFactorEnabled ? 4 : 3)
 const stepTitle = computed(() => {
   if (oauthRegistration.value) return '选择唯一标识'
+  if (step.value === 4) return '绑定两步验证'
   return step.value === 1 ? '输入邮箱' : step.value === 2 ? '设置密码' : '选择唯一标识'
 })
 
@@ -181,6 +188,17 @@ async function nextFromPassword(): Promise<void> {
     errors.code = '请输入 6 位数字验证码'
     return
   }
+  if (siteStore.emailVerificationRequired) {
+    verifyingCode.value = true
+    try {
+      await authApi.verifyRegisterCode(form.email.trim(), form.code.trim())
+    } catch (error) {
+      errors.code = error instanceof Error ? error.message : '验证码校验失败'
+      return
+    } finally {
+      verifyingCode.value = false
+    }
+  }
   step.value = 3
   await loadSuggestions()
 }
@@ -222,6 +240,44 @@ async function ensureUsernameAvailable(): Promise<boolean> {
   }
 }
 
+async function afterRegistration(): Promise<void> {
+  if (!siteStore.twoFactorEnabled) {
+    toast.success('注册成功，正在为您登录...')
+    await router.replace('/chat')
+    return
+  }
+  step.value = 4
+  try {
+    twoFactorSetup.value = await userApi.setupTwoFactor()
+  } catch (error) {
+    toast.warning(error instanceof Error ? error.message : '两步验证初始化失败，可稍后在设置中开启')
+    await router.replace('/chat')
+  }
+}
+
+async function enableRegistrationTwoFactor(): Promise<void> {
+  if (!/^\d{6}$/.test(twoFactorCode.value)) {
+    toast.warning('请输入 6 位验证码')
+    return
+  }
+  bindingTwoFactor.value = true
+  try {
+    const profile = await userApi.enableTwoFactor(twoFactorCode.value)
+    userStore.setProfile(profile)
+    toast.success('两步验证已开启')
+    await router.replace('/chat')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '开启失败，请检查验证码')
+  } finally {
+    bindingTwoFactor.value = false
+  }
+}
+
+async function skipRegistrationTwoFactor(): Promise<void> {
+  toast.success('注册成功，正在为您登录...')
+  await router.replace('/chat')
+}
+
 async function finishRegistration(): Promise<void> {
   if (submitting.value) return
   if (!await ensureUsernameAvailable()) return
@@ -234,8 +290,7 @@ async function finishRegistration(): Promise<void> {
       userStore.setProfile(result.login.user)
       userStore.initialized = true
       sessionStorage.removeItem('cognia:oauth-registration')
-      toast.success('注册成功，正在为您登录...')
-      await router.replace('/chat')
+      await afterRegistration()
       return
     }
     await userStore.register({
@@ -244,10 +299,9 @@ async function finishRegistration(): Promise<void> {
       password: form.password,
       code: siteStore.emailVerificationRequired ? form.code.trim() : undefined,
     })
-    toast.success('注册成功，正在为您登录...')
     try {
       await userStore.login({ account: form.username.trim(), password: form.password })
-      await router.replace('/chat')
+      await afterRegistration()
     } catch {
       toast.warning('注册成功，请手动登录')
       await router.replace({ name: 'SignIn', query: { account: form.username.trim() } })
@@ -297,7 +351,7 @@ onMounted(async () => {
           创建您的 {{ siteStore.siteName }} 账户
         </CardTitle>
         <CardDescription>
-          {{ siteStore.registrationEnabled ? (oauthRegistration ? '使用第三方账号完成注册' : `第 ${step} 步，共 3 步 · ${stepTitle}`) : '当前站点已关闭自助注册' }}
+          {{ siteStore.registrationEnabled ? (oauthRegistration ? '使用第三方账号完成注册' : `第 ${step} 步，共 ${totalSteps} 步 · ${stepTitle}`) : '当前站点已关闭自助注册' }}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -307,7 +361,7 @@ onMounted(async () => {
             <router-link to="/sign">返回登录</router-link>
           </Button>
         </div>
-        <form v-else @submit.prevent="step === 1 ? nextFromEmail() : step === 2 ? nextFromPassword() : finishRegistration()">
+        <form v-else @submit.prevent="step === 1 ? nextFromEmail() : step === 2 ? nextFromPassword() : step === 3 ? finishRegistration() : enableRegistrationTwoFactor()">
           <FieldGroup class="gap-4">
             <template v-if="step === 1">
               <Field>
@@ -408,10 +462,32 @@ onMounted(async () => {
                 </Field>
               </template>
               <Field>
-                <Button type="submit" class="w-full">
-                  下一步
+                <Button type="submit" class="w-full" :disabled="verifyingCode">
+                  <Spinner v-if="verifyingCode" class="mr-2" />
+                  {{ verifyingCode ? '校验中...' : '下一步' }}
                 </Button>
                 <Button type="button" variant="ghost" class="w-full" @click="step = 1">返回修改邮箱</Button>
+              </Field>
+            </template>
+
+            <template v-else-if="step === 4">
+              <div class="flex flex-col items-center gap-3 text-center">
+                <p class="text-sm text-muted-foreground">使用任意 TOTP 验证器扫描二维码，或手动输入密钥。绑定后可选择跳过。</p>
+                <div v-if="twoFactorSetup" class="rounded-xl bg-white p-3">
+                  <QrCode :value="twoFactorSetup.otpauthUri" />
+                </div>
+                <code v-if="twoFactorSetup" class="w-full break-all rounded-lg border bg-muted/40 p-3 text-xs">{{ twoFactorSetup.secret }}</code>
+              </div>
+              <Field>
+                <FieldLabel for="two-factor-code">6 位验证码</FieldLabel>
+                <Input id="two-factor-code" v-model="twoFactorCode" inputmode="numeric" maxlength="6" placeholder="000000" />
+              </Field>
+              <Field>
+                <Button type="submit" class="w-full" :disabled="bindingTwoFactor || !twoFactorSetup">
+                  <Spinner v-if="bindingTwoFactor" class="mr-2" />
+                  {{ bindingTwoFactor ? '开启中...' : '开启并完成' }}
+                </Button>
+                <Button type="button" variant="ghost" class="w-full" @click="skipRegistrationTwoFactor">跳过，稍后设置</Button>
               </Field>
             </template>
 
