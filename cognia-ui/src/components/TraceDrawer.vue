@@ -13,10 +13,8 @@ import {
   IconLoader2,
   IconPlayerPlay,
   IconPrompt,
-  IconRefresh,
   IconSearch,
   IconTool,
-  IconX,
 } from '@tabler/icons-vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -214,8 +212,8 @@ watch(() => debugStore.drawerOpen, (value) => {
 
 <template>
   <Sheet v-model:open="debugStore.drawerOpen">
-    <SheetContent side="right" class="w-full gap-0 border-l p-0 sm:max-w-[880px]">
-      <SheetHeader class="border-b px-5 py-4">
+    <SheetContent side="right" class="w-full gap-0 border-l p-0 sm:max-w-[880px]" :refresh="view === 'list' ? loadList : load">
+      <SheetHeader class="border-b px-5 py-4 pr-24">
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div class="flex min-w-0 flex-col gap-1">
             <SheetTitle class="flex items-center gap-2 text-base">
@@ -238,12 +236,6 @@ watch(() => debugStore.drawerOpen, (value) => {
           <div class="flex items-center gap-1">
             <Button v-if="view === 'detail'" variant="ghost" size="sm" class="h-8" @click="backToList">
               返回列表
-            </Button>
-            <Button variant="ghost" size="icon" class="size-8" @click="view === 'list' ? loadList() : load()">
-              <IconRefresh class="size-4" />
-            </Button>
-            <Button variant="ghost" size="icon" class="size-8" @click="debugStore.close()">
-              <IconX class="size-4" />
             </Button>
           </div>
         </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DialogContentEmits, DialogContentProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
-import { IconX } from '@tabler/icons-vue'
+import { IconRefresh, IconX } from '@tabler/icons-vue'
 import { reactiveOmit } from "@vueuse/core"
 import { cn } from "cn"
 import {
@@ -15,6 +15,7 @@ import SheetOverlay from "./SheetOverlay.vue"
 interface SheetContentProps extends DialogContentProps {
   class?: HTMLAttributes["class"]
   side?: "top" | "right" | "bottom" | "left"
+  refresh?: () => void
 }
 
 defineOptions({
@@ -26,7 +27,7 @@ const props = withDefaults(defineProps<SheetContentProps>(), {
 })
 const emits = defineEmits<DialogContentEmits>()
 
-const delegatedProps = reactiveOmit(props, "class", "side")
+const delegatedProps = reactiveOmit(props, "class", "side", "refresh")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
@@ -50,6 +51,16 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       v-bind="{ ...$attrs, ...forwarded }"
     >
       <slot />
+
+      <button
+        v-if="refresh"
+        type="button"
+        class="ring-offset-background focus:ring-ring absolute top-4 right-12 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none"
+        @click="refresh"
+      >
+        <IconRefresh class="size-4" />
+        <span class="sr-only">Refresh</span>
+      </button>
 
       <DialogClose
         class="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none"

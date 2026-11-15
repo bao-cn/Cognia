@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { toast } from 'vue-sonner'
 import Markdown from '@/components/Markdown.vue'
 import TeamDetail from '@/pages/TeamDetail.vue'
@@ -25,6 +26,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const userStore = useUserStore()
 const loading = ref(true)
 const error = ref('')
@@ -116,7 +118,7 @@ function openEdit() {
   if (!profile.value) return
   editForm.username = profile.value.username ?? ''
   editForm.nickname = profile.value.nickname ?? ''
-  editForm.gender = profile.value.gender ?? ''
+  editForm.gender = normalizePronoun(profile.value.gender)
   editForm.bio = profile.value.bio ?? ''
   editForm.company = profile.value.company ?? ''
   editForm.hometown = profile.value.hometown ?? ''
@@ -242,7 +244,27 @@ const teamMemberRoleLabel: Record<string, string> = {
   MEMBER: '成员',
 }
 
-const genderLabel: Record<string, string> = { male: '男', female: '女', other: '其他' }
+const PRONOUN_KEYS = ['he', 'she', 'custom', 'unspecified'] as const
+
+function normalizePronoun(value?: string | null): string {
+  if (value === 'male') return 'he'
+  if (value === 'female') return 'she'
+  if (value === 'other') return 'custom'
+  if (value && (PRONOUN_KEYS as readonly string[]).includes(value)) return value
+  return 'unspecified'
+}
+
+function pronounLabel(value?: string | null) {
+  return t(`profile.pronouns.${normalizePronoun(value)}`)
+}
+
+const timezoneOptions = computed(() => {
+  const zones = typeof Intl.supportedValuesOf === 'function'
+    ? Intl.supportedValuesOf('timeZone')
+    : ['Asia/Shanghai', 'Asia/Tokyo', 'Asia/Singapore', 'Europe/London', 'Europe/Paris', 'America/New_York', 'America/Los_Angeles', 'UTC']
+  const current = editForm.timezone
+  return current && !zones.includes(current) ? [current, ...zones] : zones
+})
 
 onMounted(load)
 watch(identity, load)
@@ -313,7 +335,7 @@ watch(identity, load)
                   <IconClock class="size-4" /><span>{{ profile.timezone }}</span>
                 </div>
                 <div v-if="profile.gender" class="flex items-center gap-2 text-muted-foreground">
-                  <IconId class="size-4" /><span>{{ genderLabel[profile.gender] || profile.gender }}</span>
+                  <IconId class="size-4" /><span>{{ pronounLabel(profile.gender) }}</span>
                 </div>
                 <div v-if="profile.email" class="flex items-center gap-2 text-muted-foreground">
                   <IconMail class="size-4" /><span class="truncate">{{ profile.email }}</span>
@@ -442,27 +464,28 @@ watch(identity, load)
             <span class="text-xs text-muted-foreground">JPG / PNG / WebP / GIF，自动裁切为 512×512 WebP</span>
           </div>
           <div class="grid gap-2">
-            <Label for="profile-username">Username</Label>
-            <Input id="profile-username" v-model="editForm.username" maxlength="32" placeholder="用户名，作为个人主页地址" />
+            <Label for="profile-username">{{ t('profile.identifier') }}</Label>
+            <Input id="profile-username" v-model="editForm.username" maxlength="32" disabled />
+            <p class="text-xs text-muted-foreground">唯一标识创建后不可修改</p>
           </div>
           <div class="grid gap-2">
-            <Label for="profile-nickname">Nickname</Label>
+            <Label for="profile-nickname">{{ t('profile.nickname') }}</Label>
             <Input id="profile-nickname" v-model="editForm.nickname" maxlength="32" />
           </div>
           <div class="grid gap-2">
-            <Label for="profile-gender">性别</Label>
+            <Label for="profile-gender">{{ t('profile.pronouns') }}</Label>
             <Select
-              :model-value="editForm.gender || 'none'"
-              @update:model-value="(value) => editForm.gender = value === 'none' ? '' : String(value)"
+              :model-value="normalizePronoun(editForm.gender)"
+              @update:model-value="(value) => editForm.gender = String(value)"
             >
               <SelectTrigger id="profile-gender" class="w-full">
-                <SelectValue placeholder="不公开" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">不公开</SelectItem>
-                <SelectItem value="male">男</SelectItem>
-                <SelectItem value="female">女</SelectItem>
-                <SelectItem value="other">其他</SelectItem>
+                <SelectItem value="he">{{ t('profile.pronouns.he') }}</SelectItem>
+                <SelectItem value="she">{{ t('profile.pronouns.she') }}</SelectItem>
+                <SelectItem value="custom">{{ t('profile.pronouns.custom') }}</SelectItem>
+                <SelectItem value="unspecified">{{ t('profile.pronouns.unspecified') }}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -480,7 +503,14 @@ watch(identity, load)
           </div>
           <div class="grid gap-2">
             <Label for="profile-timezone">时区</Label>
-            <Input id="profile-timezone" v-model="editForm.timezone" placeholder="Asia/Shanghai" maxlength="64" />
+            <Select v-model="editForm.timezone">
+              <SelectTrigger id="profile-timezone" class="w-full">
+                <SelectValue placeholder="选择时区" />
+              </SelectTrigger>
+              <SelectContent class="max-h-72">
+                <SelectItem v-for="zone in timezoneOptions" :key="zone" :value="zone">{{ zone }}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div class="grid gap-2 md:col-span-2">
             <Label for="profile-readme">README</Label>
