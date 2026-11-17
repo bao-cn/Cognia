@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
  * accidental full-table update/delete statements.
  */
 @Configuration
-@MapperScan("bao.gabriel.cognia.system.mapper")
+@MapperScan({"bao.gabriel.cognia.system.mapper", "bao.gabriel.cognia.rag.ingestion"})
 public class MybatisPlusConfig {
 
     @Bean

@@ -4,6 +4,7 @@ import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.rag.service.RagCacheService;
 import bao.gabriel.cognia.system.entity.KbDocument;
 import bao.gabriel.cognia.system.entity.RecycleBin;
+import bao.gabriel.cognia.system.mapper.DocumentChunkMapper;
 import bao.gabriel.cognia.system.mapper.KbDocumentMapper;
 import bao.gabriel.cognia.system.mapper.RecycleBinMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -28,6 +29,7 @@ import java.time.LocalDateTime;
 public class FileDeletionService {
 
     private final KbDocumentMapper documentMapper;
+    private final DocumentChunkMapper documentChunkMapper;
     private final RecycleBinMapper recycleBinMapper;
     private final ObjectStorageService objectStorageService;
     private final VectorStoreCleanupService vectorCleanupService;
@@ -75,6 +77,8 @@ public class FileDeletionService {
             deleteObjectQuietly(document.getOriginalKey());
         }
         vectorCleanupService.deleteByDocumentId(document.getId());
+        documentChunkMapper.delete(new LambdaQueryWrapper<bao.gabriel.cognia.system.entity.DocumentChunk>()
+                .eq(bao.gabriel.cognia.system.entity.DocumentChunk::getDocumentId, document.getId()));
         recycleBinMapper.delete(new LambdaQueryWrapper<RecycleBin>()
                 .eq(RecycleBin::getDocumentId, document.getId()));
         documentMapper.deleteById(document.getId());

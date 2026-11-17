@@ -32,17 +32,26 @@ public class VectorDimensionService {
         }
     }
 
-    public synchronized void ensureDimension(int dimension) {
+    /**
+     * The storage dimension is fixed. Switching to a model with another
+     * dimension would invalidate the ANN index and all stored vectors, so it is
+     * rejected instead of silently clearing the knowledge base.
+     */
+    public void assertDimension(int dimension) {
         if (dimension < 1 || dimension > 65536) {
             throw new IllegalArgumentException("Invalid vector dimension: " + dimension);
         }
-        if (dimension == currentDimension()) {
-            return;
+        int current = currentDimension();
+        if (dimension != current) {
+            throw new IllegalStateException("向量模型维度为 " + dimension + "，当前知识库为 " + current
+                    + " 维。请选择相同维度的模型；已有向量不会被清空。");
         }
-        log.info("Changing document_chunk.embedding dimension from {} to {}", currentDimension(), dimension);
-        jdbcTemplate.execute("UPDATE document_chunk SET embedding = NULL");
-        jdbcTemplate.execute("ALTER TABLE document_chunk ALTER COLUMN embedding TYPE vector(" + dimension + ")");
-        currentDimension = dimension;
+    }
+
+    public void assertDimensionCompatible(String modelLabel) {
+        // Kept for model-switch validation; dimension itself is checked on the
+        // first embedding call, before any chunk is written.
+        log.debug("Checking embedding model switch to {}", modelLabel);
     }
 
     private int parse(String type) {

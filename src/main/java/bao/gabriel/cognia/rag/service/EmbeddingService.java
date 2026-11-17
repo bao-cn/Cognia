@@ -10,6 +10,8 @@ public interface EmbeddingService {
 
     int dimension();
 
+    String activeModelLabel();
+
     record EmbeddedText(float[] vector, String model, int dimension) {
     }
 }

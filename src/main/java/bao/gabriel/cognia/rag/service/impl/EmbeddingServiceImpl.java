@@ -3,6 +3,7 @@ package bao.gabriel.cognia.rag.service.impl;
 import bao.gabriel.cognia.common.ai.OpenAiCompatibleClient;
 import bao.gabriel.cognia.rag.service.EmbeddingService;
 import bao.gabriel.cognia.rag.service.VectorDimensionService;
+import bao.gabriel.cognia.rag.ingestion.EmbeddingHealthService;
 import bao.gabriel.cognia.system.entity.RagSetting;
 import bao.gabriel.cognia.system.service.ModelConfigService;
 import bao.gabriel.cognia.system.service.ModelConfigService.ResolvedModel;
@@ -31,6 +32,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
     private final ModelConfigService modelConfigService;
     private final OpenAiCompatibleClient client;
     private final VectorDimensionService dimensionService;
+    private final EmbeddingHealthService healthService;
 
     @Override
     public EmbeddedText embed(String text) {
@@ -40,36 +42,30 @@ public class EmbeddingServiceImpl implements EmbeddingService {
     @Override
     public List<EmbeddedText> embedAll(List<String> texts) {
         RagSetting setting = ragSettingService.getSetting();
-        ResolvedModel model = null;
-        if (setting.getEmbeddingModelId() != null) {
-            try {
-                model = modelConfigService.resolveModel(setting.getEmbeddingModelId());
-            } catch (Exception ex) {
-                log.warn("Configured embedding model is unavailable: {}", ex.getMessage());
+        if (setting.getEmbeddingModelId() == null) {
+            throw new IllegalStateException("尚未配置 Embedding 模型");
+        }
+        ResolvedModel model;
+        try {
+            model = modelConfigService.resolveModel(setting.getEmbeddingModelId());
+        } catch (Exception ex) {
+            throw new IllegalStateException("Embedding 模型不可用：" + ex.getMessage());
+        }
+        long started = System.currentTimeMillis();
+        try {
+            List<EmbeddedText> result = callModel(model, texts);
+            if (result.isEmpty()) {
+                throw new IllegalStateException("向量模型未返回 embedding 数据");
             }
+            int actual = result.get(0).dimension();
+            dimensionService.assertDimension(actual);
+            healthService.record(activeModelLabel(), true, System.currentTimeMillis() - started, null);
+            return result;
+        } catch (Exception ex) {
+            healthService.record(activeModelLabel(), false, System.currentTimeMillis() - started, ex.getMessage());
+            log.warn("Embedding API failed: {}", ex.getMessage());
+            throw new IllegalStateException("Embedding 服务调用失败：" + ex.getMessage(), ex);
         }
-        int expectedDimension = model != null && model.dimension() != null
-                ? model.dimension() : dimensionService.currentDimension();
-        if (model != null) {
-            try {
-                List<EmbeddedText> result = callModel(model, texts);
-                if (!result.isEmpty()) {
-                    int actual = result.get(0).dimension();
-                    dimensionService.ensureDimension(actual);
-                    return result;
-                }
-            } catch (Exception ex) {
-                log.warn("Embedding API failed, falling back to local hash embeddings: {}", ex.getMessage());
-            }
-        }
-        dimensionService.ensureDimension(expectedDimension);
-        List<EmbeddedText> fallback = new ArrayList<>(texts.size());
-        for (String text : texts) {
-            fallback.add(new EmbeddedText(localEmbedding(text, expectedDimension),
-                    model == null ? "local-hash" : model.providerName() + "/" + model.modelId() + " (fallback)",
-                    expectedDimension));
-        }
-        return fallback;
     }
 
     @Override
@@ -86,6 +82,20 @@ public class EmbeddingServiceImpl implements EmbeddingService {
             }
         }
         return dimensionService.currentDimension();
+    }
+
+    @Override
+    public String activeModelLabel() {
+        RagSetting setting = ragSettingService.getSetting();
+        if (setting.getEmbeddingModelId() == null) {
+            return null;
+        }
+        try {
+            ResolvedModel model = modelConfigService.resolveModel(setting.getEmbeddingModelId());
+            return model.providerName() + "/" + model.modelId();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private List<EmbeddedText> callModel(ResolvedModel model, List<String> texts) throws Exception {
@@ -138,36 +148,5 @@ public class EmbeddingServiceImpl implements EmbeddingService {
         }
         String value = text.trim();
         return value.length() <= MAX_CHARS ? value : value.substring(0, MAX_CHARS);
-    }
-
-    private float[] localEmbedding(String text, int dimension) {
-        float[] vector = new float[dimension];
-        String normalized = (text == null ? "" : text).toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
-        if (normalized.isBlank()) {
-            vector[0] = 1f;
-            return vector;
-        }
-        if (normalized.length() == 1) {
-            vector[Math.floorMod(normalized.hashCode(), dimension)] = 1f;
-        }
-        for (int i = 0; i + 1 < normalized.length(); i++) {
-            String gram = normalized.substring(i, i + 2);
-            int hash = gram.hashCode();
-            vector[Math.floorMod(hash, dimension)] += 1f;
-            vector[Math.floorMod(hash * 31 + 17, dimension)] += 0.5f;
-        }
-        double norm = 0;
-        for (float value : vector) {
-            norm += value * value;
-        }
-        if (norm == 0) {
-            vector[0] = 1f;
-            return vector;
-        }
-        float scale = (float) (1.0 / Math.sqrt(norm));
-        for (int i = 0; i < vector.length; i++) {
-            vector[i] *= scale;
-        }
-        return vector;
     }
 }
