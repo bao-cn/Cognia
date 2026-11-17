@@ -20,6 +20,9 @@ public record RagSettingResponse(
         int semanticCacheMaxEntries,
         int retrievalCacheTtlMinutes,
         int retrievalCacheMaxEntries,
-        boolean titleGenerationEnabled
+        boolean titleGenerationEnabled,
+        boolean imageEmbeddingEnabled,
+        Long imageCaptionModelId,
+        String imageCaptionPrompt
 ) {
 }

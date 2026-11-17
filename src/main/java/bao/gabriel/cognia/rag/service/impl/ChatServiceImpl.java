@@ -4,6 +4,7 @@ import bao.gabriel.cognia.common.ai.OpenAiCompatibleClient;
 import bao.gabriel.cognia.common.ai.StreamingTextSanitizer;
 import bao.gabriel.cognia.rag.dto.CitationSource;
 import bao.gabriel.cognia.rag.dto.RetrievedChunk;
+import bao.gabriel.cognia.rag.dto.RetrievalOutcome;
 import bao.gabriel.cognia.rag.service.ChatService;
 import bao.gabriel.cognia.rag.service.EmbeddingService;
 import bao.gabriel.cognia.common.ai.ChatProtocolClient;
@@ -117,6 +118,8 @@ public class ChatServiceImpl implements ChatService {
         boolean metricRetrievalUsed = false;
         boolean metricRetrievalHit = false;
         boolean metricRerankUsed = false;
+        long metricRerankMs = 0L;
+        String metricRerankError = null;
         long metricRetrievalMs = 0L;
         int metricLlmRounds = 0;
         int metricInputTokens = 0;
@@ -139,7 +142,7 @@ public class ChatServiceImpl implements ChatService {
             }
             String lastUser = lastUserMessage(request);
             metricInputTokens = estimateTokens(lastUser);
-            boolean traceEnabled = debugSettingService.shouldTrace(userId);
+            boolean traceEnabled = userId != null;
             trace = chatTraceService.start(userId, request.conversationId(), model, lastUser, traceEnabled);
             if (trace != null) {
                 trace.put("meta", "effort", request.effort());
@@ -308,12 +311,20 @@ public class ChatServiceImpl implements ChatService {
             if (chunks == null) {
                 if (hasChannels && StringUtils.hasText(lastUser)) {
                     metricRetrievalUsed = true;
-                    chunks = queryVector != null
-                            ? retrievalService.retrieve(lastUser, queryVector, userId, request.channelIds(),
-                                    request.debugTopK(), request.debugRerankEnabled())
-                            : retrievalService.retrieve(lastUser, userId, request.channelIds());
+                    RetrievalOutcome outcome;
+                    if (queryVector != null) {
+                        outcome = retrievalService.retrieveOutcome(lastUser, queryVector, userId, request.channelIds(),
+                                request.debugTopK(), request.debugRerankEnabled());
+                    } else {
+                        EmbeddingService.EmbeddedText embedded = embeddingService.embed(lastUser);
+                        outcome = retrievalService.retrieveOutcome(lastUser, embedded.vector(), userId,
+                                request.channelIds(), request.debugTopK(), request.debugRerankEnabled());
+                    }
+                    chunks = outcome.chunks();
+                    metricRerankUsed = outcome.rerankUsed();
+                    metricRerankMs = outcome.rerankDurationMs();
+                    metricRerankError = outcome.rerankError();
                     metricRetrievalHit = chunks != null && !chunks.isEmpty();
-                    metricRerankUsed = setting.rerankEnabled() && setting.getRerankModelId() != null;
                     metricRetrievalMs = (System.nanoTime() - retrievalStart) / 1_000_000;
                     metricInputTokens = estimateTokens(lastUser);
                     if (chunks != null) {
@@ -330,7 +341,7 @@ public class ChatServiceImpl implements ChatService {
             }
             if (trace != null) {
                 trace.stage("retrieval", retrievalStart, "SUCCESS");
-                traceRetrieval(trace, setting, chunks, hitType, queryVector, request.channelIds());
+                traceRetrieval(trace, setting, chunks, hitType, queryVector, request.channelIds(), metricRerankUsed, metricRerankMs, metricRerankError);
             }
 
             List<CitationSource> sources = citations(chunks);
@@ -484,6 +495,7 @@ public class ChatServiceImpl implements ChatService {
                 }
             }
             if (trace != null) {
+                trace.put("meta", "messageId", assistantMessageId);
                 trace.put("output", "answer", answer.toString());
                 trace.put("output", "citations", allSources.size());
                 trace.put("output", "citationCheck", citationCheck(allSources, answer.toString()));
@@ -525,10 +537,11 @@ public class ChatServiceImpl implements ChatService {
                     metricStatus, metricErrorType,
                     (System.nanoTime() - qaStart) / 1_000_000,
                     metricRetrievalUsed, metricRetrievalHit, metricRerankUsed,
-                    0, metricLlmRounds, metricRefused,
+                    (int) Math.min(metricRerankMs, Integer.MAX_VALUE), metricLlmRounds, metricRefused,
                     metricInputTokens, metricOutputTokens,
                     metricRetrievalUsed ? estimateTokens(lastUserMessage(request)) : 0,
-                    metricRetrievalMs, 0, metricPromptCacheHitTokens, metricPromptCacheMissTokens);
+                    (int) Math.min(metricRetrievalMs, Integer.MAX_VALUE), (int) Math.min(metricRerankMs, Integer.MAX_VALUE),
+                    metricPromptCacheHitTokens, metricPromptCacheMissTokens);
             if (stampedeLock != null && stampedeLock.isHeldByCurrentThread()) {
                 stampedeLock.unlock();
             }
@@ -1241,12 +1254,16 @@ public class ChatServiceImpl implements ChatService {
 
     /** Records retrieval parameters, candidates and the assembled context. */
     private void traceRetrieval(TraceRecorder trace, RagSetting setting, List<RetrievedChunk> chunks,
-                                String hitType, float[] queryVector, List<Long> channelIds) {
+                                String hitType, float[] queryVector, List<Long> channelIds,
+                                boolean rerankUsed, long rerankMs, String rerankError) {
         trace.put("retrieval", "strategy", "HYBRID_VECTOR");
         trace.put("retrieval", "hitType", hitType);
         trace.put("retrieval", "topK", setting.retrievalTopK());
         trace.put("retrieval", "topN", setting.retrievalTopN());
         trace.put("retrieval", "rerankEnabled", setting.rerankEnabled());
+        trace.put("retrieval", "rerankUsed", rerankUsed);
+        trace.put("retrieval", "rerankDurationMs", rerankMs);
+        if (rerankError != null) trace.put("retrieval", "rerankError", rerankError);
         trace.put("retrieval", "channels", channelIds);
         trace.put("retrieval", "vectorDimension", queryVector == null ? null : queryVector.length);
         ArrayNode candidates = mapper.createArrayNode();

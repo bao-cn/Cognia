@@ -148,6 +148,33 @@
 
         <section class="rounded-xl border bg-card">
           <header class="flex flex-col gap-1 border-b px-4 py-3">
+            <h2 class="text-sm font-semibold">图片理解与向量化</h2>
+            <p class="text-xs text-muted-foreground">开启后，图片先由多模态模型生成结构化描述，再用文本向量模型写入知识库；关闭时图片只保存、不参与检索。</p>
+          </header>
+          <div class="flex flex-col gap-4 p-4">
+            <SettingSwitchRow title="允许图片生成描述并向量化" description="需要配置支持图片输入的聊天模型"
+              :model-value="form.imageEmbeddingEnabled" @update:model-value="form.imageEmbeddingEnabled = $event" />
+            <div class="grid gap-2 md:max-w-md">
+              <Label for="image-caption-model">图生文模型</Label>
+              <Select v-model="form.imageCaptionModelId" :disabled="!form.imageEmbeddingEnabled">
+                <SelectTrigger id="image-caption-model" class="w-full"><SelectValue placeholder="选择支持图片输入的聊天模型" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="model in chatModels.filter(item => item.supportsVision)" :key="model.id" :value="String(model.id)">
+                    {{ model.providerName }} · {{ model.displayName || model.modelId }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="grid gap-2">
+              <Label for="image-caption-prompt">图生文提示词</Label>
+              <Textarea id="image-caption-prompt" v-model="form.imageCaptionPrompt" :rows="8" :disabled="!form.imageEmbeddingEnabled"
+                placeholder="描述图片类型、结构、OCR 原文、关键数值和可回答的问题" />
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-xl border bg-card">
+          <header class="flex flex-col gap-1 border-b px-4 py-3">
             <h2 class="text-sm font-semibold">两层检索缓存</h2>
             <p class="text-xs text-muted-foreground">先查语义缓存，再查检索缓存，最后执行实时检索与生成；缓存更新不会阻塞回答。</p>
           </header>
@@ -249,7 +276,7 @@ const settings = reactive<RagSettings>({
   semanticCacheEnabled: true, retrievalCacheEnabled: true, semanticCacheThreshold: 0.92,
   semanticCacheTtlMinutes: 60, semanticCacheMaxEntries: 500,
   retrievalCacheTtlMinutes: 1440, retrievalCacheMaxEntries: 1000, titleGenerationEnabled: true,
-  contextCompressionThreshold: 80,
+  contextCompressionThreshold: 80, imageEmbeddingEnabled: false, imageCaptionModelId: undefined, imageCaptionPrompt: '',
 })
 const form = reactive({
   chatModelId: '', embeddingModelId: '', rerankEnabled: false, rerankModelId: '',
@@ -258,7 +285,7 @@ const form = reactive({
   semanticCacheEnabled: true, retrievalCacheEnabled: true, semanticCacheThreshold: 0.92,
   semanticCacheTtlMinutes: 60, semanticCacheMaxEntries: 500,
   retrievalCacheTtlMinutes: 1440, retrievalCacheMaxEntries: 1000, titleGenerationEnabled: true,
-  contextCompressionThreshold: 80,
+  contextCompressionThreshold: 80, imageEmbeddingEnabled: false, imageCaptionModelId: '', imageCaptionPrompt: '',
 })
 const models = ref<ModelConfig[]>([])
 const snapshot = ref('')
@@ -289,6 +316,9 @@ function apply(value: RagSettings) {
   form.retrievalCacheMaxEntries = value.retrievalCacheMaxEntries ?? 1000
   form.titleGenerationEnabled = value.titleGenerationEnabled ?? true
   form.contextCompressionThreshold = value.contextCompressionThreshold ?? 80
+  form.imageEmbeddingEnabled = value.imageEmbeddingEnabled ?? false
+  form.imageCaptionModelId = value.imageCaptionModelId ? String(value.imageCaptionModelId) : ''
+  form.imageCaptionPrompt = value.imageCaptionPrompt ?? ''
   snapshot.value = JSON.stringify(buildPayload())
 }
 
@@ -313,6 +343,9 @@ function buildPayload(): UpdateRagSettingsPayload {
     retrievalCacheMaxEntries: form.retrievalCacheMaxEntries,
     titleGenerationEnabled: form.titleGenerationEnabled,
     contextCompressionThreshold: form.contextCompressionThreshold,
+    imageEmbeddingEnabled: form.imageEmbeddingEnabled,
+    imageCaptionModelId: form.imageCaptionModelId ? Number(form.imageCaptionModelId) : undefined,
+    imageCaptionPrompt: form.imageCaptionPrompt || undefined,
   }
 }
 

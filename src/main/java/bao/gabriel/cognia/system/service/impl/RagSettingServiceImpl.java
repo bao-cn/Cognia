@@ -10,6 +10,7 @@ import bao.gabriel.cognia.system.mapper.ModelConfigMapper;
 import bao.gabriel.cognia.system.mapper.RagSettingMapper;
 import bao.gabriel.cognia.system.service.RagSettingService;
 import bao.gabriel.cognia.system.service.SiteSettingService;
+import bao.gabriel.cognia.rag.ingestion.EmbeddingModelSwitchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,7 @@ public class RagSettingServiceImpl implements RagSettingService {
     private final ModelConfigMapper modelConfigMapper;
     private final SecurityCryptoService cryptoService;
     private final SiteSettingService siteSettingService;
+    private final EmbeddingModelSwitchService embeddingModelSwitchService;
 
     @Override
     public RagSetting getSetting() {
@@ -74,12 +76,14 @@ public class RagSettingServiceImpl implements RagSettingService {
     @Transactional
     public RagSettingResponse updateSettings(UpdateRagSettingRequest request, Long operatorId) {
         RagSetting setting = getSetting();
+        Long previousEmbeddingModelId = setting.getEmbeddingModelId();
         if (request.chatModelId() != null) {
             assertModelType(request.chatModelId(), ModelConfig.TYPE_CHAT, "聊天模型");
             setting.setChatModelId(request.chatModelId());
         }
         if (request.embeddingModelId() != null) {
             assertModelType(request.embeddingModelId(), ModelConfig.TYPE_EMBEDDING, "向量模型");
+            embeddingModelSwitchService.validateSwitch(request.embeddingModelId());
             setting.setEmbeddingModelId(request.embeddingModelId());
         }
         if (request.rerankEnabled() != null) {
@@ -134,10 +138,23 @@ public class RagSettingServiceImpl implements RagSettingService {
         if (request.titleGenerationEnabled() != null) {
             setting.setTitleGenerationEnabled(request.titleGenerationEnabled());
         }
+        if (request.imageEmbeddingEnabled() != null) {
+            setting.setImageEmbeddingEnabled(request.imageEmbeddingEnabled());
+        }
+        if (request.imageCaptionModelId() != null) {
+            assertModelType(request.imageCaptionModelId(), ModelConfig.TYPE_CHAT, "图生文模型");
+            setting.setImageCaptionModelId(request.imageCaptionModelId());
+        }
+        if (request.imageCaptionPrompt() != null) {
+            setting.setImageCaptionPrompt(request.imageCaptionPrompt());
+        }
         validate(setting);
         setting.setUpdatedBy(operatorId);
         setting.setUpdateTime(LocalDateTime.now());
         mapper.updateById(setting);
+        if (request.embeddingModelId() != null) {
+            embeddingModelSwitchService.onSwitch(previousEmbeddingModelId, request.embeddingModelId());
+        }
         return toResponse(setting);
     }
 
@@ -194,6 +211,7 @@ public class RagSettingServiceImpl implements RagSettingService {
                 setting.semanticCacheEnabled(), setting.retrievalCacheEnabled(),
                 setting.semanticCacheThreshold(), setting.semanticCacheTtlMinutes(),
                 setting.semanticCacheMaxEntries(), setting.retrievalCacheTtlMinutes(),
-                setting.retrievalCacheMaxEntries(), setting.titleGenerationEnabled());
+                setting.retrievalCacheMaxEntries(), setting.titleGenerationEnabled(),
+                setting.imageEmbeddingEnabled(), setting.getImageCaptionModelId(), setting.imageCaptionPrompt());
     }
 }

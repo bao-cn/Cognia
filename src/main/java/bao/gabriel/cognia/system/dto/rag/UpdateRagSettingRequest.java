@@ -4,6 +4,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 
 public record UpdateRagSettingRequest(
         Long chatModelId,
@@ -24,6 +25,9 @@ public record UpdateRagSettingRequest(
         @Min(1) @Max(100000) Integer semanticCacheMaxEntries,
         @Min(1) @Max(10080) Integer retrievalCacheTtlMinutes,
         @Min(1) @Max(100000) Integer retrievalCacheMaxEntries,
-        Boolean titleGenerationEnabled
+        Boolean titleGenerationEnabled,
+        Boolean imageEmbeddingEnabled,
+        Long imageCaptionModelId,
+        @Size(max = 4000) String imageCaptionPrompt
 ) {
 }

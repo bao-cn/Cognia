@@ -1,6 +1,7 @@
 package bao.gabriel.cognia.rag.service;
 
 import bao.gabriel.cognia.rag.dto.RetrievedChunk;
+import bao.gabriel.cognia.rag.dto.RetrievalOutcome;
 
 import java.util.List;
 
@@ -21,4 +22,8 @@ public interface RetrievalService {
      */
     List<RetrievedChunk> retrieve(String query, float[] queryVector, Long viewerId, List<Long> channelIds,
                                   Integer topKOverride, Boolean rerankOverride);
+
+    /** Same as the six-argument retrieve, but reports whether rerank really ran. */
+    RetrievalOutcome retrieveOutcome(String query, float[] queryVector, Long viewerId, List<Long> channelIds,
+                                     Integer topKOverride, Boolean rerankOverride);
 }

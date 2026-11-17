@@ -40,6 +40,9 @@ public class RagSetting {
     private Integer retrievalCacheTtlMinutes;
     private Integer retrievalCacheMaxEntries;
     private Boolean titleGenerationEnabled;
+    private Boolean imageEmbeddingEnabled;
+    private Long imageCaptionModelId;
+    private String imageCaptionPrompt;
     private Long updatedBy;
     private LocalDateTime updateTime;
 
@@ -110,6 +113,23 @@ public class RagSetting {
     public boolean titleGenerationEnabled() {
         return !Boolean.FALSE.equals(titleGenerationEnabled);
     }
+
+    public boolean imageEmbeddingEnabled() {
+        return Boolean.TRUE.equals(imageEmbeddingEnabled) && imageCaptionModelId != null;
+    }
+
+    public String imageCaptionPrompt() {
+        return StringUtils.hasText(imageCaptionPrompt) ? imageCaptionPrompt : DEFAULT_IMAGE_CAPTION_PROMPT;
+    }
+
+    public static final String DEFAULT_IMAGE_CAPTION_PROMPT = """
+            请为这张图片生成适合知识库检索的结构化描述，使用中文，按以下小节输出：
+            1) 图类型：流程图 / 架构图 / 折线图 / 表格截图 / 界面截图 / 其他；
+            2) 主体与结构：图片在讲什么关系、流程从哪到哪、分为几个阶段；
+            3) 图中全部可读文字：按阅读顺序保留 OCR 原文；
+            4) 关键数值与结论：列出数字、单位、同比/环比等结论；
+            5) 可回答的问题：写出 3-5 个这张图能回答的问题。
+            不要臆造图片中不存在的信息。""";
 
     /**
      * Default Chinese prompt used when the administrator has not customised the
