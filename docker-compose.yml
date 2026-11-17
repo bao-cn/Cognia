@@ -64,6 +64,15 @@ services:
         mc mb --ignore-existing "local/$$MINIO_BUCKET"
         echo "bucket ready: $$MINIO_BUCKET"
 
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    restart: unless-stopped
+    volumes:
+      - ollamadata:/root/.ollama
+    ports:
+      - "11434:11434"
+
   backend:
     build:
       context: .
@@ -87,6 +96,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@cognia.local}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8088,http://127.0.0.1:8088}
       OPENAI_API_KEY: sk-cognia-placeholder
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -118,3 +128,4 @@ volumes:
   pgdata:
   redisdata:
   miniodata:
+  ollamadata:

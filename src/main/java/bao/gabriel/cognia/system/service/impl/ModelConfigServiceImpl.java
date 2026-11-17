@@ -478,7 +478,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     private String normalizeVendor(String vendor) {
         String value = vendor == null ? "OPENAI" : vendor.trim().toUpperCase(Locale.ROOT);
         return switch (value) {
-            case "DEEPSEEK", "QWEN", "CUSTOM", "OPENAI" -> value;
+            case "DEEPSEEK", "QWEN", "OLLAMA", "CUSTOM", "OPENAI" -> value;
             default -> "OPENAI";
         };
     }

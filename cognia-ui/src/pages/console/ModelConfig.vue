@@ -43,6 +43,43 @@
 
       <TabsContent value="providers">
         <fieldset :disabled="!canUpdate" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
+          <section class="rounded-xl border bg-card">
+            <header class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+              <div class="flex flex-col gap-1">
+                <h2 class="flex items-center gap-2 text-sm font-semibold">
+                  <IconCloudDownload class="size-4" />Ollama 本地模型
+                </h2>
+                <p class="text-xs text-muted-foreground">
+                  {{ ollamaStatus?.configured ? (ollamaStatus.connected ? `已连接 ${ollamaStatus.baseUrl}` : ollamaStatus.message) : '未配置本地 Ollama，可使用 Docker Compose 的 ollama profile，或连接外部 Ollama。' }}
+                </p>
+              </div>
+              <div class="flex items-center gap-2">
+                <Badge :variant="ollamaStatus?.connected ? 'default' : 'secondary'">
+                  {{ ollamaStatus?.connected ? '已连接' : '未连接' }}
+                </Badge>
+                <Button variant="outline" size="sm" @click="loadOllama"><IconRefresh class="mr-1 size-4" />检测</Button>
+                <Button v-if="!ollamaStatus?.configured" variant="outline" size="sm" @click="openOllamaProvider">添加 Ollama 供应商</Button>
+              </div>
+            </header>
+            <div class="flex flex-col gap-3 p-4">
+              <div class="flex flex-wrap gap-2">
+                <Badge v-for="name in ollamaStatus?.models ?? []" :key="name" variant="secondary">{{ name }}</Badge>
+                <span v-if="!ollamaStatus?.models?.length" class="text-xs text-muted-foreground">暂无本地模型</span>
+              </div>
+              <div v-if="ollamaStatus?.connected" class="flex flex-wrap items-center gap-2">
+                <Input v-model="ollamaModel" class="max-w-sm" placeholder="例如 qwen3:8b / nomic-embed-text" />
+                <Button :disabled="ollamaPulling || !ollamaModel.trim()" @click="pullOllama">
+                  <Spinner v-if="ollamaPulling" class="mr-1 size-3" />拉取模型
+                </Button>
+                <label class="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                  <Checkbox v-model="ollamaInsecure" /> 允许不安全来源
+                </label>
+                <Button v-if="ollamaStatus.models.length" variant="outline" @click="openOllamaFetch">添加到模型列表</Button>
+              </div>
+              <Progress v-if="ollamaPulling || ollamaProgress > 0" :model-value="ollamaProgress" class="h-2" />
+              <p v-if="ollamaPullMessage" class="text-xs text-muted-foreground">{{ ollamaPullMessage }}</p>
+            </div>
+          </section>
           <div v-if="providers.length === 0" class="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16">
             <IconPlug class="size-10 text-muted-foreground" />
             <p class="text-sm text-muted-foreground">还没有供应商，添加一个 OpenAI 兼容端点以开始。</p>
@@ -185,6 +222,7 @@
                 <SelectItem value="OPENAI">OpenAI 标准</SelectItem>
                 <SelectItem value="DEEPSEEK">DeepSeek</SelectItem>
                 <SelectItem value="QWEN">通义千问</SelectItem>
+                <SelectItem value="OLLAMA">Ollama（本地/外部）</SelectItem>
                 <SelectItem value="CUSTOM">自定义</SelectItem>
               </SelectContent>
             </Select>
@@ -244,6 +282,10 @@
               <SelectItem value="RERANK">重排模型</SelectItem>
             </SelectContent>
           </Select>
+          <template v-if="bulkType === 'EMBEDDING'">
+            <Label class="text-xs">向量维度</Label>
+            <Input v-model.number="bulkDimension" type="number" min="1" class="w-28" />
+          </template>
           <span class="text-xs text-muted-foreground">已选 {{ selectedRemote.length }} 个</span>
         </div>
         <div class="max-h-72 overflow-y-auto rounded-lg border">
@@ -409,12 +451,13 @@ import {
   IconAlertTriangle, IconBrain, IconCloudDownload, IconCpu, IconList, IconPencil, IconPlug,
   IconPlus, IconRefresh, IconServer, IconTrash,
 } from '@tabler/icons-vue'
-import { modelApi } from '@/api'
+import { modelApi, ollamaApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import type {
   ModelConfig, ModelProvider, ModelType, ProviderProtocol, ReasoningLevel, RemoteModel,
   SaveModelConfigPayload, SaveModelProviderPayload,
 } from '@/types/api'
+import type { OllamaStatus } from '@/api/ollama'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -423,6 +466,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
@@ -444,6 +488,13 @@ const configs = ref<ModelConfig[]>([])
 
 const providerDialogOpen = ref(false)
 const editingProvider = ref<ModelProvider | null>(null)
+const ollamaStatus = ref<OllamaStatus | null>(null)
+const ollamaModel = ref('')
+const ollamaPulling = ref(false)
+const ollamaInsecure = ref(false)
+const ollamaProgress = ref(0)
+const ollamaPullMessage = ref('')
+
 const providerForm = reactive({
   name: '', vendor: 'OPENAI', baseUrl: '',
   protocol: 'OPENAI_CHAT' as ProviderProtocol,
@@ -465,6 +516,7 @@ function toggleRemote(modelId: string, checked: boolean) {
   }
 }
 const bulkType = ref<ModelType>('CHAT')
+const bulkDimension = ref(1024)
 
 const modelDialogOpen = ref(false)
 const editingModel = ref<ModelConfig | null>(null)
@@ -479,6 +531,68 @@ const modelForm = reactive({
 
 const existingModelIds = computed(() => new Set(configs.value.map(item => item.modelId)))
 
+async function loadOllama() {
+  try {
+    ollamaStatus.value = await ollamaApi.status()
+  } catch {
+    ollamaStatus.value = null
+  }
+}
+
+async function pullOllama() {
+  const model = ollamaModel.value.trim()
+  if (!model || ollamaPulling.value) return
+  ollamaPulling.value = true
+  ollamaPullMessage.value = `正在拉取 ${model}…`
+  try {
+    ollamaProgress.value = 0
+    let task = await ollamaApi.pull(ollamaStatus.value?.providerId, model, ollamaInsecure.value)
+    while (!task.done) {
+      ollamaProgress.value = task.percent ?? 0
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      task = await ollamaApi.pullStatus(task.taskId)
+      ollamaPullMessage.value = task.message
+    }
+    ollamaProgress.value = task.percent ?? 100
+    if (task.status === 'succeeded') {
+      toast.success(`模型 ${model} 拉取完成`)
+      ollamaModel.value = ''
+      await loadOllama()
+    } else {
+      toast.error(task.message)
+    }
+  } catch (e: any) {
+    toast.error(e?.message || '拉取模型失败')
+  } finally {
+    ollamaPulling.value = false
+  }
+}
+
+function openOllamaFetch() {
+  if (!ollamaStatus.value?.providerId) return
+  fetchProvider.value = {
+    id: Number(ollamaStatus.value.providerId),
+    name: ollamaStatus.value.providerName || 'Ollama',
+    vendor: 'OLLAMA',
+    baseUrl: ollamaStatus.value.baseUrl || '',
+    protocol: 'OPENAI_CHAT',
+    apiKeyConfigured: false,
+    enabled: true,
+    modelCount: ollamaStatus.value.models.length,
+  }
+  remoteModels.value = ollamaStatus.value.models.map(name => ({ id: name, ownedBy: 'Ollama' }))
+  selectedRemote.value = []
+  fetchDialogOpen.value = true
+}
+
+function openOllamaProvider() {
+  openProviderDialog()
+  providerForm.name = 'Ollama（本地）'
+  providerForm.vendor = 'OLLAMA'
+  providerForm.baseUrl = 'http://127.0.0.1:11434/v1'
+  providerForm.protocol = 'OPENAI_CHAT'
+}
+
 async function loadAll() {
   loading.value = true
   error.value = ''
@@ -486,6 +600,7 @@ async function loadAll() {
     const [providerList, modelList] = await Promise.all([modelApi.providers(), modelApi.configs()])
     providers.value = providerList
     configs.value = modelList
+    await loadOllama()
   } catch (err: any) {
     error.value = err?.message || '加载模型配置失败'
   } finally {
@@ -579,6 +694,7 @@ async function addSelectedModels() {
         providerId: fetchProvider.value.id,
         modelId,
         modelType: bulkType.value,
+        dimension: bulkType.value === 'EMBEDDING' ? bulkDimension.value : undefined,
         displayName: modelId,
         enabled: true,
         visible: bulkType.value === 'CHAT',

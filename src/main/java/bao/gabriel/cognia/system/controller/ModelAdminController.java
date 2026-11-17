@@ -3,12 +3,16 @@ package bao.gabriel.cognia.system.controller;
 import bao.gabriel.cognia.common.api.ApiResponse;
 import bao.gabriel.cognia.security.SecurityUtils;
 import bao.gabriel.cognia.system.dto.model.ModelConfigResponse;
+import bao.gabriel.cognia.system.dto.model.OllamaPullRequest;
+import bao.gabriel.cognia.system.dto.model.OllamaPullStatusResponse;
+import bao.gabriel.cognia.system.dto.model.OllamaStatusResponse;
 import bao.gabriel.cognia.system.dto.model.ModelProviderResponse;
 import bao.gabriel.cognia.system.dto.model.PublicModelResponse;
 import bao.gabriel.cognia.system.dto.model.RemoteModelResponse;
 import bao.gabriel.cognia.system.dto.model.SaveModelConfigRequest;
 import bao.gabriel.cognia.system.dto.model.SaveModelProviderRequest;
 import bao.gabriel.cognia.system.service.ModelConfigService;
+import bao.gabriel.cognia.system.service.OllamaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,6 +34,7 @@ import java.util.List;
 public class ModelAdminController {
 
     private final ModelConfigService modelConfigService;
+    private final OllamaService ollamaService;
 
     @GetMapping("/providers")
     @PreAuthorize("hasAnyAuthority('model:read', 'settings:read')")
@@ -87,6 +92,24 @@ public class ModelAdminController {
     public ApiResponse<Void> deleteModel(@PathVariable Long id) {
         modelConfigService.deleteModel(id);
         return ApiResponse.success();
+    }
+
+    @GetMapping("/ollama/status")
+    @PreAuthorize("hasAnyAuthority('model:read', 'settings:read')")
+    public ApiResponse<OllamaStatusResponse> ollamaStatus(@RequestParam(required = false) Long providerId) {
+        return ApiResponse.success(ollamaService.status(providerId));
+    }
+
+    @PostMapping("/ollama/pull")
+    @PreAuthorize("hasAnyAuthority('model:update', 'settings:update')")
+    public ApiResponse<OllamaPullStatusResponse> pullOllamaModel(@Valid @RequestBody OllamaPullRequest request) {
+        return ApiResponse.success(ollamaService.pull(request.providerId(), request.model(), Boolean.TRUE.equals(request.insecure())));
+    }
+
+    @GetMapping("/ollama/pull/{taskId}")
+    @PreAuthorize("hasAnyAuthority('model:read', 'settings:read')")
+    public ApiResponse<OllamaPullStatusResponse> ollamaPullStatus(@PathVariable String taskId) {
+        return ApiResponse.success(ollamaService.pullStatus(taskId));
     }
 
     @GetMapping("/available")

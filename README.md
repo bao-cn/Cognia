@@ -71,6 +71,21 @@ docker compose up -d --build
 
 > 浏览器直连 MinIO 的预签名地址时，`minio:9000` 这个容器内域名不可解析。生产环境请把对象存储 Endpoint 换成浏览器可访问的公网/内网域名；本地如需直连预览，可让后端与 MinIO 使用同一可解析的主机名，或配置反向代理。
 
+### 可选：本地 Ollama
+
+Ollama 不参与默认启动，只有需要本地模型时才启用：
+
+```bash
+# .env 中设置容器内地址
+OLLAMA_BASE_URL=http://ollama:11434
+
+# 启动 Ollama（可选 profile）
+docker compose --profile ollama up -d ollama
+docker compose up -d backend
+```
+
+后端检测到 `OLLAMA_BASE_URL` 且尚无 Ollama 供应商时，会自动创建并启用 `Ollama（本地）` 供应商；后台「模型配置」页即可查看连接状态、拉取本地模型。连接已有的外部 Ollama 时，把 `OLLAMA_BASE_URL` 指向其地址后重启后端，或在页面手动添加供应商。
+
 常用命令：
 
 ```bash
