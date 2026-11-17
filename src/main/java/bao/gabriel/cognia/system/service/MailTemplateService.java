@@ -11,6 +11,8 @@ public interface MailTemplateService {
 
     String REGISTER_CODE = "REGISTER_CODE";
     String SMTP_TEST = "SMTP_TEST";
+    String CHANNEL_ADMIN_ALERT = "CHANNEL_ADMIN_ALERT";
+    String CHANNEL_NOTIFICATION = "CHANNEL_NOTIFICATION";
 
     List<MailTemplateResponse> listTemplates();
 

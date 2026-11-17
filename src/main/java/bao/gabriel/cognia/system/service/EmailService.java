@@ -12,4 +12,10 @@ public interface EmailService {
     void sendEmailChangeCode(String email, String code, long ttlMinutes);
 
     void sendTestEmail(String recipient);
+
+    void sendAlert(String recipient, String subject, String message);
+
+    void sendChannelAlert(String recipient, String channelName, String subject, String message);
+
+    void sendChannelNotification(String recipient, String channelName, String subject, String content);
 }

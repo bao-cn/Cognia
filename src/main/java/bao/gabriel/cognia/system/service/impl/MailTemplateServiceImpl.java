@@ -79,7 +79,32 @@ public class MailTemplateServiceImpl implements MailTemplateService {
                     <p style="margin:0 0 16px;">如果您收到此邮件，说明控制台中的邮件服务配置已生效。</p>
                     <p style="margin:0;">—— {{siteName}} 团队</p>
                     """,
-                    List.of("siteName", "recipient", "sentAt", "year")
+                    List.of("siteName", "recipient", "sentAt", "year")),
+            new TemplateDefault(
+                    CHANNEL_ADMIN_ALERT,
+                    "频道管理通知",
+                    "频道处理失败、重新向量化完成等维护通知（发送给频道管理员）",
+                    "【{{siteName}}】{{channelName}}：{{subject}}",
+                    """
+                    <h1 style="margin:0 0 16px;font-size:22px;line-height:1.35;color:#111827;">{{subject}}</h1>
+                    <p style="margin:0 0 16px;">频道：<strong>{{channelName}}</strong></p>
+                    <p style="margin:0 0 16px;white-space:pre-wrap;">{{message}}</p>
+                    <p style="margin:0;">—— {{siteName}}</p>
+                    """,
+                    List.of("siteName", "channelName", "subject", "message", "year")
+            ),
+            new TemplateDefault(
+                    CHANNEL_NOTIFICATION,
+                    "频道订阅通知",
+                    "频道管理员向通知订阅者发送的通知邮件",
+                    "【{{channelName}}】{{subject}}",
+                    """
+                    <h1 style="margin:0 0 16px;font-size:22px;line-height:1.35;color:#111827;">{{subject}}</h1>
+                    <p style="margin:0 0 16px;">来自频道 <strong>{{channelName}}</strong> 的通知：</p>
+                    <p style="margin:0 0 16px;white-space:pre-wrap;">{{content}}</p>
+                    <p style="margin:0;">—— {{siteName}}</p>
+                    """,
+                    List.of("siteName", "channelName", "subject", "content", "year")
             )
     );
 

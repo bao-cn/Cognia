@@ -106,6 +106,48 @@ public class DatabaseEmailService implements EmailService {
         send(config, recipient, mail.subject(), mail.content());
     }
 
+    @Override
+    public void sendAlert(String recipient, String subject, String message) {
+        SmtpConfig config = settingService.getSmtpConfig();
+        if (!config.usable()) {
+            log.warn("Ingestion alert (SMTP disabled): {} - {}", subject, message);
+            return;
+        }
+        String site = HtmlUtils.htmlEscape(siteName());
+        String html = "<h1 style=\"margin:0 0 16px;font-size:20px;\">" + HtmlUtils.htmlEscape(subject)
+                + "</h1><pre style=\"white-space:pre-wrap;font-family:inherit;\">"
+                + HtmlUtils.htmlEscape(message) + "</pre><p>—— " + site + " 运维告警</p>";
+        send(config, recipient, "【" + siteName() + "】" + subject, html);
+    }
+
+    @Override
+    public void sendChannelAlert(String recipient, String channelName, String subject, String message) {
+        SmtpConfig config = settingService.getSmtpConfig();
+        if (!config.usable()) {
+            log.warn("Channel alert (SMTP disabled): {} - {} - {}", channelName, subject, message);
+            return;
+        }
+        RenderedMail mail = mailTemplateService.render(MailTemplateService.CHANNEL_ADMIN_ALERT, Map.of(
+                "siteName", siteName(), "channelName", channelName,
+                "subject", subject, "message", message,
+                "year", String.valueOf(LocalDate.now().getYear())));
+        send(config, recipient, mail.subject(), mail.content());
+    }
+
+    @Override
+    public void sendChannelNotification(String recipient, String channelName, String subject, String content) {
+        SmtpConfig config = settingService.getSmtpConfig();
+        if (!config.usable()) {
+            log.warn("Channel notification (SMTP disabled): {} - {} - {}", channelName, subject, content);
+            return;
+        }
+        RenderedMail mail = mailTemplateService.render(MailTemplateService.CHANNEL_NOTIFICATION, Map.of(
+                "siteName", siteName(), "channelName", channelName,
+                "subject", subject, "content", content,
+                "year", String.valueOf(LocalDate.now().getYear())));
+        send(config, recipient, mail.subject(), mail.content());
+    }
+
     private String siteName() {
         String name = settingService.getSetting().getSiteName();
         return name == null || name.isBlank() ? "Cognia" : name;

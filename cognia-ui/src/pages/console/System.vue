@@ -7,7 +7,7 @@
           系统设置
         </h1>
         <p class="text-sm text-muted-foreground">
-          站点品牌、注册策略、团队上限、邮件服务、客户端下载与法律条款，保存后即时生效。
+          站点品牌、注册策略、团队上限、客户端下载与法律条款，保存后即时生效。
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -45,10 +45,6 @@
         <TabsTrigger value="registration" class="flex-none px-3">
           <IconUserPlus />
           注册与登录
-        </TabsTrigger>
-        <TabsTrigger value="smtp" class="flex-none px-3">
-          <IconMail />
-          邮件服务
         </TabsTrigger>
         <TabsTrigger value="team" class="flex-none px-3">
           <IconUsers />
@@ -866,7 +862,6 @@ import {
   IconDownload,
   IconEye,
   IconFileText,
-  IconMail,
   IconRefresh,
   IconSend,
   IconSettings,
