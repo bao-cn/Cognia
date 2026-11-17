@@ -848,7 +848,7 @@ CREATE TABLE IF NOT EXISTS document_chunk
     chunk_text       TEXT        NOT NULL,
     chunk_text_hash  VARCHAR(64) NOT NULL,
     embedding_model  VARCHAR(255),
-    embedding        VECTOR(1536),
+    embedding        VECTOR(1024),
     page_number      INTEGER     NOT NULL DEFAULT 1,
     title            VARCHAR(512),
     author           VARCHAR(255),
@@ -1250,3 +1250,103 @@ VALUES
  ('GITHUB', 'GitHub', 'OAUTH2', FALSE, '', 'https://github.com/login/oauth/authorize', 'https://github.com/login/oauth/access_token', 'https://api.github.com/user', 'read:user user:email', 'login', 'email', 'name'),
  ('OIDC', '统一身份认证', 'OIDC', FALSE, '', '', '', '', 'openid email profile', 'email', 'email', 'name')
 ON CONFLICT (code) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Persistent ingestion resource pool, embedding health, model slots, HNSW
+-- ---------------------------------------------------------------------------
+ALTER TABLE document_chunk ADD COLUMN IF NOT EXISTS embedding_status VARCHAR(16) NOT NULL DEFAULT 'READY';
+ALTER TABLE document_chunk ADD COLUMN IF NOT EXISTS embedding_legacy VECTOR;
+ALTER TABLE document_chunk ADD COLUMN IF NOT EXISTS embedding_legacy_model VARCHAR(255);
+UPDATE document_chunk SET embedding_status = 'READY' WHERE embedding IS NOT NULL AND embedding_status = 'PENDING';
+
+CREATE TABLE IF NOT EXISTS sys_ingestion_job
+(
+    id              BIGSERIAL PRIMARY KEY,
+    document_id     BIGINT      NOT NULL,
+    channel_id      BIGINT,
+    step            VARCHAR(16) NOT NULL,
+    status          VARCHAR(16) NOT NULL DEFAULT 'QUEUED',
+    attempts        INTEGER     NOT NULL DEFAULT 0,
+    max_attempts    INTEGER     NOT NULL DEFAULT 5,
+    available_at    TIMESTAMP   NOT NULL DEFAULT NOW(),
+    lease_owner     VARCHAR(128),
+    lease_until     TIMESTAMP,
+    error_message   TEXT,
+    created_at      TIMESTAMP   NOT NULL DEFAULT NOW(),
+    started_at      TIMESTAMP,
+    finished_at     TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ingestion_job_claim ON sys_ingestion_job (status, available_at, id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_job_document ON sys_ingestion_job (document_id, step);
+CREATE INDEX IF NOT EXISTS idx_ingestion_job_channel ON sys_ingestion_job (channel_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS sys_embedding_health
+(
+    id              BIGSERIAL PRIMARY KEY,
+    model_label     VARCHAR(255),
+    success         BOOLEAN     NOT NULL,
+    latency_ms      BIGINT      NOT NULL DEFAULT 0,
+    error_message   TEXT,
+    create_time     TIMESTAMP   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_embedding_health_time ON sys_embedding_health (create_time DESC);
+
+CREATE TABLE IF NOT EXISTS sys_ingestion_setting
+(
+    id                          BIGINT PRIMARY KEY DEFAULT 1,
+    concurrency                 INTEGER NOT NULL DEFAULT 2,
+    queue_limit                 INTEGER NOT NULL DEFAULT 500,
+    max_retries                 INTEGER NOT NULL DEFAULT 5,
+    retry_backoff_seconds       INTEGER NOT NULL DEFAULT 30,
+    hnsw_m                      INTEGER NOT NULL DEFAULT 16,
+    hnsw_ef_construction        INTEGER NOT NULL DEFAULT 200,
+    hnsw_ef_search              INTEGER NOT NULL DEFAULT 100,
+    health_failure_threshold    INTEGER NOT NULL DEFAULT 3,
+    queue_alert_depth           INTEGER NOT NULL DEFAULT 100,
+    failure_alert_percent       INTEGER NOT NULL DEFAULT 10,
+    alert_email_enabled         BOOLEAN NOT NULL DEFAULT FALSE,
+    alert_recipient             VARCHAR(255),
+    alert_role_code             VARCHAR(64) NOT NULL DEFAULT 'OPS',
+    updated_by                  BIGINT,
+    update_time                 TIMESTAMP NOT NULL DEFAULT NOW()
+);
+ALTER TABLE sys_ingestion_setting ADD COLUMN IF NOT EXISTS alert_role_code VARCHAR(64) NOT NULL DEFAULT 'OPS';
+INSERT INTO sys_ingestion_setting (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- ANN indexes are created by VectorIndexService after backfill; these statements
+-- are intentionally not in schema.sql because CREATE INDEX CONCURRENTLY cannot
+-- run inside the Spring SQL init transaction.
+
+ALTER TABLE kb_channel ADD COLUMN IF NOT EXISTS reembedding BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE kb_document ADD COLUMN IF NOT EXISTS upload_batch_id VARCHAR(64);
+
+-- Feedback loop: user like/dislike on assistant answers, linked to the chat trace.
+CREATE TABLE IF NOT EXISTS chat_feedback (
+    id BIGSERIAL PRIMARY KEY,
+    message_id BIGINT NOT NULL,
+    conversation_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    feedback_type VARCHAR(16) NOT NULL,
+    reason VARCHAR(500),
+    problem_type VARCHAR(64),
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    note TEXT,
+    trace_id VARCHAR(64),
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_chat_feedback_message UNIQUE (message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_feedback_type_time ON chat_feedback (feedback_type, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_feedback_status ON chat_feedback (status);
+ALTER TABLE chat_trace ADD COLUMN IF NOT EXISTS message_id BIGINT;
+CREATE INDEX IF NOT EXISTS idx_chat_trace_message ON chat_trace (message_id);
+
+-- Hybrid retrieval lexical leg. pg_search is not bundled in the stock pgvector
+-- image, so use pg_trgm as the portable lexical signal (vector 0.7 / lexical 0.3).
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_document_chunk_text_trgm ON document_chunk USING gin (chunk_text gin_trgm_ops);
+
+-- Image -> caption -> text embedding configuration.
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_embedding_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_caption_model_id BIGINT;
+ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_caption_prompt TEXT;

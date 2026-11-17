@@ -65,6 +65,8 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("team:update", "管理团队", "API", "/api/v1/admin/teams", "DELETE", 64),
             new PermissionSeed("recycle:read", "查看文档回收站", "API", "/api/v1/admin/recycle-bin", "GET", 69),
             new PermissionSeed("recycle:update", "管理文档回收站", "API", "/api/v1/admin/recycle-bin", "DELETE", 70),
+            new PermissionSeed("ingestion:read", "查看文档处理队列", "API", "/api/v1/admin/ingestion", "GET", 71),
+            new PermissionSeed("ingestion:update", "管理文档处理队列", "API", "/api/v1/admin/ingestion", "PUT", 72),
             new PermissionSeed("model:read", "查看模型配置", "API", "/api/v1/admin/models", "GET", 65),
             new PermissionSeed("model:update", "修改模型配置", "API", "/api/v1/admin/models", "PUT", 66),
             new PermissionSeed("rag:read", "查看检索参数", "API", "/api/v1/admin/rag", "GET", 67),
@@ -74,7 +76,9 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("tool:read", "查看工具配置", "API", "/api/v1/admin/tools", "GET", 71),
             new PermissionSeed("tool:update", "修改工具配置", "API", "/api/v1/admin/tools", "PUT", 72),
             new PermissionSeed("trace:read", "查看开发链路", "API", "/api/v1/admin/traces", "GET", 73),
-            new PermissionSeed("trace:write", "清理开发链路", "API", "/api/v1/admin/traces", "DELETE", 74)
+            new PermissionSeed("trace:write", "清理开发链路", "API", "/api/v1/admin/traces", "DELETE", 74),
+            new PermissionSeed("feedback:read", "查看质量反馈", "API", "/api/v1/admin/feedback", "GET", 75),
+            new PermissionSeed("feedback:update", "处理质量反馈", "API", "/api/v1/admin/feedback", "PUT", 76)
     );
 
     private final InitProperties initProperties;
