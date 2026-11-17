@@ -32,12 +32,16 @@ public interface ChannelService {
 
     ChannelSummaryResponse setArchived(Long userId, Long channelId, boolean archived, String verificationCode);
 
+    int reembedAll(Long channelId, Long userId);
+
+    java.util.Map<Long, Boolean> embeddingReadiness(java.util.List<Long> channelIds);
+
     FolderResponse createFolder(Long userId, Long channelId, CreateFolderRequest request);
 
     void deleteFolder(Long userId, Long channelId, Long folderId);
 
     ChannelDocumentResponse uploadDocument(Long userId, Long channelId, Long folderId, MultipartFile file,
-                                          String title, String documentType, String expirationTime);
+                                          String title, String documentType, String expirationTime, String uploadBatchId);
 
     String readMarkdown(Long channelId, Long viewerId, String kind);
 

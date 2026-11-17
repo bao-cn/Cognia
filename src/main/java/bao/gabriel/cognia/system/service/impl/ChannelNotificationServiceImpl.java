@@ -15,6 +15,7 @@ import bao.gabriel.cognia.system.mapper.UserMapper;
 import bao.gabriel.cognia.system.mapper.ChannelNotifySubscriptionMapper;
 import bao.gabriel.cognia.system.service.ChannelNotificationService;
 import bao.gabriel.cognia.system.service.ChannelService;
+import bao.gabriel.cognia.system.service.EmailService;
 import bao.gabriel.cognia.system.service.NotificationService;
 import bao.gabriel.cognia.system.service.SiteSettingService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -44,6 +45,7 @@ public class ChannelNotificationServiceImpl implements ChannelNotificationServic
     private final ChannelService channelService;
     private final NotificationService notificationService;
     private final SiteSettingService siteSettingService;
+    private final EmailService emailService;
     private final UserMapper userMapper;
     private final TeamMapper teamMapper;
 
@@ -103,6 +105,12 @@ public class ChannelNotificationServiceImpl implements ChannelNotificationServic
             try {
                 notificationService.notify(receiver, TYPE_CHANNEL_NOTIFICATION,
                         notification.getTitle(), inboxContent, payload);
+                User recipient = userMapper.selectById(receiver);
+                if (recipient != null && recipient.isEnabled()
+                        && org.springframework.util.StringUtils.hasText(recipient.getEmail())) {
+                    emailService.sendChannelNotification(recipient.getEmail().trim(),
+                            channel.getName(), notification.getTitle(), notification.getContent());
+                }
             } catch (RuntimeException ex) {
                 log.warn("Unable to deliver channel notification {} to user {}: {}",
                         notification.getId(), receiver, ex.getMessage());

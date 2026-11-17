@@ -49,6 +49,7 @@ public class Channel {
     private LocalDateTime featuredTime;
     private Boolean webSearchEnabled;
     private Boolean archived;
+    private Boolean reembedding;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -66,5 +67,9 @@ public class Channel {
 
     public boolean archived() {
         return Boolean.TRUE.equals(archived);
+    }
+
+    public boolean reembedding() {
+        return Boolean.TRUE.equals(reembedding);
     }
 }

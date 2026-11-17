@@ -13,6 +13,9 @@ public record ChannelAboutResponse(
         boolean archived,
         long subscriberCount,
         long notifyCount,
+        boolean embeddingReady,
+        long pendingEmbeddingChunks,
+        boolean reembedding,
         List<Contributor> contributors,
         List<FileType> fileTypes
 ) {

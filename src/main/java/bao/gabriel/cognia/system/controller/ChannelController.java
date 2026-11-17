@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/channels")
@@ -56,6 +57,11 @@ public class ChannelController {
                 SecurityUtils.getUserId(), id, request.isPublic(), request.verificationCode()));
     }
 
+    @PostMapping("/{id}/reembed")
+    public ApiResponse<Integer> reembed(@PathVariable Long id) {
+        return ApiResponse.success(channelService.reembedAll(id, SecurityUtils.getUserId()));
+    }
+
     @PutMapping("/{id}/archive")
     public ApiResponse<ChannelSummaryResponse> setArchived(@PathVariable Long id,
                                                            @Valid @RequestBody ChannelArchiveRequest request) {
@@ -81,6 +87,11 @@ public class ChannelController {
         return ApiResponse.success();
     }
 
+    @GetMapping("/embedding-readiness")
+    public ApiResponse<Map<Long, Boolean>> embeddingReadiness(@RequestParam List<Long> ids) {
+        return ApiResponse.success(channelService.embeddingReadiness(ids));
+    }
+
     @GetMapping("/{id}/documents")
     public ApiResponse<List<ChannelDocumentResponse>> documents(@PathVariable Long id,
                                                                @RequestParam(required = false) Long folderId) {
@@ -94,9 +105,10 @@ public class ChannelController {
                                                        @RequestParam("file") MultipartFile file,
                                                        @RequestParam(required = false) String title,
                                                        @RequestParam(required = false) String documentType,
-                                                       @RequestParam(required = false) String expirationTime) {
+                                                       @RequestParam(required = false) String expirationTime,
+                                                       @RequestParam(required = false) String uploadBatchId) {
         return ApiResponse.success(channelService.uploadDocument(
-                SecurityUtils.getUserId(), id, folderId, file, title, documentType, expirationTime));
+                SecurityUtils.getUserId(), id, folderId, file, title, documentType, expirationTime, uploadBatchId));
     }
 
     @GetMapping("/{id}/markdown/{kind}")

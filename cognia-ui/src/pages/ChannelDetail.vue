@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { channelApi, dashboardApi, discoverApi, profileApi, recycleApi } from '@/api'
-import type { ChannelDetail, ChannelDocument, ChannelFolder, ChannelInsights, OwnerProfile, RecycleBinEntry } from '@/types/api'
+import type { ChannelDetail, ChannelDocument, ChannelEmbeddingStatus, ChannelFolder, ChannelInsights, ChannelProcessingRecord, OwnerProfile, RecycleBinEntry } from '@/types/api'
 import DashboardTrendChart from '@/components/DashboardTrendChart.vue'
 import ChannelSettings from '@/pages/ChannelSettings.vue'
 import CitationPreviewDialog from '@/components/CitationPreviewDialog.vue'
@@ -17,8 +17,8 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import Markdown from '@/components/Markdown.vue'
 import {
-  IconAlertTriangle, IconArrowLeft, IconArrowRight, IconArrowUp, IconBookmark, IconBookmarkFilled,
-  IconActivity, IconBook, IconChartBar, IconCheck, IconChevronRight, IconCloudUpload, IconEye, IconEyeOff, IconFileText,
+  IconArrowLeft, IconArrowRight, IconArrowUp, IconBookmark, IconBookmarkFilled,
+  IconActivity, IconBook, IconChartBar, IconChevronRight, IconCloudUpload, IconEye, IconEyeOff, IconFileText,
   IconFolder, IconFolderPlus, IconLayoutGrid, IconList, IconPin, IconPlus, IconRefresh,
   IconSettings, IconStar, IconTrash,
 } from '@tabler/icons-vue'
@@ -46,7 +46,7 @@ const canManage = computed(() => detail.value?.canManage ?? false)
 const canViewInsights = computed(() => detail.value?.canViewInsights ?? false)
 const about = computed(() => detail.value?.about)
 const ownerProfile = ref<OwnerProfile | null>(null)
-const activeView = ref<'documents' | 'insights' | 'settings' | 'recycle'>('documents')
+const activeView = ref<'documents' | 'insights' | 'settings' | 'recycle' | 'embedding'>('documents')
 const recycleEntries = ref<RecycleBinEntry[]>([])
 const recycleLoading = ref(false)
 const restoringId = ref<string | null>(null)
@@ -65,6 +65,98 @@ async function openInsights() {
     insightsLoading.value = false
   }
 }
+
+let embeddingPoll: ReturnType<typeof setInterval> | null = null
+
+function stopEmbeddingPoll() {
+  if (embeddingPoll) { clearInterval(embeddingPoll); embeddingPoll = null }
+}
+
+function scheduleEmbeddingPoll() {
+  stopEmbeddingPoll()
+  if (!channel.value) return
+  if (!embeddingStatus.value?.reembedding && !embeddingStatus.value?.jobs.some(j => j.status === 'QUEUED' || j.status === 'RUNNING')) return
+  embeddingPoll = setInterval(async () => {
+    if (!channel.value) return stopEmbeddingPoll()
+    try {
+      embeddingStatus.value = await channelApi.embedding(channel.value.id)
+      if (!embeddingStatus.value.reembedding && !embeddingStatus.value.jobs.some(j => j.status === 'QUEUED' || j.status === 'RUNNING')) {
+        stopEmbeddingPoll()
+        await load()
+      }
+    } catch { stopEmbeddingPoll() }
+  }, 3000)
+}
+
+async function reembed() {
+  if (!detail.value?.channel || reembedding.value || embeddingStatus.value?.reembedding) return
+  reembedding.value = true
+  try {
+    const queued = await channelApi.reembed(detail.value.channel.id)
+    toast.success(`已加入重新向量化队列（${queued} 个文档）`)
+    activeView.value = 'embedding'
+    await refreshEmbedding()
+  } catch (e: any) {
+    toast.error(e?.message || '重新向量化失败')
+  } finally {
+    reembedding.value = false
+  }
+}
+
+async function refreshEmbedding() {
+  if (!channel.value) return
+  try {
+    embeddingStatus.value = await channelApi.embedding(channel.value.id)
+    scheduleEmbeddingPoll()
+  } catch (e: any) {
+    toast.error(e?.message || '加载向量化状态失败')
+  }
+}
+
+async function openEmbedding() {
+  if (!channel.value) return
+  activeView.value = 'embedding'
+  embeddingLoading.value = true
+  try {
+    await refreshEmbedding()
+  } finally {
+    embeddingLoading.value = false
+  }
+}
+
+function processingStatusLabel(status: string) {
+  return ({ QUEUED: '等待中', PROCESSING: '处理中', SUCCESS: '已完成', FAILED: '失败' } as Record<string, string>)[status] ?? status
+}
+
+function processingStatusVariant(status: string) {
+  if (status === 'FAILED') return 'destructive' as const
+  if (status === 'SUCCESS') return 'default' as const
+  if (status === 'PROCESSING') return 'secondary' as const
+  return 'outline' as const
+}
+
+function processingStageLabel(stage: string) {
+  return ({ UPLOAD: '上传', PARSE: '解析/OCR', EMBED: '向量化' } as Record<string, string>)[stage] ?? stage
+}
+
+function recordProgress(record: ChannelProcessingRecord) {
+  if (!record.chunkTotal) return record.status === 'SUCCESS' ? 100 : 0
+  return Math.min(100, Math.round((record.chunkDone / record.chunkTotal) * 100))
+}
+
+async function retryRecord(record: ChannelProcessingRecord) {
+  if (!channel.value) return
+  const job = embeddingStatus.value?.jobs.find(j => j.documentId === record.documentId && j.status === 'DEAD')
+  if (!job) { toast.error('没有可重试的失败任务'); return }
+  try {
+    await channelApi.retryEmbeddingJob(channel.value.id, job.id)
+    toast.success('已重新加入处理队列')
+    await refreshEmbedding()
+  } catch (e: any) {
+    toast.error(e?.message || '重试失败')
+  }
+}
+
 
 async function openRecycle() {
   activeView.value = 'recycle'
@@ -195,9 +287,10 @@ const selectedFolder = computed(() => currentFolder.value?.id ?? null)
 
 const allDocuments = computed(() => detail.value?.documents ?? [])
 const currentDocuments = computed(() => {
-  if (selectedFolder.value === null)
-    return allDocuments.value.filter(document => !document.folderId)
-  return allDocuments.value.filter(document => document.folderId === selectedFolder.value)
+  const documents = selectedFolder.value === null
+    ? allDocuments.value.filter(document => !document.folderId)
+    : allDocuments.value.filter(document => document.folderId === selectedFolder.value)
+  return documents.filter(document => document.status === 'READY')
 })
 const visibleFolders = computed(() =>
   (detail.value?.folders ?? []).filter(folder => (folder.parentId ?? null) === selectedFolder.value),
@@ -206,7 +299,7 @@ const documentCount = computed(() => currentDocuments.value.length)
 const folderCount = computed(() => visibleFolders.value.length)
 
 function folderDocumentCount(folder: ChannelFolder) {
-  return allDocuments.value.filter(document => document.folderId === folder.id).length
+  return allDocuments.value.filter(document => document.folderId === folder.id && document.status === 'READY').length
 }
 
 function pathForTrail(trail: ChannelFolder[]) {
@@ -258,18 +351,6 @@ async function loadReadme(channelId: string) {
   } finally {
     readmeLoading.value = false
   }
-}
-
-const statusMeta: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  PENDING: { label: '待处理', variant: 'secondary' },
-  PROCESSING: { label: '处理中', variant: 'outline' },
-  READY: { label: '已就绪', variant: 'default' },
-  FAILED: { label: '失败', variant: 'destructive' },
-  DELETED: { label: '已删除', variant: 'secondary' },
-}
-
-function statusOf(document: ChannelDocument) {
-  return statusMeta[document.status] ?? { label: document.status, variant: 'outline' as const }
 }
 
 function formatBytes(value: number) {
@@ -373,6 +454,10 @@ const uploadProgress = ref(0)
 const uploadingName = ref('')
 const uploadOpen = ref(false)
 const uploadItems = ref<UploadItem[]>([])
+const reembedding = ref(false)
+const reembedLocked = computed(() => reembedding.value || Boolean(embeddingStatus.value?.reembedding) || Boolean(about.value?.reembedding))
+const embeddingStatus = ref<ChannelEmbeddingStatus | null>(null)
+const embeddingLoading = ref(false)
 
 const uploadPendingCount = computed(() => uploadItems.value.filter(item => item.status !== 'done').length)
 const uploadDoneCount = computed(() => uploadItems.value.filter(item => item.status === 'done').length)
@@ -445,6 +530,7 @@ async function confirmUpload() {
   }
 
   uploading.value = true
+  const uploadBatchId = crypto.randomUUID()
   let succeeded = 0
   let failed = 0
 
@@ -462,6 +548,7 @@ async function confirmUpload() {
         title: item.title.trim() || undefined,
         documentType: item.documentType.trim() || undefined,
         expirationTime: item.expirationTime || undefined,
+        uploadBatchId,
       })
       item.status = 'done'
       item.progress = 100
@@ -484,17 +571,6 @@ async function confirmUpload() {
     toast.success(`${succeeded} 个文件已上传，正在处理`)
   } else {
     toast.error(`${succeeded} 个成功，${failed} 个失败，请检查后重试`)
-  }
-}
-
-async function retryDocument(document: ChannelDocument) {
-  if (!channel.value) return
-  try {
-    await channelApi.retryDocument(channel.value.id, document.id)
-    detail.value = await channelApi.detail(channel.value.id)
-    toast.success('已重新提交处理')
-  } catch (cause) {
-    toast.error(cause instanceof Error ? cause.message : '重试失败')
   }
 }
 
@@ -576,6 +652,7 @@ const fileTypeSegments = computed(() => {
   }))
 })
 
+onUnmounted(() => stopEmbeddingPoll())
 onMounted(load)
 watch(() => [route.params.owner, route.params.channelSlug], load)
 </script>
@@ -647,6 +724,11 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
           <IconChartBar class="size-4" />数据洞察
         </button>
         <button v-if="canManage" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
+          :class="activeView === 'embedding' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+          @click="openEmbedding">
+          <IconActivity class="size-4" />向量化
+        </button>
+        <button v-if="canManage" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
           :class="activeView === 'settings' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
           @click="activeView = 'settings'">
           <IconSettings class="size-4" />频道设置
@@ -664,6 +746,14 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
       <div class="flex min-w-0 flex-col gap-4">
       <Alert v-if="channel.archived">
         <AlertDescription>频道已存档，暂停上传与文件管理；订阅者仍可查看和检索。取消存档后可继续编辑。</AlertDescription>
+      </Alert>
+      <Alert v-if="about && !about.embeddingReady" variant="destructive">
+        <AlertDescription class="flex flex-wrap items-center justify-between gap-2">
+          <span>该频道的向量已过期，暂不可用于检索{{ about.pendingEmbeddingChunks ? `（待处理 ${about.pendingEmbeddingChunks} 个片段）` : '' }}。</span>
+          <Button v-if="canManage" size="sm" variant="outline" :disabled="reembedLocked" @click="reembed">
+            <Spinner v-if="reembedLocked" class="mr-1 size-3" />{{ reembedLocked ? '正在重新向量化' : '重新向量化' }}
+          </Button>
+        </AlertDescription>
       </Alert>
 
       <div v-if="uploading" class="rounded-xl border bg-card p-4">
@@ -773,21 +863,9 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             </div>
             <div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
               <span>{{ formatBytes(document.size) }}</span>
-              <Badge :variant="statusOf(document).variant" class="gap-1">
-                <Spinner v-if="document.status === 'PROCESSING'" class="size-3" />
-                <IconCheck v-else-if="document.status === 'READY'" class="size-3" />
-                <IconAlertTriangle v-else-if="document.status === 'FAILED'" class="size-3" />
-                {{ statusOf(document).label }}
-              </Badge>
+              <span>{{ document.createTime || '' }}</span>
             </div>
-            <p v-if="document.errorMessage" class="truncate text-xs text-destructive" :title="document.errorMessage">
-              {{ document.errorMessage }}
-            </p>
             <div class="absolute right-1 top-1 flex items-center gap-0.5">
-              <Button v-if="document.status === 'FAILED' && canWrite" variant="ghost" size="icon" class="size-7"
-                title="重试" @click.stop="retryDocument(document)">
-                <IconRefresh class="size-3.5" />
-              </Button>
               <Button v-if="canWrite" variant="ghost" size="icon"
                 class="size-7 text-muted-foreground hover:text-destructive" title="删除" @click.stop="askDelete(document)">
                 <IconTrash class="size-3.5" />
@@ -803,7 +881,6 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                 <th class="px-4 py-2.5 text-left font-medium">名称</th>
                 <th class="px-3 py-2.5 text-left font-medium">类型</th>
                 <th class="px-3 py-2.5 text-left font-medium">大小</th>
-                <th class="px-3 py-2.5 text-left font-medium">状态</th>
                 <th class="px-3 py-2.5 text-left font-medium">上传时间</th>
                 <th class="px-3 py-2.5 text-right font-medium">操作</th>
               </tr>
@@ -818,7 +895,6 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                 </td>
                 <td class="px-3 py-3 text-xs text-muted-foreground">文件夹</td>
                 <td class="px-3 py-3 text-muted-foreground">{{ folderDocumentCount(folder) }} 个文件</td>
-                <td class="px-3 py-3 text-xs text-muted-foreground">-</td>
                 <td class="px-3 py-3 text-xs text-muted-foreground">-</td>
                 <td class="whitespace-nowrap px-3 py-3">
                   <div class="flex justify-end">
@@ -841,20 +917,9 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                 </td>
                 <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ document.documentType || '文件' }}</td>
                 <td class="whitespace-nowrap px-3 py-3 text-muted-foreground">{{ formatBytes(document.size) }}</td>
-                <td class="whitespace-nowrap px-3 py-3">
-                  <Badge :variant="statusOf(document).variant" class="gap-1">
-                    <Spinner v-if="document.status === 'PROCESSING'" class="size-3" />
-                    <IconCheck v-else-if="document.status === 'READY'" class="size-3" />
-                    <IconAlertTriangle v-else-if="document.status === 'FAILED'" class="size-3" />
-                    {{ statusOf(document).label }}
-                  </Badge>
-                </td>
                 <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ document.createTime || '-' }}</td>
                 <td class="whitespace-nowrap px-3 py-3">
                   <div class="flex justify-end gap-1">
-                    <Button v-if="document.status === 'FAILED' && canWrite" variant="ghost" size="sm" @click.stop="retryDocument(document)">
-                      <IconRefresh class="mr-1 size-3.5" />重试
-                    </Button>
                     <Button v-if="canWrite" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
                       title="删除" @click.stop="askDelete(document)">
                       <IconTrash class="size-4" />
@@ -995,6 +1060,107 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             </section>
           </div>
         </template>
+      </div>
+
+      <div v-else-if="activeView === 'embedding'" class="flex flex-col gap-4">
+        <section class="rounded-xl border bg-card">
+          <header class="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+            <div class="flex flex-col gap-1">
+              <h2 class="text-sm font-semibold">处理记录</h2>
+              <p class="text-xs text-muted-foreground">按文件记录上传、解析/OCR、分片与向量化状态。文件处理完成后才会出现在文件管理器中。</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <Button variant="outline" size="sm" :disabled="embeddingLoading" @click="openEmbedding">
+                <IconRefresh class="mr-1 size-4" />刷新
+              </Button>
+              <Button size="sm" :disabled="reembedLocked" @click="reembed">
+                <Spinner v-if="reembedLocked" class="mr-1 size-3" />{{ reembedLocked ? '正在重新向量化' : '全部重新向量化' }}
+              </Button>
+            </div>
+          </header>
+          <div v-if="embeddingLoading" class="flex h-40 items-center justify-center"><Spinner class="size-5" /></div>
+          <div v-else class="flex flex-col gap-4 p-4">
+            <Alert v-if="embeddingStatus?.reembedding">
+              <IconActivity class="size-4" />
+              <AlertDescription>频道正在重新向量化，完成后会自动恢复检索并发送通知。</AlertDescription>
+            </Alert>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div class="rounded-lg border p-3">
+                <p class="text-xs text-muted-foreground">检索状态</p>
+                <p class="mt-1 text-sm font-semibold">{{ embeddingStatus?.embeddingReady ? '可用于检索' : '暂不可用于检索' }}</p>
+              </div>
+              <div class="rounded-lg border p-3">
+                <p class="text-xs text-muted-foreground">文件进度</p>
+                <p class="mt-1 text-sm font-semibold">{{ embeddingStatus?.completedDocuments ?? 0 }} / {{ embeddingStatus?.totalDocuments ?? 0 }}</p>
+              </div>
+              <div class="rounded-lg border p-3">
+                <p class="text-xs text-muted-foreground">片段进度</p>
+                <p class="mt-1 text-sm font-semibold">{{ embeddingStatus?.embeddedChunks ?? 0 }} / {{ embeddingStatus?.totalChunks ?? 0 }}</p>
+              </div>
+              <div class="rounded-lg border p-3">
+                <p class="text-xs text-muted-foreground">待处理片段</p>
+                <p class="mt-1 text-sm font-semibold">{{ embeddingStatus?.pendingChunks ?? 0 }}</p>
+              </div>
+            </div>
+            <div v-if="(embeddingStatus?.totalChunks ?? 0) > 0" class="flex flex-col gap-1.5">
+              <div class="flex justify-between text-xs text-muted-foreground">
+                <span>向量化进度</span>
+                <span>{{ Math.round(((embeddingStatus?.embeddedChunks ?? 0) / Math.max(1, embeddingStatus?.totalChunks ?? 1)) * 100) }}%</span>
+              </div>
+              <div class="h-2 overflow-hidden rounded-full bg-muted">
+                <div class="h-full rounded-full bg-primary transition-all" :style="{ width: `${Math.round(((embeddingStatus?.embeddedChunks ?? 0) / Math.max(1, embeddingStatus?.totalChunks ?? 1)) * 100)}%` }" />
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="rounded-xl border bg-card">
+          <header class="flex items-center justify-between border-b px-4 py-3">
+            <h2 class="text-sm font-semibold">文件处理记录</h2>
+            <Badge variant="secondary">{{ embeddingStatus?.records.length ?? 0 }} 个文件</Badge>
+          </header>
+          <div v-if="!embeddingStatus?.records.length" class="flex h-32 items-center justify-center text-sm text-muted-foreground">暂无处理记录</div>
+          <div v-else class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="border-b bg-muted/40 text-xs text-muted-foreground">
+                <tr>
+                  <th class="px-4 py-2.5 text-left font-medium">文件</th>
+                  <th class="px-3 py-2.5 text-left font-medium">阶段</th>
+                  <th class="px-3 py-2.5 text-left font-medium">片段</th>
+                  <th class="px-3 py-2.5 text-left font-medium">尝试</th>
+                  <th class="px-3 py-2.5 text-left font-medium">状态</th>
+                  <th class="px-3 py-2.5 text-left font-medium">上传时间</th>
+                  <th class="px-3 py-2.5 text-right font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y">
+                <tr v-for="record in embeddingStatus.records" :key="record.documentId">
+                  <td class="max-w-[280px] px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      <IconFileText class="size-4 shrink-0 text-muted-foreground" />
+                      <span class="truncate font-medium" :title="record.name">{{ record.name }}</span>
+                    </div>
+                    <p v-if="record.errorMessage" class="mt-0.5 truncate text-xs text-destructive" :title="record.errorMessage">{{ record.errorMessage }}</p>
+                  </td>
+                  <td class="px-3 py-3 text-xs">
+                    <div>{{ processingStageLabel(record.stage) }}</div>
+                    <div class="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+                      <div class="h-full rounded-full bg-primary" :style="{ width: `${recordProgress(record)}%` }" />
+                    </div>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ record.chunkDone }} / {{ record.chunkTotal }}</td>
+                  <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ record.attempts }}</td>
+                  <td class="whitespace-nowrap px-3 py-3">
+                    <Badge :variant="processingStatusVariant(record.status)">{{ processingStatusLabel(record.status) }}</Badge>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ record.uploadedAt || '-' }}</td>
+                  <td class="whitespace-nowrap px-3 py-3 text-right">
+                    <Button v-if="record.status === 'FAILED'" variant="outline" size="sm" @click="retryRecord(record)">重试</Button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
 
       <div v-else-if="activeView === 'settings'">

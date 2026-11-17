@@ -2,6 +2,8 @@ package bao.gabriel.cognia.system.service.impl;
 
 import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.common.storage.UploadProgressListener;
+import bao.gabriel.cognia.rag.service.EmbeddingService;
+import bao.gabriel.cognia.rag.ingestion.IngestionQueueService;
 import bao.gabriel.cognia.common.util.ReservedNames;
 import bao.gabriel.cognia.system.dto.channel.ChannelAboutResponse;
 import bao.gabriel.cognia.system.dto.channel.ChannelDetailResponse;
@@ -40,6 +42,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -54,6 +57,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -89,6 +93,9 @@ public class ChannelServiceImpl implements ChannelService {
     private final SiteSettingService siteSettingService;
     private final UserService userService;
     private final TwoFactorService twoFactorService;
+    private final EmbeddingService embeddingService;
+    private final IngestionQueueService ingestionQueueService;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
     public List<ChannelSummaryResponse> list(String ownerType, Long ownerId, Long viewerId) {
@@ -307,7 +314,8 @@ public class ChannelServiceImpl implements ChannelService {
     @Override
     @Transactional
     public ChannelDocumentResponse uploadDocument(Long userId, Long channelId, Long folderId, MultipartFile file,
-                                                  String title, String documentType, String expirationTime) {
+                                                  String title, String documentType, String expirationTime, String uploadBatchId) {
+        ingestionQueueService.ensureCapacity();
         Channel channel = requireChannel(channelId);
         Access access = access(channel, userId);
         if (!access.write()) {
@@ -361,6 +369,7 @@ public class ChannelServiceImpl implements ChannelService {
             document.setChannelId(channelId);
             document.setFolderId(folderId);
             document.setCreatedBy(userId);
+            document.setUploadBatchId(StringUtils.hasText(uploadBatchId) ? uploadBatchId.trim() : null);
             document.setCreateTime(now);
             document.setVersion(1);
         } else if (previousKey != null && !previousKey.equals(stored.key())) {
@@ -729,8 +738,76 @@ public class ChannelServiceImpl implements ChannelService {
                         .thenComparing(ChannelAboutResponse.FileType::type))
                 .toList();
 
+        long totalChunks = countChunks(channel.getId());
+        long readyChunks = countReadyChunks(channel.getId());
+        boolean embeddingReady = totalChunks == 0 || readyChunks >= totalChunks;
+        long pendingChunks = Math.max(0, totalChunks - readyChunks);
+        if (channel.reembedding() && pendingChunks == 0) {
+            channel.setReembedding(false);
+            channelMapper.updateById(channel);
+        }
         return new ChannelAboutResponse(channel.getDescription(), hasReadme, readmeDocumentId, readmeName,
-                channel.archived(), subscriberCount, notifyCount, contributors, fileTypes);
+                channel.archived(), subscriberCount, notifyCount, embeddingReady, pendingChunks,
+                channel.reembedding(), contributors, fileTypes);
+    }
+
+    @Override
+    public Map<Long, Boolean> embeddingReadiness(List<Long> channelIds) {
+        if (channelIds == null || channelIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Boolean> result = new LinkedHashMap<>();
+        channelIds.stream().filter(Objects::nonNull).distinct().limit(50).forEach(id -> {
+            long total = countChunks(id);
+            long ready = countReadyChunks(id);
+            result.put(id, total == 0 || ready >= total);
+        });
+        return result;
+    }
+
+    private long countChunks(Long channelId) {
+        Long value = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM document_chunk dc JOIN kb_document d ON d.id = dc.document_id
+                WHERE d.channel_id = ? AND d.status <> 'DELETED'
+                """, Long.class, channelId);
+        return value == null ? 0 : value;
+    }
+
+    private long countReadyChunks(Long channelId) {
+        String label = embeddingService.activeModelLabel();
+        if (label == null) return 0;
+        Long value = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM document_chunk dc JOIN kb_document d ON d.id = dc.document_id
+                WHERE d.channel_id = ? AND d.status <> 'DELETED'
+                  AND dc.embedding IS NOT NULL AND dc.embedding_status = 'READY' AND dc.embedding_model = ?
+                """, Long.class, channelId, label);
+        return value == null ? 0 : value;
+    }
+
+    @Override
+    @Transactional
+    public int reembedAll(Long channelId, Long userId) {
+        Channel channel = requireChannel(channelId);
+        Access access = access(channel, userId);
+        if (!access.manage()) throw BusinessException.forbidden("只有频道管理者可以重新向量化");
+        List<KbDocument> documents = documentMapper.selectList(new LambdaQueryWrapper<KbDocument>()
+                .eq(KbDocument::getChannelId, channelId)
+                .ne(KbDocument::getStatus, DocumentStateMachine.DocumentStatus.DELETED.name()));
+        if (documents.isEmpty()) return 0;
+        if (channel.reembedding()) {
+            throw BusinessException.conflict("频道正在重新向量化，请等待当前任务完成");
+        }
+        channel.setReembedding(true);
+        channelMapper.updateById(channel);
+        jdbcTemplate.update("""
+                UPDATE document_chunk SET embedding = NULL, embedding_status = 'PENDING'
+                WHERE document_id IN (SELECT id FROM kb_document WHERE channel_id = ? AND status <> 'DELETED')
+                """, channelId);
+        int queued = 0;
+        for (KbDocument document : documents) {
+            if (ingestionQueueService.enqueue(document.getId(), channelId, "EMBED")) queued++;
+        }
+        return queued;
     }
 
     private ChannelAboutResponse.Contributor contributor(User user, long count) {

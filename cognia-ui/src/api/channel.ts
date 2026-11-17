@@ -4,6 +4,7 @@ import type {
   ChannelDocument,
   ChannelCard,
   ChannelFolder,
+  ChannelEmbeddingStatus,
   CreateChannelPayload,
   UpdateChannelPayload,
 } from '@/types/api'
@@ -33,6 +34,18 @@ export const channelApi = {
   setArchived(id: string, archived: boolean, verificationCode?: string): Promise<ChannelCard> {
     return http.put<ChannelCard>(`/channels/${id}/archive`, { archived, verificationCode })
   },
+  reembed(id: string): Promise<number> {
+    return http.post<number>(`/channels/${id}/reembed`)
+  },
+  embedding(id: string): Promise<ChannelEmbeddingStatus> {
+    return http.get<ChannelEmbeddingStatus>(`/channels/${id}/embedding`)
+  },
+  retryEmbeddingJob(id: string, jobId: string): Promise<void> {
+    return http.post<void>(`/channels/${id}/embedding/jobs/${jobId}/retry`)
+  },
+  embeddingReadiness(ids: number[]): Promise<Record<string, boolean>> {
+    return http.get<Record<string, boolean>>('/channels/embedding-readiness', { params: { ids: ids.join(',') } })
+  },
   createFolder(channelId: string, payload: { parentId?: string; name: string }): Promise<ChannelFolder> {
     return http.post<ChannelFolder>(`/channels/${channelId}/folders`, payload)
   },
@@ -49,7 +62,7 @@ export const channelApi = {
     file: File,
     folderId?: string,
     onProgress?: (percent: number) => void,
-    meta?: { title?: string; documentType?: string; expirationTime?: string },
+    meta?: { title?: string; documentType?: string; expirationTime?: string; uploadBatchId?: string },
   ): Promise<ChannelDocument> {
     const form = new FormData()
     form.append('file', file)
@@ -57,6 +70,7 @@ export const channelApi = {
     if (meta?.title) form.append('title', meta.title)
     if (meta?.documentType) form.append('documentType', meta.documentType)
     if (meta?.expirationTime) form.append('expirationTime', meta.expirationTime)
+    if (meta?.uploadBatchId) form.append('uploadBatchId', meta.uploadBatchId)
     return http.post<ChannelDocument>(`/channels/${channelId}/documents`, form, {
       timeout: 300000,
       headers: { 'Content-Type': 'multipart/form-data' },

@@ -40,6 +40,7 @@ public class KbDocument {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String errorMessage;
     private Integer retryCount;
+    private String uploadBatchId;
     private Long createdBy;
     private LocalDateTime processedAt;
     private LocalDateTime createTime;
