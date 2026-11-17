@@ -16,6 +16,7 @@ public record ConversationMessageResponse(
         @JsonIgnore String contextText,
         String createTime,
         boolean favorited,
-        Map<String, Object> metrics
+        Map<String, Object> metrics,
+        String feedback
 ) {
 }

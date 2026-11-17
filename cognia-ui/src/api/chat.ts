@@ -124,6 +124,10 @@ export const chatApi = {
     return http.post<ChatConversationDetail>(`/chat/conversations/${id}/fork`, { messageIndex })
   },
 
+  submitFeedback(messageId: string | number, type: 'LIKE' | 'DISLIKE', reason?: string): Promise<void> {
+    return http.post<void>(`/chat/messages/${messageId}/feedback`, { type, reason })
+  },
+
   async stream(payload: ChatStreamPayload, handlers: ChatStreamHandlers, signal?: AbortSignal): Promise<void> {
     const token = getAccessToken()
     const response = await fetch(`${BASE_URL}/chat/stream`, {

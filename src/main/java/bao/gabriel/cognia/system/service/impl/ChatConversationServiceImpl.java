@@ -9,9 +9,11 @@ import bao.gabriel.cognia.system.dto.chat.ConversationMessageResponse;
 import bao.gabriel.cognia.system.dto.chat.ConversationSummaryResponse;
 import bao.gabriel.cognia.system.entity.ChatConversation;
 import bao.gabriel.cognia.system.entity.ChatMessage;
+import bao.gabriel.cognia.system.entity.ChatFeedback;
 import bao.gabriel.cognia.system.entity.Favorite;
 import bao.gabriel.cognia.system.mapper.ChatConversationMapper;
 import bao.gabriel.cognia.system.mapper.ChatMessageMapper;
+import bao.gabriel.cognia.system.mapper.ChatFeedbackMapper;
 import bao.gabriel.cognia.system.mapper.FavoriteMapper;
 import bao.gabriel.cognia.system.service.ChatConversationService;
 import bao.gabriel.cognia.system.service.ModelConfigService;
@@ -50,6 +52,7 @@ public class ChatConversationServiceImpl implements ChatConversationService {
 
     private final ChatConversationMapper conversationMapper;
     private final ChatMessageMapper messageMapper;
+    private final ChatFeedbackMapper feedbackMapper;
     private final FavoriteMapper favoriteMapper;
     private final SiteSettingService siteSettingService;
     private final RagSettingService ragSettingService;
@@ -117,6 +120,10 @@ public class ChatConversationServiceImpl implements ChatConversationService {
                         .eq(Favorite::getUserId, userId)
                         .eq(Favorite::getItemType, Favorite.TYPE_MESSAGE))
                 .stream().map(Favorite::getMessageId).collect(java.util.stream.Collectors.toSet());
+        java.util.Map<Long, String> feedbackByMessage = new java.util.HashMap<>();
+        feedbackMapper.selectList(new LambdaQueryWrapper<ChatFeedback>()
+                        .eq(ChatFeedback::getConversationId, conversation.getId()))
+                .forEach(item -> feedbackByMessage.put(item.getMessageId(), item.getFeedbackType()));
         List<ConversationMessageResponse> messages = messageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
                         .eq(ChatMessage::getConversationId, conversation.getId())
                         .orderByAsc(ChatMessage::getId))
@@ -126,7 +133,7 @@ public class ChatConversationServiceImpl implements ChatConversationService {
                         usedCitations(message.getContent(), parseCitations(message.getCitationsJson())),
                         parseAttachments(message.getAttachmentsJson()), message.getContextText(),
                         format(message.getCreateTime()), favoriteMessages.contains(message.getId()),
-                        parseMetrics(message.getMetricsJson())))
+                        parseMetrics(message.getMetricsJson()), feedbackByMessage.get(message.getId())))
                 .toList();
         return new ConversationDetailResponse(conversation.getPublicId(), conversation.getTitle(),
                 conversation.getModelId(), splitIds(conversation.getChannelIds()), messages,

@@ -39,9 +39,6 @@ public class ChatTraceServiceImpl implements ChatTraceService {
     @Override
     public TraceRecorder start(Long userId, String conversationId, ResolvedModel model, String question,
                                boolean debug) {
-        if (!debug) {
-            return null;
-        }
         TraceRecorder recorder = new TraceRecorder(TraceRecorder.newTraceId(), userId, conversationId);
         recorder.put("meta", "modelName", model == null ? null : model.modelId());
         recorder.put("meta", "protocol", model == null ? null : model.protocol());
@@ -62,9 +59,11 @@ public class ChatTraceServiceImpl implements ChatTraceService {
             ChatTrace trace = new ChatTrace();
             trace.setTraceId(recorder.traceId());
             trace.setConversationId(truncate(recorder.root().path("conversationId").asText(null), 32));
+            JsonNode meta = recorder.root().path("meta");
+            JsonNode messageIdNode = meta.path("messageId");
+            trace.setMessageId(messageIdNode.isNumber() ? messageIdNode.asLong() : null);
             JsonNode userIdNode = recorder.root().path("userId");
             trace.setUserId(userIdNode.isNumber() ? userIdNode.asLong() : null);
-            JsonNode meta = recorder.root().path("meta");
             trace.setModelId(meta.path("modelId").isNumber() ? meta.path("modelId").asLong() : null);
             trace.setModelName(truncate(meta.path("modelName").asText(null), 255));
             trace.setProtocol(truncate(meta.path("protocol").asText(null), 32));

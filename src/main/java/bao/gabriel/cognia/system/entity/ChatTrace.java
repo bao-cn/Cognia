@@ -18,6 +18,7 @@ public class ChatTrace {
     private Long id;
     private String traceId;
     private String conversationId;
+    private Long messageId;
     private Long userId;
     private Long modelId;
     private String modelName;

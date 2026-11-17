@@ -153,6 +153,26 @@
                           <TooltipProvider :delay-duration="150">
                             <Tooltip>
                               <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" aria-label="有帮助"
+                                  :class="message.feedback === 'LIKE' ? 'text-emerald-500' : ''"
+                                  @click="submitFeedback(message, 'LIKE')">
+                                  <ThumbsUpIcon :fill="message.feedback === 'LIKE' ? 'currentColor' : 'none'" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>有帮助</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger as-child>
+                                <Button type="button" variant="ghost" size="icon-xs" aria-label="没帮助"
+                                  :class="message.feedback === 'DISLIKE' ? 'text-destructive' : ''"
+                                  @click="submitFeedback(message, 'DISLIKE')">
+                                  <ThumbsDownIcon :fill="message.feedback === 'DISLIKE' ? 'currentColor' : 'none'" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>没帮助</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger as-child>
                                 <Button type="button" variant="ghost" size="icon-xs" :aria-label="message.favorited ? '取消收藏' : '收藏'"
                                   @click="toggleMessageFavorite(message)">
                                   <StarIcon :fill="message.favorited ? 'currentColor' : 'none'" :class="message.favorited ? 'text-amber-500' : ''" />
@@ -327,7 +347,9 @@
                         暂无可用频道
                       </p>
                       <button v-for="channel in availableChannels" :key="channel.id" type="button"
-                        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+                        :class="channel.embeddingReady ? 'hover:bg-muted' : 'cursor-not-allowed opacity-40'"
+                        :disabled="!channel.embeddingReady"
                         @click="toggleChannel(channel)">
                         <span class="flex size-4 items-center justify-center rounded border"
                           :class="channelIds.includes(channel.id) ? 'border-primary bg-primary text-primary-foreground' : ''">
@@ -335,7 +357,8 @@
                         </span>
                         <HashIcon class="size-3.5 text-muted-foreground" />
                         <span class="truncate">{{ channel.name }}</span>
-                        <span class="ml-auto shrink-0 text-[11px] text-muted-foreground">{{ channel.ownerLabel }}</span>
+                        <span v-if="!channel.embeddingReady" class="ml-auto shrink-0 text-[10px] text-destructive">未就绪</span>
+                        <span v-else class="ml-auto shrink-0 text-[11px] text-muted-foreground">{{ channel.ownerLabel }}</span>
                       </button>
                     </div>
                     <div class="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
@@ -516,6 +539,8 @@ import {
   GitBranchIcon,
   RotateCcwIcon,
   StarIcon,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
   XIcon,
 } from '@lucide/vue'
 import { createReusableTemplate } from '@vueuse/core'
@@ -605,6 +630,7 @@ interface ChatMessage {
   citations?: CitationSource[]
   revealIndex?: number
   favorited?: boolean
+  feedback?: 'LIKE' | 'DISLIKE' | null
   traceId?: string
 }
 
@@ -1127,6 +1153,7 @@ interface PickableChannel {
   id: number
   name: string
   ownerLabel: string
+  embeddingReady: boolean
 }
 
 const channelPickerOpen = ref(false)
@@ -1147,6 +1174,7 @@ const mentionItems = computed(() => {
     .filter(channel => !query
       || channel.name.toLowerCase().includes(query)
       || channel.ownerLabel.toLowerCase().includes(query))
+    .filter(channel => channel.embeddingReady)
     .slice(0, 8)
 })
 
@@ -1201,6 +1229,10 @@ function selectMention(channel: PickableChannel, keepOpen: boolean) {
 }
 
 function toggleChannel(channel: PickableChannel) {
+  if (!channel.embeddingReady) {
+    toast.info('该频道尚未完成向量化，暂不可用于检索')
+    return
+  }
   if (channelIds.value.includes(channel.id))
     channelIds.value = channelIds.value.filter(id => id !== channel.id)
   else
@@ -1224,11 +1256,11 @@ async function loadChannels() {
   try {
     const profile = await profileApi.me()
     const channels: PickableChannel[] = profile.channels
-      .map(item => ({ id: Number(item.id), name: item.name, ownerLabel: '个人' }))
+      .map(item => ({ id: Number(item.id), name: item.name, ownerLabel: '个人', embeddingReady: true }))
     for (const team of profile.teams) {
       try {
         const list: ChannelCard[] = await channelApi.list('TEAM', team.id)
-        channels.push(...list.map(item => ({ id: Number(item.id), name: item.name, ownerLabel: team.name || team.slug })))
+        channels.push(...list.map(item => ({ id: Number(item.id), name: item.name, ownerLabel: team.name || team.slug, embeddingReady: true })))
       } catch {
         // A team the viewer left or cannot read should not block chat.
       }
@@ -1236,9 +1268,13 @@ async function loadChannels() {
     const subscriptions = await discoverApi.subscriptions().catch(() => [])
     for (const item of subscriptions) {
       if (!channels.some(channel => channel.id === Number(item.id)))
-        channels.push({ id: Number(item.id), name: item.name, ownerLabel: item.ownerSlug })
+        channels.push({ id: Number(item.id), name: item.name, ownerLabel: item.ownerSlug, embeddingReady: true })
     }
-    availableChannels.value = channels
+    const readiness: Record<string, boolean> = await channelApi.embeddingReadiness(channels.map(channel => channel.id)).catch(() => ({} as Record<string, boolean>))
+    availableChannels.value = channels.map(channel => ({
+      ...channel,
+      embeddingReady: readiness[String(channel.id)] !== false,
+    }))
   } catch {
     // Channel selection is optional.
   }
@@ -1295,6 +1331,7 @@ async function loadConversation(id: string) {
       id: `${message.role}-${index}`,
       serverId: message.id,
       favorited: message.favorited,
+      feedback: message.feedback ?? null,
       role: message.role,
       parts: message.role === 'assistant'
         ? [
@@ -1316,6 +1353,22 @@ async function loadConversation(id: string) {
   } catch (err: any) {
     toast.error(err?.message || '加载对话失败')
     void router.replace({ name: 'Chat' })
+  }
+}
+
+async function submitFeedback(message: ChatMessage, type: 'LIKE' | 'DISLIKE') {
+  const target = message.serverId || message.id
+  if (!target || String(target).startsWith('assistant-')) {
+    toast.error('消息尚未保存，暂时无法反馈')
+    return
+  }
+  const next = message.feedback === type ? null : type
+  try {
+    if (next) await chatApi.submitFeedback(target, next)
+    message.feedback = next
+    if (next) toast.success(next === 'LIKE' ? '感谢反馈' : '已记录反馈，管理员会复核')
+  } catch (err: any) {
+    toast.error(err?.message || '反馈提交失败')
   }
 }
 
