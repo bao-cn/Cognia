@@ -96,6 +96,7 @@ function formatDate(value: number | Date) {
         :y="yAccessors"
         :color="areaColors"
         :opacity="1"
+        :stacked="false"
       />
       <VisLine
         :x="x"

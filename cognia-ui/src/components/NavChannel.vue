@@ -1,30 +1,19 @@
 <script setup lang="ts">
 import { ref } from "vue"
 import {
-  IconDots,
-  IconShare3,
-  IconTrash,
-  IconMessageCirclePlus,
-  IconPinned,
   IconChevronDown,
   IconChevronRight,
   IconRss,
 } from "@tabler/icons-vue"
 import {
   DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from '@/components/ui/sidebar'
 import { Button } from '@/components/ui/button'
 interface ChannelItem {
@@ -37,7 +26,6 @@ defineProps<{
   items: ChannelItem[]
 }>()
 
-const { isMobile } = useSidebar()
 
 const isMenuCollapsed = ref(false)
 </script>
@@ -70,12 +58,15 @@ const isMenuCollapsed = ref(false)
               </router-link>
             </SidebarMenuButton>
             <DropdownMenu>
-              <DropdownMenuTrigger as-child>
+              <!-- 
+              <DropdownMenuTrigger as-child @click="toast('暂不可用')">
                 <SidebarMenuAction show-on-hover class="data-[state=open]:bg-accent rounded-sm">
                   <IconDots />
                   <span class="sr-only">更多</span>
                 </SidebarMenuAction>
               </DropdownMenuTrigger>
+               -->
+              <!-- 
               <DropdownMenuContent class="w-24 rounded-lg" :side="isMobile ? 'bottom' : 'right'"
                 :align="isMobile ? 'end' : 'start'">
                 <DropdownMenuItem>
@@ -95,7 +86,8 @@ const isMenuCollapsed = ref(false)
                   <IconTrash />
                   <span>删除</span>
                 </DropdownMenuItem>
-              </DropdownMenuContent>
+              </DropdownMenuContent> 
+              -->
             </DropdownMenu>
           </SidebarMenuItem>
           <SidebarMenuItem v-if="items.length">

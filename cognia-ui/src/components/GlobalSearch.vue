@@ -195,7 +195,7 @@ onUnmounted(() => {
         <Input
           ref="inputRef"
           v-model="query"
-          class="h-12 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0"
+          class="h-12 border-0 bg-transparent! px-0 text-base shadow-none focus-visible:ring-0"
           placeholder="搜索公开频道、用户、历史对话…"
           @keydown="onKeydown"
         />
