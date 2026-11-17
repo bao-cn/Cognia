@@ -212,6 +212,24 @@ const routes: Array<RouteRecordRaw> = [
         },
       },
       {
+        name: 'ConsoleMail',
+        path: 'mail',
+        component: () => import('@/pages/console/MailService.vue'),
+        meta: {
+          title: '邮件服务',
+          permissions: ['settings:read'],
+        },
+      },
+      {
+        name: 'ConsoleQuality',
+        path: 'quality',
+        component: () => import('@/pages/console/Quality.vue'),
+        meta: {
+          title: '质量评估',
+          permissions: ['feedback:read', 'settings:read'],
+        },
+      },
+      {
         name: 'ConsoleSettings',
         path: 'setting',
         component: () => import('@/pages/console/System.vue'),
@@ -297,6 +315,15 @@ const routes: Array<RouteRecordRaw> = [
         meta: {
           title: '审计日志',
           permissions: ['audit:read', 'settings:read'],
+        },
+      },
+      {
+        name: 'ConsoleIngestion',
+        path: 'system/ingestion',
+        component: () => import('@/pages/console/Ingestion.vue'),
+        meta: {
+          title: '文档处理',
+          permissions: ['ingestion:read', 'settings:read'],
         },
       },
       {

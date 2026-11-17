@@ -5,7 +5,10 @@ export { settingsApi } from './settings'
 export { legalApi } from './legal'
 export { teamApi } from './team'
 export { storageApi } from './storage'
+export { ollamaApi } from './ollama'
+export { ingestionApi } from './ingestion'
 export { dashboardApi } from './dashboard'
+export { feedbackApi } from './feedback'
 export { discoverApi } from './discover'
 export { recycleApi } from './recycle'
 export { auditApi } from './audit'
@@ -31,6 +34,8 @@ import { settingsApi } from './settings'
 import { legalApi } from './legal'
 import { teamApi } from './team'
 import { storageApi } from './storage'
+import { ollamaApi } from './ollama'
+import { ingestionApi } from './ingestion'
 import { recycleApi } from './recycle'
 import { auditApi } from './audit'
 import { taskApi } from './task'
@@ -60,6 +65,8 @@ export const api = {
   legal: legalApi,
   teams: teamApi,
   storage: storageApi,
+  ollama: ollamaApi,
+  ingestion: ingestionApi,
   dashboard: dashboardApi,
   recycle: recycleApi,
   audit: auditApi,

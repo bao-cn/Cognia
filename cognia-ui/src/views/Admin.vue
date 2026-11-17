@@ -14,6 +14,8 @@ import {
   IconSubtask,
   IconSettings2,
   IconDashboard,
+  IconMail,
+  IconThumbUp,
 } from "@tabler/icons-vue"
 const data = {
   navMain: [
@@ -83,6 +85,10 @@ const data = {
           url: "/console/system/retrieval",
         },
         {
+          title: "文档处理",
+          url: "/console/system/ingestion",
+        },
+        {
           title: "Prompt 配置",
           url: "/console/system/prompt",
         },
@@ -117,9 +123,19 @@ const data = {
       icon: IconShield,
     },
     {
+      title: "质量评估",
+      url: "/console/quality",
+      icon: IconThumbUp,
+    },
+    {
       title: "计划任务",
       url: "/console/task",
       icon: IconSubtask,
+    },
+    {
+      title: "邮件服务",
+      url: "/console/mail",
+      icon: IconMail,
     },
     {
       title: "系统设置",

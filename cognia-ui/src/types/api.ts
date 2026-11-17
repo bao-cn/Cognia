@@ -632,6 +632,9 @@ export interface ChannelAbout {
   archived: boolean
   subscriberCount: number
   notifyCount: number
+  embeddingReady: boolean
+  pendingEmbeddingChunks: number
+  reembedding?: boolean
   contributors: ChannelAboutContributor[]
   fileTypes: ChannelAboutFileType[]
 }
@@ -710,6 +713,47 @@ export interface ChannelDocument {
   expirationTime?: string
   createTime?: string
   processedAt?: string
+}
+
+export interface ChannelEmbeddingJob {
+  id: string
+  documentId: string
+  step: string
+  status: string
+  attempts?: number
+  maxAttempts?: number
+  errorMessage?: string
+  createdAt?: string
+  finishedAt?: string
+}
+
+export interface ChannelProcessingRecord {
+  documentId: string
+  name: string
+  documentType?: string
+  size?: number
+  uploadedAt?: string
+  status: string
+  stage: string
+  chunkTotal: number
+  chunkDone: number
+  attempts: number
+  errorMessage?: string
+  updatedAt?: string
+  batchId?: string
+  reembedding: boolean
+}
+
+export interface ChannelEmbeddingStatus {
+  embeddingReady: boolean
+  pendingChunks: number
+  reembedding: boolean
+  totalDocuments: number
+  completedDocuments: number
+  totalChunks: number
+  embeddedChunks: number
+  records: ChannelProcessingRecord[]
+  jobs: ChannelEmbeddingJob[]
 }
 
 export interface ChannelDetail {
@@ -887,6 +931,9 @@ export interface RagSettings {
   retrievalCacheMaxEntries: number
   titleGenerationEnabled: boolean
   contextCompressionThreshold: number
+  imageEmbeddingEnabled?: boolean
+  imageCaptionModelId?: number
+  imageCaptionPrompt?: string
   updatedAt?: string
 }
 
@@ -910,6 +957,9 @@ export interface UpdateRagSettingsPayload {
   retrievalCacheMaxEntries?: number
   titleGenerationEnabled?: boolean
   contextCompressionThreshold?: number
+  imageEmbeddingEnabled?: boolean
+  imageCaptionModelId?: number
+  imageCaptionPrompt?: string
 }
 
 export interface PromptSettings {
@@ -1064,6 +1114,7 @@ export interface ChatConversationMessage {
   createTime?: string
   favorited?: boolean
   metrics?: ChatMessageMetrics
+  feedback?: 'LIKE' | 'DISLIKE' | null
 }
 
 export interface ChatConversationDetail extends ChatConversation {
@@ -1210,4 +1261,37 @@ export interface ChannelInsights {
   trends: DashboardTrend[]
   topDocuments: Array<{ id: number; name: string; type: string; size: number; status: string; createTime: string }>
   generatedAt: string
+}
+
+export interface FeedbackRecord {
+  id: number
+  messageId: number
+  conversationId: number
+  userId: number
+  username?: string
+  nickname?: string
+  feedbackType: 'LIKE' | 'DISLIKE'
+  reason?: string
+  problemType?: string
+  status: 'PENDING' | 'RESOLVED' | 'DISMISSED'
+  note?: string
+  traceId?: string
+  question?: string
+  answer?: string
+  createTime?: string
+  updateTime?: string
+}
+
+export interface FeedbackMessage {
+  id: string
+  role: string
+  content: string
+  reasoning?: string
+  createTime?: string
+}
+
+export interface FeedbackDetail {
+  feedback: FeedbackRecord
+  messages: FeedbackMessage[]
+  traceJson?: string
 }
