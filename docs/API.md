@@ -1074,3 +1074,23 @@ curl -s -X PUT $BASE/roles/$ROLE_ID/permissions \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"permissionIds":[]}' | jq
 ```
+
+## Ollama 本地模型
+
+- `GET /api/v1/admin/models/ollama/status?providerId=`：检测 Ollama 连接与本地模型列表。
+- `POST /api/v1/admin/models/ollama/pull`：请求拉取模型，body `{ "providerId": 1, "model": "qwen3:8b", "insecure": false }`；`insecure: true` 允许拉取未校验来源。
+- `GET /api/v1/admin/models/ollama/pull/{taskId}`：查询拉取状态。
+- 设置 `OLLAMA_BASE_URL`（如 `http://ollama:11434`）后，后端启动时会自动创建 `Ollama（本地）` 供应商；也可在模型配置页手动添加。
+
+## 频道向量化
+
+- `GET /api/v1/channels/{channelId}/embedding`：频道管理者查看待处理片段与最近任务。
+- `POST /api/v1/channels/{channelId}/reembed`：将频道文档重新加入向量化队列。
+- `POST /api/v1/channels/{channelId}/embedding/jobs/{jobId}/retry`：重试失败的向量化任务。
+
+## 文档处理与告警
+
+- `GET/PUT /api/v1/admin/ingestion/settings`：并发、队列、重试、HNSW、告警阈值、告警角色。
+- `GET /api/v1/admin/ingestion/metrics`：队列、失败率、延迟、Embedding 健康度、索引状态。
+- `POST /api/v1/admin/ingestion/jobs/{id}/requeue`：死信重新入队。
+- 频道解析/向量化最终失败时，默认通知频道管理员邮箱；运维告警默认发送给 `alertRoleCode`（默认 `OPS`）角色下所有启用用户，留空或未创建角色时需配置明确收件人。
