@@ -245,15 +245,15 @@
             <button type="button" class="rounded p-0.5 hover:bg-primary/10" @click="cancelEdit">取消</button>
           </div>
           <form ref="formRef" class="group relative w-full" @submit.prevent="onSubmit()">
-            <button
+            <Button
               v-if="hasTrayContent && !mentionOpen"
-              type="button"
-              class="absolute right-2.5 top-2 z-20 flex size-7 items-center justify-center rounded-full border bg-background text-muted-foreground opacity-0 shadow-sm transition-all hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+              variant="ghost"
+              class="absolute right-2.5 top-2 z-20 flex size-7 items-center justify-center rounded-full opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100"
               :aria-label="trayOpen ? '收起状态栏' : '展开状态栏'"
               @click="toggleTray">
               <ChevronDownIcon v-if="trayOpen" class="size-4" />
               <ChevronUpIcon v-else class="size-4" />
-            </button>
+            </Button>
             <Transition name="composer-tray">
               <div
                 v-if="trayVisible"
@@ -383,45 +383,49 @@
                   </PopoverContent>
                 </Popover>
                 <div class="flex-1"></div>
-                <DropdownMenu>
+                <DropdownMenu v-if="currentModel">
                   <DropdownMenuTrigger as-child>
-                    <InputGroupButton size="sm" variant="ghost" :aria-label="`Model: ${currentModel?.name || '未选择'}`"
-                      class="ml-auto rounded-full">
-                      {{ currentModel?.name || '未配置模型' }}
-                      <ChevronDownIcon />
+                    <InputGroupButton size="sm" variant="ghost"
+                      :aria-label="`Model: ${currentModel.name}${currentModel.thinking ? `, effort: ${currentEffort.name}` : ''}`"
+                      class="ml-auto max-w-[min(46vw,22rem)] rounded-full">
+                      <span class="truncate">{{ currentModel.name }}</span>
+                      <span v-if="currentModel.thinking" class="shrink-0 text-muted-foreground">{{ currentEffort.name }}</span>
+                      <ChevronDownIcon class="shrink-0" />
                     </InputGroupButton>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" class="w-48">
-                    <DropdownMenuRadioGroup v-model="model">
-                      <template v-for="(provider, index) in providers" :key="provider.name">
-                        <DropdownMenuSeparator v-if="index > 0" />
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel>{{ provider.name }}</DropdownMenuLabel>
-                          <DropdownMenuRadioItem v-for="item in provider.models" :key="item.id" :value="String(item.id)">
+                  <DropdownMenuContent align="start" class="w-64">
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <span class="w-16 shrink-0 text-muted-foreground">模型</span>
+                        <span class="min-w-0 flex-1 truncate">{{ currentModel.name }}</span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent class="w-64">
+                        <DropdownMenuRadioGroup v-model="model">
+                          <template v-for="(provider, index) in providers" :key="provider.name">
+                            <DropdownMenuSeparator v-if="index > 0" />
+                            <DropdownMenuGroup>
+                              <DropdownMenuLabel>{{ provider.name }}</DropdownMenuLabel>
+                              <DropdownMenuRadioItem v-for="item in provider.models" :key="item.id" :value="String(item.id)">
+                                {{ item.name }}
+                              </DropdownMenuRadioItem>
+                            </DropdownMenuGroup>
+                          </template>
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSub v-if="currentModel.thinking">
+                      <DropdownMenuSubTrigger>
+                        <span class="w-16 shrink-0 text-muted-foreground">推理等级</span>
+                        <span class="min-w-0 flex-1 truncate">{{ currentEffort.name }}</span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent class="w-44">
+                        <DropdownMenuRadioGroup v-model="effort">
+                          <DropdownMenuRadioItem v-for="item in efforts" :key="item.id" :value="item.id">
                             {{ item.name }}
                           </DropdownMenuRadioItem>
-                        </DropdownMenuGroup>
-                      </template>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <DropdownMenu v-if="currentModel?.thinking">
-                  <DropdownMenuTrigger as-child>
-                    <InputGroupButton size="sm" variant="ghost" :aria-label="`Effort: ${currentEffort.name}`"
-                      class="rounded-full">
-                      {{ currentEffort.name }}
-                      <ChevronDownIcon />
-                    </InputGroupButton>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" class="w-36">
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel>推理强度</DropdownMenuLabel>
-                      <DropdownMenuRadioGroup v-model="effort">
-                        <DropdownMenuRadioItem v-for="item in efforts" :key="item.id" :value="item.id">
-                          {{ item.name }}
-                        </DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuGroup>
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <InputGroupButton type="submit" variant="default" size="icon-sm" :disabled="!canSend"
@@ -579,6 +583,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -1548,9 +1555,6 @@ onUnmounted(() => {
   background-color: color-mix(in oklab, var(--background) 36%, transparent);
   -webkit-backdrop-filter: blur(44px) saturate(185%) brightness(1.04);
   backdrop-filter: blur(44px) saturate(185%) brightness(1.04);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, var(--foreground) 8%, transparent),
-    0 -10px 30px -16px rgba(0, 0, 0, 0.35);
 }
 .composer-tray-enter-active,
 .composer-tray-leave-active {
