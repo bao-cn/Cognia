@@ -109,7 +109,7 @@
             <h2 class="text-lg font-semibold">团队频道</h2>
             <p class="mt-1 text-xs text-muted-foreground">该组织的全部频道</p>
           </div>
-          <Button v-if="team.canCreateChannel" class="rounded-full" @click="createChannel">
+          <Button v-if="team.canCreateChannel" class="rounded-full" @click="openCreate">
             <IconHash class="mr-1.5 size-4" />
             新建频道
           </Button>
@@ -358,6 +358,38 @@
           <DialogFooter><Button variant="outline" class="rounded-full" @click="removeTarget = null">取消</Button><Button variant="destructive" class="rounded-full" :disabled="removing" @click="confirmRemove"><Spinner v-if="removing" class="mr-2" />移除成员</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog v-model:open="createOpen">
+        <DialogContent class="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>新建频道</DialogTitle>
+            <DialogDescription>频道用来组织文档、README 和 AGENT.md，创建后即可上传资料。</DialogDescription>
+          </DialogHeader>
+          <div class="grid gap-4 py-1">
+            <div class="grid gap-2">
+              <Label for="team-channel-name">频道名称</Label>
+              <Input id="team-channel-name" v-model="createForm.name" placeholder="例如：产品知识库" maxlength="64" @input="onChannelNameInput" />
+            </div>
+            <div class="grid gap-2">
+              <Label for="team-channel-slug">频道标识</Label>
+              <Input id="team-channel-slug" v-model="createForm.slug" placeholder="product-kb" maxlength="63" />
+              <p class="text-xs text-muted-foreground">小写字母、数字和短横线，创建后作为频道地址。</p>
+            </div>
+            <div class="grid gap-2">
+              <Label for="team-channel-description">频道简介</Label>
+              <Textarea id="team-channel-description" v-model="createForm.description" rows="3" maxlength="512" />
+            </div>
+            <div class="flex items-center gap-2">
+              <Checkbox id="team-channel-public" v-model="createForm.isPublic" />
+              <Label for="team-channel-public" class="text-sm font-normal">公开频道（所有人可访问）</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" :disabled="creating" @click="createOpen = false">取消</Button>
+            <Button :disabled="creating" @click="createChannel"><Spinner v-if="creating" class="mr-2" />创建</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </template>
   </div>
 </template>
@@ -444,8 +476,49 @@ function openChannel(channel: ChannelCard): void {
   void router.push(`/${team.value?.slug}/${channel.slug}`)
 }
 
-function createChannel(): void {
-  void router.push(`/${team.value?.slug}`)
+const createOpen = ref(false)
+const creating = ref(false)
+const createForm = reactive({ name: '', slug: '', description: '', isPublic: true })
+
+function openCreate(): void {
+  createForm.name = ''
+  createForm.slug = ''
+  createForm.description = ''
+  createForm.isPublic = true
+  createOpen.value = true
+}
+
+function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-').slice(0, 63)
+}
+
+function onChannelNameInput(): void {
+  if (!createForm.slug) createForm.slug = slugify(createForm.name)
+}
+
+async function createChannel(): Promise<void> {
+  if (!team.value) return
+  if (!createForm.name.trim()) { toast.error('请填写频道名称'); return }
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(createForm.slug) || createForm.slug.length < 2) {
+    toast.error('频道标识需为 2-63 位小写字母、数字或短横线')
+    return
+  }
+  creating.value = true
+  try {
+    const channel = await channelApi.create({
+      ownerType: 'TEAM', ownerId: team.value.id,
+      name: createForm.name.trim(), slug: createForm.slug,
+      description: createForm.description.trim() || undefined,
+      isPublic: createForm.isPublic,
+    })
+    createOpen.value = false
+    toast.success('频道已创建')
+    await router.push(`/${team.value.slug}/${channel.slug}`)
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : '创建频道失败')
+  } finally {
+    creating.value = false
+  }
 }
 const transferCandidates = computed(() => (team.value?.members ?? []).filter(member => member.role !== 'OWNER'))
 
