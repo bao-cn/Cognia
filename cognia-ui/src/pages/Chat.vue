@@ -436,83 +436,84 @@
               </InputGroupAddon>
             </InputGroup>
           </form>
-          <div v-if="cacheInfo || contextInfo"
-            class="flex items-center justify-end gap-5 px-3 pt-1.5 text-[11px] text-muted-foreground">
+          <div v-if="usageInfo || contextInfo"
+            class="flex items-center justify-end gap-1.5 px-3 pt-1.5 text-[11px] text-muted-foreground">
             <TooltipProvider>
-              <Tooltip>
+              <Tooltip v-if="outlineRounds.length">
                 <TooltipTrigger as-child>
-                  <div v-if="cacheInfo" class="flex cursor-default items-center gap-1.5">
-                    <div class="relative size-9">
-                      <svg viewBox="0 0 20 20" class="size-9 -rotate-90">
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2" class="text-muted/40" />
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"
-                          stroke-linecap="round" class="text-primary transition-[stroke-dashoffset] duration-300"
-                          :stroke-dasharray="ringLength" :stroke-dashoffset="cacheRingOffset" />
-                      </svg>
-                      <span class="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
-                        {{ cachePercent }}%
-                      </span>
-                    </div>
-                    <div class="leading-tight">
-                      <p>缓存命中率</p>
-                      <p class="text-muted-foreground">{{ cacheHitLabel }}<span v-if="cacheInfo.hitType !== 'NONE'" class="ml-1">· {{ Math.round((cacheInfo.similarity ?? 0) * 100) }}%</span></p>
-                    </div>
+                  <div class="inline-flex h-7 cursor-default items-center gap-1.5 rounded-full border border-border/60 bg-muted/25 px-2.5 transition-colors hover:bg-muted/40">
+                    <ActivityIcon class="size-3.5" />
+                    <span>{{ roundCount }} 轮 · {{ stepCount }} 步</span>
+                    <span v-if="lastTps" class="text-foreground/70">· {{ lastTps }} tok/s</span>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-64 text-xs">
-                  <p>本次：{{ cacheHitLabel }}<span v-if="cacheInfo?.hitType === 'SEMANTIC'">（相似度 {{ ((cacheInfo?.similarity ?? 0) * 100).toFixed(1) }}%）</span></p>
-                  <p v-if="cacheInfo?.cacheKey">key：{{ cacheInfo.cacheKey }}</p>
-                  <p>累计命中：{{ cacheInfo?.hits ?? 0 }} / {{ cacheInfo?.requests ?? 0 }} 次请求</p>
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                  <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
+                    <span class="flex items-center gap-1.5 font-medium text-foreground"><ActivityIcon class="size-3.5" />会话统计</span>
+                    <span class="text-muted-foreground">{{ roundCount }} 轮 {{ stepCount }} 步</span>
+                  </div>
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">模型用时</span><span>{{ formatDuration(turnDurationMs) }}</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">首 token 平均（TTFT）</span><span>{{ formatDuration(turnTtftMs) }}</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出速度（TPS）</span><span>{{ lastTps ? `${lastTps} tok/s` : '—' }}</span></div>
+                  </div>
                 </TooltipContent>
               </Tooltip>
+
               <Tooltip v-if="usageInfo">
                 <TooltipTrigger as-child>
-                  <div class="flex cursor-default items-center gap-1.5">
-                    <div class="relative size-9">
-                      <svg viewBox="0 0 20 20" class="size-9 -rotate-90">
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2" class="text-muted/40" />
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-emerald-500 transition-[stroke-dashoffset] duration-500" :stroke-dasharray="ringLength" :stroke-dashoffset="usageRingOffset" />
-                      </svg>
-                      <span class="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">{{ usagePercent }}%</span>
-                    </div>
-                    <div class="leading-tight">
-                      <p>KV 缓存</p>
-                      <p class="text-muted-foreground">{{ usageInfo.cacheHitTokens.toLocaleString() }} / {{ (usageInfo.cacheHitTokens + usageInfo.cacheMissTokens).toLocaleString() }} tokens</p>
-                    </div>
+                  <div class="inline-flex h-7 cursor-default items-center gap-1.5 rounded-full border border-border/60 bg-muted/25 px-2.5 transition-colors hover:bg-muted/40">
+                    <DatabaseIcon class="size-3.5" />
+                    <span>{{ formatCompact(tokenTotal) }} tok</span>
+                    <span class="text-foreground/70">· 缓存命中 {{ tokenCachePercent }}%</span>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-64 text-xs">
-                  <p>Prompt tokens：{{ usageInfo.promptTokens.toLocaleString() }}</p>
-                  <p>Completion tokens：{{ usageInfo.completionTokens.toLocaleString() }}</p>
-                  <p>缓存命中：{{ usageInfo.cacheHitTokens.toLocaleString() }} tokens</p>
-                  <p>缓存未命中：{{ usageInfo.cacheMissTokens.toLocaleString() }} tokens</p>
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                  <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
+                    <span class="flex items-center gap-1.5 font-medium text-foreground"><DatabaseIcon class="size-3.5" />Token 用量</span>
+                    <span class="font-medium text-foreground">{{ usageInfo.promptTokens + usageInfo.completionTokens }} tok</span>
+                  </div>
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存命中</span><span>{{ tokenCachePercent }}%</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">未缓存输入</span><span>{{ usageInfo.cacheMissTokens.toLocaleString() }} tok</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存读取</span><span>{{ usageInfo.cacheHitTokens.toLocaleString() }} tok</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出</span><span>{{ usageInfo.completionTokens.toLocaleString() }} tok</span></div>
+                  </div>
                 </TooltipContent>
               </Tooltip>
-              <Tooltip>
+
+              <Tooltip v-if="contextInfo">
                 <TooltipTrigger as-child>
-                  <div v-if="contextInfo" class="flex cursor-default items-center gap-1.5">
-                    <div class="relative size-9">
-                      <svg viewBox="0 0 20 20" class="size-9 -rotate-90">
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2" class="text-muted/40" />
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"
-                          stroke-linecap="round" class="text-emerald-500 transition-[stroke-dashoffset] duration-300"
+                  <div class="inline-flex h-7 cursor-default items-center gap-1.5 rounded-full border border-border/60 bg-muted/25 px-2.5 transition-colors hover:bg-muted/40">
+                    <div class="relative size-4">
+                      <svg viewBox="0 0 20 20" class="size-4 -rotate-90">
+                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5" class="text-muted/50" />
+                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5"
+                          stroke-linecap="round" class="text-primary transition-[stroke-dashoffset] duration-300"
                           :stroke-dasharray="ringLength" :stroke-dashoffset="contextRingOffset" />
                       </svg>
-                      <span class="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-foreground">
-                        {{ contextPercent }}%
-                      </span>
                     </div>
-                    <div class="leading-tight">
-                      <p>上下文占用</p>
-                      <p class="text-muted-foreground">{{ contextInfo.usedTokens.toLocaleString() }} / {{ contextInfo.maxTokens.toLocaleString() }}</p>
-                    </div>
+                    <span>{{ contextPercent }}%</span>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-64 text-xs">
-                  <p>上下文：{{ contextInfo?.usedTokens.toLocaleString() }} / {{ contextInfo?.maxTokens.toLocaleString() }} tokens（{{ contextInfo?.percent }}%）</p>
-                  <p v-if="contextInfo?.compressionThreshold">压缩阈值：{{ contextInfo.compressionThreshold }}%</p>
-                  <p v-if="contextInfo?.compressed">已压缩历史对话<span v-if="contextInfo.droppedMessages">，裁剪 {{ contextInfo.droppedMessages }} 条</span></p>
-                  <p v-else>未触发压缩<span v-if="contextInfo?.droppedMessages">，滑动窗口裁剪 {{ contextInfo.droppedMessages }} 条</span></p>
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                  <div class="w-64">
+                    <div class="mb-2 flex items-center justify-between border-b pb-2">
+                      <span>上下文已用 <strong class="font-semibold text-foreground">{{ contextPercent }}%</strong></span>
+                      <span class="font-mono text-[11px]">~{{ formatCompact(contextInfo.usedTokens) }} / {{ formatCompact(contextInfo.maxTokens) }}</span>
+                    </div>
+                    <div class="mb-3 h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div class="h-full rounded-full bg-primary transition-[width] duration-300" :style="{ width: `${contextPercent}%` }" />
+                    </div>
+                    <div class="space-y-1.5">
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">已用</span><span>{{ contextInfo.usedTokens.toLocaleString() }} tok</span></div>
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">剩余</span><span>{{ Math.max(0, contextInfo.maxTokens - contextInfo.usedTokens).toLocaleString() }} tok</span></div>
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">压缩阈值</span><span>{{ contextInfo.compressionThreshold ?? 80 }}%</span></div>
+                    </div>
+                    <p class="mt-2 border-t pt-2 text-[11px] text-muted-foreground">
+                      {{ contextInfo.compressed ? '已压缩历史对话' : '未触发压缩' }}<span v-if="contextInfo.droppedMessages"> · 裁剪 {{ contextInfo.droppedMessages }} 条</span>
+                    </p>
+                  </div>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -686,6 +687,10 @@ const capabilities = ref<ChatCapabilities>({ webSearchEnabled: false, allowUserW
 const cacheInfo = ref<ChatCacheInfo | null>(null)
 const contextInfo = ref<ChatContextInfo | null>(null)
 const usageInfo = ref<ChatUsageInfo | null>(null)
+const turnStartedAt = ref(0)
+const turnFirstTokenAt = ref(0)
+const turnDurationMs = ref(0)
+const turnTtftMs = ref(0)
 const webSearch = ref(Boolean(userStore.profile?.autoWebSearch))
 const draft = ref<string | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
@@ -697,21 +702,41 @@ let trayResizeObserver: ResizeObserver | null = null
 const reasoningOpen = reactive<Record<string, boolean | undefined>>({})
 
 const busy = computed(() => status.value !== 'ready')
-const cachePercent = computed(() => Math.round(Math.max(0, Math.min(1, cacheInfo.value?.hitRate ?? 0)) * 100))
 const contextPercent = computed(() => Math.round(Math.max(0, Math.min(100, contextInfo.value?.percent ?? 0))))
 const ringLength = 2 * Math.PI * 8
-const cacheRingOffset = computed(() => ringLength * (1 - cachePercent.value / 100))
 const contextRingOffset = computed(() => ringLength * (1 - contextPercent.value / 100))
-const usagePercent = computed(() => {
+const roundCount = computed(() => outlineRounds.value.length)
+const stepCount = computed(() => messages.value.reduce((total, message) => total + message.parts.length, 0))
+const tokenTotal = computed(() => usageInfo.value ? usageInfo.value.promptTokens + usageInfo.value.completionTokens : 0)
+const tokenCachePercent = computed(() => {
   const value = usageInfo.value
   if (!value) return 0
   const total = value.cacheHitTokens + value.cacheMissTokens
   return total > 0 ? Math.round((value.cacheHitTokens / total) * 100) : 0
 })
-const usageRingOffset = computed(() => ringLength * (1 - usagePercent.value / 100))
-const cacheHitLabel = computed(() => cacheInfo.value?.hitType === 'SEMANTIC'
-  ? '语义缓存'
-  : cacheInfo.value?.hitType === 'RETRIEVAL' ? '检索缓存' : '未命中')
+const lastTps = computed(() => {
+  if (!usageInfo.value || turnDurationMs.value <= 0)
+    return 0
+  return Math.round(usageInfo.value.completionTokens / (turnDurationMs.value / 1000))
+})
+function formatCompact(value: number): string {
+  if (!Number.isFinite(value) || value <= 0)
+    return '0'
+  if (value >= 1e9)
+    return `${(value / 1e9).toFixed(2).replace(/\.?0+$/, '')}B`
+  if (value >= 1e6)
+    return `${(value / 1e6).toFixed(1).replace(/\.0$/, '')}M`
+  if (value >= 1e3)
+    return `${(value / 1e3).toFixed(1).replace(/\.0$/, '')}K`
+  return String(Math.round(value))
+}
+function formatDuration(ms: number): string {
+  if (!ms || ms <= 0)
+    return '—'
+  if (ms >= 60000)
+    return `${Math.floor(ms / 60000)} 分 ${Math.round((ms % 60000) / 1000)} 秒`
+  return `${(ms / 1000).toFixed(1)} 秒`
+}
 const text = computed({
   get: () => draft.value ?? '',
   set: (value: string) => {
@@ -878,6 +903,10 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
   status.value = 'submitted'
   truncatedNotice.value = ''
   let finished = false
+  turnStartedAt.value = performance.now()
+  turnFirstTokenAt.value = 0
+  turnDurationMs.value = 0
+  turnTtftMs.value = 0
   try {
     await chatApi.stream({
       modelId: currentModel.value.id,
@@ -929,6 +958,8 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
       },
       onText: (delta) => {
         status.value = 'streaming'
+        if (!turnFirstTokenAt.value)
+          turnFirstTokenAt.value = performance.now()
         let part = assistant.parts.find(item => item.type === 'text') as Extract<ChatPart, { type: 'text' }> | undefined
         if (!part) {
           part = { type: 'text', text: '' }
@@ -959,6 +990,8 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
       },
       onDone: (data) => {
         finished = true
+        turnDurationMs.value = Math.round(performance.now() - turnStartedAt.value)
+        turnTtftMs.value = turnFirstTokenAt.value > 0 ? Math.round(turnFirstTokenAt.value - turnStartedAt.value) : 0
         if (data.assistantMessageId)
           assistant.serverId = String(data.assistantMessageId)
         refreshConversationTitle()
