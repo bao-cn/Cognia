@@ -259,7 +259,7 @@
                 v-if="trayVisible"
                 ref="trayRef"
                 data-composer-tray
-                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 composer-tray-surface rounded-t-2xl border border-b-0 px-3 pb-7 pt-3 shadow-[0_-10px_30px_-16px_rgba(0,0,0,0.28)]">
+                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 composer-tray-surface rounded-t-2xl px-3 pb-7 pt-3 shadow-[0_-10px_30px_-16px_rgba(0,0,0,0.28)]">
                 <div class="flex max-h-[32vh] flex-col gap-2 overflow-y-auto">
                   <div v-if="temporary || (webSearchEnabled && capabilities.webSearchAvailable)" class="flex flex-wrap items-center gap-2">
                     <Badge v-if="temporary" variant="outline" class="gap-1"><SparklesIcon class="size-3" />临时对话 · 关闭后不保存</Badge>
