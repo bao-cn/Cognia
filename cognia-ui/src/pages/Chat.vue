@@ -223,7 +223,7 @@
                 <div data-composer-spacer :style="{ height: `${trayHeight}px` }" class="shrink-0 transition-[height] duration-200" aria-hidden="true" />
               </MessageScrollerContent>
             </MessageScrollerViewport>
-            <MessageScrollerButton />
+            <MessageScrollerButton :style="{ bottom: trayVisible ? `${16 + trayHeight}px` : undefined, transition: 'bottom 240ms cubic-bezier(0.22, 1, 0.36, 1)' }" />
           </MessageScroller>
         </div>
         <div class="shrink-0 p-8 pt-0">
@@ -248,7 +248,7 @@
             <button
               v-if="hasTrayContent && !mentionOpen"
               type="button"
-              class="absolute right-2.5 top-2 z-20 flex size-7 items-center justify-center rounded-full border bg-background/90 text-muted-foreground opacity-0 shadow-sm transition-all hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+              class="absolute right-2.5 top-2 z-20 flex size-7 items-center justify-center rounded-full border bg-background text-muted-foreground opacity-0 shadow-sm transition-all hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
               :aria-label="trayOpen ? '收起状态栏' : '展开状态栏'"
               @click="toggleTray">
               <ChevronDownIcon v-if="trayOpen" class="size-4" />
@@ -256,10 +256,10 @@
             </button>
             <Transition name="composer-tray">
               <div
-                v-if="trayOpen && hasTrayContent && !mentionOpen"
+                v-if="trayVisible"
                 ref="trayRef"
                 data-composer-tray
-                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 rounded-t-2xl border border-b-0 bg-muted/50 px-3 pb-7 pt-3 shadow-[0_-10px_30px_-16px_rgba(0,0,0,0.35)] backdrop-blur">
+                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 rounded-t-2xl border border-b-0 bg-background/80 px-3 pb-7 pt-3 shadow-[0_-10px_30px_-16px_rgba(0,0,0,0.28)] backdrop-blur-xl backdrop-saturate-150 dark:bg-background/75">
                 <div class="flex max-h-[32vh] flex-col gap-2 overflow-y-auto">
                   <div v-if="temporary || (webSearchEnabled && capabilities.webSearchAvailable)" class="flex flex-wrap items-center gap-2">
                     <Badge v-if="temporary" variant="outline" class="gap-1"><SparklesIcon class="size-3" />临时对话 · 关闭后不保存</Badge>
@@ -277,7 +277,7 @@
                   </div>
                   <div v-if="chatAttachments.length || uploadingAttachment" class="flex flex-wrap gap-2">
                     <div v-for="(attachment, index) in chatAttachments" :key="`${attachment.name}-${index}`"
-                      class="flex max-w-64 items-center gap-2 rounded-xl border bg-background/70 p-1.5 pr-2">
+                      class="flex max-w-64 items-center gap-2 rounded-xl border bg-background p-1.5 pr-2">
                       <img v-if="attachment.type === 'IMAGE' && imagePreview(index)" :src="imagePreview(index)"
                         :alt="attachment.name" class="size-9 cursor-zoom-in rounded-md object-cover"
                         @click="openImagePreview(index)">
@@ -295,7 +295,7 @@
                         <XIcon class="size-3.5" />
                       </button>
                     </div>
-                    <div v-if="uploadingAttachment" class="flex items-center gap-2 rounded-xl border bg-background/70 px-3 text-xs text-muted-foreground">
+                    <div v-if="uploadingAttachment" class="flex items-center gap-2 rounded-xl border bg-background px-3 text-xs text-muted-foreground">
                       <LoaderCircleIcon class="size-3.5 animate-spin" />解析中…
                     </div>
                   </div>
@@ -329,7 +329,7 @@
                 ↑↓ 选择 · Tab 多选 · Enter 完成 · Esc 关闭
               </div>
             </div>
-            <InputGroup class="relative z-10 rounded-3xl bg-background">
+            <InputGroup class="relative z-10 rounded-3xl bg-background dark:bg-background">
               <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived" placeholder="Ask the agent..." aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
                 @input="onComposerInput" @keydown="onKeydown" @blur="onComposerBlur" />
               <InputGroupAddon align="block-end" class="pt-1">
@@ -1189,6 +1189,7 @@ const hasTrayContent = computed(() => temporary.value
   || selectedChannels.value.length > 0
   || chatAttachments.value.length > 0
   || uploadingAttachment.value)
+const trayVisible = computed(() => trayOpen.value && hasTrayContent.value && !mentionOpen.value)
 function toggleTray() {
   if (!hasTrayContent.value) return
   trayOpen.value = !trayOpen.value
@@ -1545,11 +1546,11 @@ onUnmounted(() => {
 <style scoped>
 .composer-tray-enter-active,
 .composer-tray-leave-active {
-  transition: opacity 200ms ease, transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
 .composer-tray-enter-from,
 .composer-tray-leave-to {
-  opacity: 0;
-  transform: translateY(10px) scale(0.985);
+  transform: translateY(100%);
 }
 </style>
