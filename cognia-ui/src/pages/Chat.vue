@@ -247,6 +247,7 @@
           <form ref="formRef" class="group relative w-full" @submit.prevent="onSubmit()">
             <Button
               v-if="hasTrayContent && !mentionOpen"
+              type="button"
               variant="ghost"
               class="absolute right-2.5 top-2 z-20 flex size-7 items-center justify-center rounded-full opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100"
               :aria-label="trayOpen ? '收起状态栏' : '展开状态栏'"
@@ -441,13 +442,13 @@
             <TooltipProvider>
               <Tooltip v-if="outlineRounds.length">
                 <TooltipTrigger as-child>
-                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground">
+                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
                     <ActivityIcon class="size-3.5" />
-                    <span>{{ roundCount }} 轮 · {{ stepCount }} 步</span>
+                    <span class="text-foreground/80">{{ roundCount }} 轮 · {{ stepCount }} 步</span>
                     <span v-if="lastTps" class="text-foreground/70">· {{ lastTps }} tok/s</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
                   <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
                     <span class="flex items-center gap-1.5 font-medium text-foreground"><ActivityIcon class="size-3.5" />会话统计</span>
                     <span class="text-muted-foreground">{{ roundCount }} 轮 {{ stepCount }} 步</span>
@@ -463,13 +464,13 @@
 
               <Tooltip v-if="usageInfo">
                 <TooltipTrigger as-child>
-                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground">
+                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
                     <DatabaseIcon class="size-3.5" />
-                    <span>{{ formatCompact(tokenTotal) }} tok</span>
+                    <span class="text-foreground/80">{{ formatCompact(tokenTotal) }} tok</span>
                     <span class="text-foreground/70">· 缓存命中 {{ tokenCachePercent }}%</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
                   <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
                     <span class="flex items-center gap-1.5 font-medium text-foreground"><DatabaseIcon class="size-3.5" />Token 用量</span>
                     <span class="font-medium text-foreground">{{ usageInfo.promptTokens + usageInfo.completionTokens }} tok</span>
@@ -485,7 +486,7 @@
 
               <Tooltip v-if="contextInfo">
                 <TooltipTrigger as-child>
-                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground">
+                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
                     <div class="relative size-4">
                       <svg viewBox="0 0 20 20" class="size-4 -rotate-90">
                         <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5" class="text-muted/50" />
@@ -494,10 +495,10 @@
                           :stroke-dasharray="ringLength" :stroke-dashoffset="contextRingOffset" />
                       </svg>
                     </div>
-                    <span>{{ contextPercent }}%</span>
+                    <span class="text-foreground/80">{{ contextPercent }}%</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
                   <div class="w-64">
                     <div class="mb-2 flex items-center justify-between border-b pb-2">
                       <span>上下文已用 <strong class="font-semibold text-foreground">{{ contextPercent }}%</strong></span>
