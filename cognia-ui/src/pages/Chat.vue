@@ -437,15 +437,15 @@
             </InputGroup>
           </form>
           <div v-if="usageInfo || contextInfo"
-            class="flex items-center justify-end gap-1.5 px-3 pt-1.5 text-[11px] text-muted-foreground">
+            class="flex items-center justify-center gap-1 px-3 pt-1.5 text-[11px] text-muted-foreground">
             <TooltipProvider>
               <Tooltip v-if="outlineRounds.length">
                 <TooltipTrigger as-child>
-                  <div class="inline-flex h-7 cursor-default items-center gap-1.5 rounded-full border border-border/60 bg-muted/25 px-2.5 transition-colors hover:bg-muted/40">
+                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground">
                     <ActivityIcon class="size-3.5" />
                     <span>{{ roundCount }} 轮 · {{ stepCount }} 步</span>
                     <span v-if="lastTps" class="text-foreground/70">· {{ lastTps }} tok/s</span>
-                  </div>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
                   <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
@@ -463,11 +463,11 @@
 
               <Tooltip v-if="usageInfo">
                 <TooltipTrigger as-child>
-                  <div class="inline-flex h-7 cursor-default items-center gap-1.5 rounded-full border border-border/60 bg-muted/25 px-2.5 transition-colors hover:bg-muted/40">
+                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground">
                     <DatabaseIcon class="size-3.5" />
                     <span>{{ formatCompact(tokenTotal) }} tok</span>
                     <span class="text-foreground/70">· 缓存命中 {{ tokenCachePercent }}%</span>
-                  </div>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
                   <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
@@ -485,7 +485,7 @@
 
               <Tooltip v-if="contextInfo">
                 <TooltipTrigger as-child>
-                  <div class="inline-flex h-7 cursor-default items-center gap-1.5 rounded-full border border-border/60 bg-muted/25 px-2.5 transition-colors hover:bg-muted/40">
+                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground">
                     <div class="relative size-4">
                       <svg viewBox="0 0 20 20" class="size-4 -rotate-90">
                         <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5" class="text-muted/50" />
@@ -495,7 +495,7 @@
                       </svg>
                     </div>
                     <span>{{ contextPercent }}%</span>
-                  </div>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
                   <div class="w-64">
