@@ -93,7 +93,7 @@ public class RetrievalServiceImpl implements RetrievalService {
                        dc.expiration_time, d.name AS file_name, d.channel_id,
                        c.name AS channel_name, c.slug AS channel_slug, c.owner_type, c.owner_id,
                        c.is_public,
-                       1 - (dc.embedding <=> CAST(:vector AS vector)) AS vector_score,
+                       1 - (dc.embedding <=> CAST(:vector AS vector)) AS vector_score
                 FROM document_chunk dc
                 JOIN kb_document d ON d.id = dc.document_id AND d.status = 'READY'
                 JOIN kb_channel c ON c.id = d.channel_id
@@ -134,7 +134,7 @@ public class RetrievalServiceImpl implements RetrievalService {
                         rs.getDouble("vector_score")));
             });
         } catch (Exception ex) {
-            log.warn("Vector retrieval failed: {}", ex.getMessage(), ex);
+            log.error("Vector retrieval failed", ex);
             return new RetrievalOutcome(List.of(), false, 0, "VECTOR_RETRIEVAL_FAILED");
         }
         if (candidates.isEmpty()) {
