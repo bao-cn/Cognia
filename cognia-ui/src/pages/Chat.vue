@@ -332,7 +332,7 @@
             </div>
             <InputGroup class="relative z-10 rounded-3xl bg-background dark:bg-background">
               <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived" placeholder="Ask the agent..." aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
-                @input="onComposerInput" @keydown="onKeydown" @blur="onComposerBlur" />
+                @input="onComposerInput" @keydown="onKeydown" @blur="onComposerBlur" @paste="onComposerPaste" />
               <InputGroupAddon align="block-end" class="pt-1">
                 <InputGroupButton type="button" size="icon-sm" variant="outline" class="rounded-full"
                   aria-label="上传附件" :disabled="!supportsAttachments || uploadingAttachment"
@@ -394,7 +394,7 @@
                       <ChevronDownIcon class="shrink-0" />
                     </InputGroupButton>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" class="w-64">
+                  <DropdownMenuContent side="top" align="start" class="w-64">
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>
                         <span class="w-16 shrink-0 text-muted-foreground">模型</span>
@@ -448,7 +448,7 @@
                     <span v-if="lastTps" class="text-foreground/70">· {{ lastTps }} tok/s</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl [&_[data-slot=tooltip-arrow]]:hidden">
                   <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
                     <span class="flex items-center gap-1.5 font-medium text-foreground"><ActivityIcon class="size-3.5" />会话统计</span>
                     <span class="text-muted-foreground">{{ roundCount }} 轮 {{ stepCount }} 步</span>
@@ -470,7 +470,7 @@
                     <span class="text-foreground/70">· 缓存命中 {{ tokenCachePercent }}%</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl [&_[data-slot=tooltip-arrow]]:hidden">
                   <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
                     <span class="flex items-center gap-1.5 font-medium text-foreground"><DatabaseIcon class="size-3.5" />Token 用量</span>
                     <span class="font-medium text-foreground">{{ usageInfo.promptTokens + usageInfo.completionTokens }} tok</span>
@@ -498,7 +498,7 @@
                     <span class="text-foreground/80">{{ contextPercent }}%</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl [&_[data-slot=tooltip-arrow]]:hidden">
                   <div class="w-64">
                     <div class="mb-2 flex items-center justify-between border-b pb-2">
                       <span>上下文已用 <strong class="font-semibold text-foreground">{{ contextPercent }}%</strong></span>
@@ -815,6 +815,16 @@ async function addFiles(files: FileList | File[]) {
 function removeAttachment(index: number) {
   chatAttachments.value.splice(index, 1)
   attachmentPreviews.value.splice(index, 1)
+}
+
+function onComposerPaste(event: ClipboardEvent) {
+  if (!supportsAttachments.value || archived.value)
+    return
+  const files = Array.from(event.clipboardData?.files || []).filter(file => file.type.startsWith('image/'))
+  if (!files.length)
+    return
+  event.preventDefault()
+  void addFiles(files)
 }
 
 function onAttachmentInput(event: Event) {
