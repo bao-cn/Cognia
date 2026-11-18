@@ -226,48 +226,6 @@
           </MessageScroller>
         </div>
         <div class="shrink-0 p-8 pt-0">
-          <div v-if="temporary || capabilities.webSearchAvailable" class="mb-2 flex flex-wrap items-center gap-2">
-            <Badge v-if="temporary" variant="outline" class="gap-1"><SparklesIcon class="size-3" />临时对话 · 关闭后不保存</Badge>
-            <Button v-if="capabilities.allowUserWebSearch" type="button" size="sm" class="h-7 rounded-full"
-              :variant="webSearch ? 'secondary' : 'outline'" @click="webSearch = !webSearch">
-              <GlobeIcon class="mr-1 size-3.5" />联网搜索{{ webSearch ? '已开启' : '已关闭' }}
-            </Button>
-            <Badge v-else-if="capabilities.webSearchAvailable" variant="secondary" class="gap-1">
-              <GlobeIcon class="size-3" />联网搜索已启用
-            </Badge>
-          </div>
-          <div v-if="selectedChannels.length" class="mb-2 flex flex-wrap gap-1.5">
-            <Badge v-for="channel in selectedChannels" :key="channel.id" variant="secondary" class="gap-1">
-              <HashIcon class="size-3" />{{ channel.ownerLabel }} / {{ channel.name }}
-              <button type="button" class="ml-1 text-muted-foreground hover:text-foreground" @click="toggleChannel(channel)">
-                <XIcon class="size-3" />
-              </button>
-            </Badge>
-          </div>
-          <div v-if="chatAttachments.length" class="mb-2 flex flex-wrap gap-2">
-            <div v-for="(attachment, index) in chatAttachments" :key="`${attachment.name}-${index}`"
-              class="flex max-w-64 items-center gap-2 rounded-xl border bg-muted/40 p-1.5 pr-2">
-              <img v-if="attachment.type === 'IMAGE' && imagePreview(index)" :src="imagePreview(index)"
-                :alt="attachment.name" class="size-9 cursor-zoom-in rounded-md object-cover"
-                @click="openImagePreview(index)">
-              <div v-else class="flex size-9 items-center justify-center rounded-md bg-background">
-                <FileTextIcon class="size-4 text-muted-foreground" />
-              </div>
-              <div class="min-w-0">
-                <p class="truncate text-xs font-medium">{{ attachment.name }}</p>
-                <p class="text-[10px] text-muted-foreground">
-                  {{ attachment.type === 'IMAGE' ? '图片' : '已解析文本' }}
-                </p>
-              </div>
-              <button type="button" class="ml-1 text-muted-foreground hover:text-foreground"
-                :aria-label="`移除 ${attachment.name}`" @click="removeAttachment(index)">
-                <XIcon class="size-3.5" />
-              </button>
-            </div>
-            <div v-if="uploadingAttachment" class="flex items-center gap-2 rounded-xl border bg-muted/40 px-3 text-xs text-muted-foreground">
-              <LoaderCircleIcon class="size-3.5 animate-spin" />解析中…
-            </div>
-          </div>
           <div v-if="truncatedNotice"
             class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <span>{{ truncatedNotice }}</span>
@@ -286,6 +244,54 @@
             <button type="button" class="rounded p-0.5 hover:bg-primary/10" @click="cancelEdit">取消</button>
           </div>
           <form ref="formRef" class="relative w-full" @submit.prevent="onSubmit()">
+            <div
+              v-if="!mentionOpen && (temporary || capabilities.webSearchAvailable || selectedChannels.length || chatAttachments.length || uploadingAttachment)"
+              class="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-2 flex justify-center px-1">
+              <div class="pointer-events-auto flex max-h-[32vh] w-full max-w-3xl flex-col gap-2 overflow-y-auto rounded-2xl border bg-background/90 p-2 shadow-lg backdrop-blur">
+                <div v-if="temporary || capabilities.webSearchAvailable" class="flex flex-wrap items-center gap-2">
+                  <Badge v-if="temporary" variant="outline" class="gap-1"><SparklesIcon class="size-3" />临时对话 · 关闭后不保存</Badge>
+                  <Button v-if="capabilities.allowUserWebSearch" type="button" size="sm" class="h-7 rounded-full"
+                    :variant="webSearch ? 'secondary' : 'outline'" @click="webSearch = !webSearch">
+                    <GlobeIcon class="mr-1 size-3.5" />联网搜索{{ webSearch ? '已开启' : '已关闭' }}
+                  </Button>
+                  <Badge v-else-if="capabilities.webSearchAvailable" variant="secondary" class="gap-1">
+                    <GlobeIcon class="size-3" />联网搜索已启用
+                  </Badge>
+                </div>
+                <div v-if="selectedChannels.length" class="flex flex-wrap gap-1.5">
+                  <Badge v-for="channel in selectedChannels" :key="channel.id" variant="secondary" class="gap-1">
+                    <HashIcon class="size-3" />{{ channel.ownerLabel }} / {{ channel.name }}
+                    <button type="button" class="ml-1 text-muted-foreground hover:text-foreground" @click="toggleChannel(channel)">
+                      <XIcon class="size-3" />
+                    </button>
+                  </Badge>
+                </div>
+                <div v-if="chatAttachments.length" class="flex flex-wrap gap-2">
+                  <div v-for="(attachment, index) in chatAttachments" :key="`${attachment.name}-${index}`"
+                    class="flex max-w-64 items-center gap-2 rounded-xl border bg-muted/40 p-1.5 pr-2">
+                    <img v-if="attachment.type === 'IMAGE' && imagePreview(index)" :src="imagePreview(index)"
+                      :alt="attachment.name" class="size-9 cursor-zoom-in rounded-md object-cover"
+                      @click="openImagePreview(index)">
+                    <div v-else class="flex size-9 items-center justify-center rounded-md bg-background">
+                      <FileTextIcon class="size-4 text-muted-foreground" />
+                    </div>
+                    <div class="min-w-0">
+                      <p class="truncate text-xs font-medium">{{ attachment.name }}</p>
+                      <p class="text-[10px] text-muted-foreground">
+                        {{ attachment.type === 'IMAGE' ? '图片' : '已解析文本' }}
+                      </p>
+                    </div>
+                    <button type="button" class="ml-1 text-muted-foreground hover:text-foreground"
+                      :aria-label="`移除 ${attachment.name}`" @click="removeAttachment(index)">
+                      <XIcon class="size-3.5" />
+                    </button>
+                  </div>
+                  <div v-if="uploadingAttachment" class="flex items-center gap-2 rounded-xl border bg-muted/40 px-3 text-xs text-muted-foreground">
+                    <LoaderCircleIcon class="size-3.5 animate-spin" />解析中…
+                  </div>
+                </div>
+              </div>
+            </div>
             <div v-if="mentionOpen"
               class="absolute bottom-full left-3 z-50 mb-2 w-80 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg">
               <div class="flex items-center justify-between border-b px-3 py-2">
