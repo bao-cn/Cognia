@@ -448,7 +448,7 @@
                     <span v-if="lastTps" class="text-foreground/70">· {{ lastTps }} tok/s</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl [&_[data-slot=tooltip-arrow]]:hidden">
+                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
                   <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
                     <span class="flex items-center gap-1.5 font-medium text-foreground"><ActivityIcon class="size-3.5" />会话统计</span>
                     <span class="text-muted-foreground">{{ roundCount }} 轮 {{ stepCount }} 步</span>
@@ -470,7 +470,7 @@
                     <span class="text-foreground/70">· 缓存命中 {{ tokenCachePercent }}%</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl [&_[data-slot=tooltip-arrow]]:hidden">
+                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
                   <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
                     <span class="flex items-center gap-1.5 font-medium text-foreground"><DatabaseIcon class="size-3.5" />Token 用量</span>
                     <span class="font-medium text-foreground">{{ usageInfo.promptTokens + usageInfo.completionTokens }} tok</span>
@@ -498,7 +498,7 @@
                     <span class="text-foreground/80">{{ contextPercent }}%</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl [&_[data-slot=tooltip-arrow]]:hidden">
+                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
                   <div class="w-64">
                     <div class="mb-2 flex items-center justify-between border-b pb-2">
                       <span>上下文已用 <strong class="font-semibold text-foreground">{{ contextPercent }}%</strong></span>
