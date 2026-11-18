@@ -165,11 +165,13 @@
                 </SelectContent>
               </Select>
             </div>
-            <div class="grid gap-2">
-              <Label for="image-caption-prompt">图生文提示词</Label>
-              <Textarea id="image-caption-prompt" v-model="form.imageCaptionPrompt" :rows="8" :disabled="!form.imageEmbeddingEnabled"
-                placeholder="描述图片类型、结构、OCR 原文、关键数值和可回答的问题" />
-            </div>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+            <p class="text-xs text-muted-foreground">图生文提示词已移至 Prompt 配置。</p>
+            <Button type="button" variant="outline" size="sm" @click="goPromptConfig">
+              <IconEdit class="size-4" />
+              调整图生文提示词
+            </Button>
           </div>
         </section>
 
@@ -276,7 +278,7 @@ const settings = reactive<RagSettings>({
   semanticCacheEnabled: true, retrievalCacheEnabled: true, semanticCacheThreshold: 0.92,
   semanticCacheTtlMinutes: 60, semanticCacheMaxEntries: 500,
   retrievalCacheTtlMinutes: 1440, retrievalCacheMaxEntries: 1000, titleGenerationEnabled: true,
-  contextCompressionThreshold: 80, imageEmbeddingEnabled: false, imageCaptionModelId: undefined, imageCaptionPrompt: '',
+  contextCompressionThreshold: 80, imageEmbeddingEnabled: false, imageCaptionModelId: undefined,
 })
 const form = reactive({
   chatModelId: '', embeddingModelId: '', rerankEnabled: false, rerankModelId: '',
@@ -285,7 +287,7 @@ const form = reactive({
   semanticCacheEnabled: true, retrievalCacheEnabled: true, semanticCacheThreshold: 0.92,
   semanticCacheTtlMinutes: 60, semanticCacheMaxEntries: 500,
   retrievalCacheTtlMinutes: 1440, retrievalCacheMaxEntries: 1000, titleGenerationEnabled: true,
-  contextCompressionThreshold: 80, imageEmbeddingEnabled: false, imageCaptionModelId: '', imageCaptionPrompt: '',
+  contextCompressionThreshold: 80, imageEmbeddingEnabled: false, imageCaptionModelId: '',
 })
 const models = ref<ModelConfig[]>([])
 const snapshot = ref('')
@@ -318,7 +320,6 @@ function apply(value: RagSettings) {
   form.contextCompressionThreshold = value.contextCompressionThreshold ?? 80
   form.imageEmbeddingEnabled = value.imageEmbeddingEnabled ?? false
   form.imageCaptionModelId = value.imageCaptionModelId ? String(value.imageCaptionModelId) : ''
-  form.imageCaptionPrompt = value.imageCaptionPrompt ?? ''
   snapshot.value = JSON.stringify(buildPayload())
 }
 
@@ -345,7 +346,6 @@ function buildPayload(): UpdateRagSettingsPayload {
     contextCompressionThreshold: form.contextCompressionThreshold,
     imageEmbeddingEnabled: form.imageEmbeddingEnabled,
     imageCaptionModelId: form.imageCaptionModelId ? Number(form.imageCaptionModelId) : undefined,
-    imageCaptionPrompt: form.imageCaptionPrompt || undefined,
   }
 }
 

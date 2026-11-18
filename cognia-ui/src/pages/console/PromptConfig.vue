@@ -130,6 +130,25 @@
 
         <section class="rounded-xl border bg-card">
           <header class="flex flex-col gap-1 border-b px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="text-sm font-semibold">图片理解提示词</h2>
+              <Badge variant="secondary">可选</Badge>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              开启图片向量化后，使用该提示词让多模态模型生成结构化图片描述；描述会与图片一起写入知识库。
+            </p>
+          </header>
+          <div class="p-4">
+            <Textarea id="image-caption-prompt" v-model="form.imageCaptionPrompt" :rows="8"
+              placeholder="描述图片类型、结构、OCR 原文、关键数值和可回答的问题" />
+            <p class="mt-2 text-xs text-muted-foreground">
+              是否允许图片向量化、选择图生文模型，在「检索参数配置」中调整。留空时使用默认提示词。
+            </p>
+          </div>
+        </section>
+
+        <section class="rounded-xl border bg-card">
+          <header class="flex flex-col gap-1 border-b px-4 py-3">
             <h2 class="text-sm font-semibold">提示词预览</h2>
             <p class="text-xs text-muted-foreground">
               实际下发时会按顺序拼接以下内容；检索结果会以 Retrieved knowledge 区块自动追加在末尾。
@@ -209,6 +228,7 @@ const form = reactive<PromptSettings>({
   expiredPrompt: '',
   toolPrompt: '',
   compressionPrompt: '',
+  imageCaptionPrompt: '',
 })
 
 watch(
@@ -234,6 +254,7 @@ function buildPayload(): UpdatePromptSettingsPayload {
     expiredPrompt: form.expiredPrompt?.trim() ?? '',
     toolPrompt: form.toolPrompt?.trim() ?? '',
     compressionPrompt: form.compressionPrompt?.trim() ?? '',
+    imageCaptionPrompt: form.imageCaptionPrompt?.trim() ?? '',
   }
 }
 
@@ -243,6 +264,7 @@ function applySettings(settings: PromptSettings) {
   form.expiredPrompt = settings.expiredPrompt ?? ''
   form.toolPrompt = settings.toolPrompt ?? ''
   form.compressionPrompt = settings.compressionPrompt ?? ''
+  form.imageCaptionPrompt = settings.imageCaptionPrompt ?? ''
   updatedAt.value = settings.updatedAt ?? ''
   originalSnapshot.value = JSON.stringify(buildPayload())
 }

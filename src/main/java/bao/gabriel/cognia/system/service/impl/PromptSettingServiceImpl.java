@@ -93,6 +93,9 @@ public class PromptSettingServiceImpl implements PromptSettingService {
         if (request.toolPrompt() != null) {
             setting.setToolPrompt(trimToNull(request.toolPrompt()));
         }
+        if (request.imageCaptionPrompt() != null) {
+            setting.setImageCaptionPrompt(trimToNull(request.imageCaptionPrompt()));
+        }
         if (request.compressionPrompt() != null) {
             String value = request.compressionPrompt().trim();
             if (!StringUtils.hasText(value)) {
@@ -127,6 +130,7 @@ public class PromptSettingServiceImpl implements PromptSettingService {
         setting.setExpiredPrompt(DEFAULT_EXPIRED_PROMPT);
         setting.setToolPrompt(DEFAULT_TOOL_PROMPT);
         setting.setCompressionPrompt(DEFAULT_COMPRESSION_PROMPT);
+        setting.setImageCaptionPrompt(PromptSetting.DEFAULT_IMAGE_CAPTION_PROMPT);
         setting.setUpdateTime(LocalDateTime.now());
     }
 
@@ -137,6 +141,7 @@ public class PromptSettingServiceImpl implements PromptSettingService {
                 setting.getExpiredPrompt(),
                 setting.getToolPrompt(),
                 setting.getCompressionPrompt(),
+                setting.imageCaptionPrompt(),
                 setting.getUpdateTime() == null ? null : siteSettingService.formatDateTime(setting.getUpdateTime()));
     }
 

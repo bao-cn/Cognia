@@ -968,6 +968,7 @@ export interface PromptSettings {
   expiredPrompt?: string
   toolPrompt?: string
   compressionPrompt?: string
+  imageCaptionPrompt?: string
   updatedAt?: string
 }
 
@@ -977,6 +978,7 @@ export interface UpdatePromptSettingsPayload {
   expiredPrompt?: string
   toolPrompt?: string
   compressionPrompt?: string
+  imageCaptionPrompt?: string
 }
 
 export interface ToolSettings {

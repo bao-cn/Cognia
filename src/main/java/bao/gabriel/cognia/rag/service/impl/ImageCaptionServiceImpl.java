@@ -6,6 +6,7 @@ import bao.gabriel.cognia.rag.service.ImageCaptionService;
 import bao.gabriel.cognia.system.entity.KbDocument;
 import bao.gabriel.cognia.system.entity.RagSetting;
 import bao.gabriel.cognia.system.service.ModelConfigService;
+import bao.gabriel.cognia.system.service.PromptSettingService;
 import bao.gabriel.cognia.system.service.RagSettingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -25,6 +26,7 @@ public class ImageCaptionServiceImpl implements ImageCaptionService {
 
     private final RagSettingService ragSettingService;
     private final ModelConfigService modelConfigService;
+    private final PromptSettingService promptSettingService;
     private final OpenAiCompatibleClient client;
 
     @Override
@@ -47,7 +49,7 @@ public class ImageCaptionServiceImpl implements ImageCaptionService {
         ObjectNode user = messages.addObject();
         user.put("role", "user");
         ArrayNode content = user.putArray("content");
-        content.addObject().put("type", "text").put("text", setting.imageCaptionPrompt());
+        content.addObject().put("type", "text").put("text", promptSettingService.getSetting().imageCaptionPrompt());
         ObjectNode image = content.addObject();
         image.put("type", "image_url");
         image.putObject("image_url").put("url", dataUrl);

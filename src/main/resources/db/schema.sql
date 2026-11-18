@@ -1350,3 +1350,11 @@ CREATE INDEX IF NOT EXISTS idx_document_chunk_text_trgm ON document_chunk USING 
 ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_embedding_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_caption_model_id BIGINT;
 ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_caption_prompt TEXT;
+
+-- Image caption prompt is edited on the Prompt page and reused by ingestion.
+ALTER TABLE sys_prompt_setting ADD COLUMN IF NOT EXISTS image_caption_prompt TEXT;
+UPDATE sys_prompt_setting
+   SET image_caption_prompt = (SELECT image_caption_prompt FROM sys_rag_setting WHERE id = 1)
+ WHERE id = 1
+   AND (image_caption_prompt IS NULL OR image_caption_prompt = '')
+   AND EXISTS (SELECT 1 FROM sys_rag_setting WHERE id = 1 AND image_caption_prompt IS NOT NULL);
