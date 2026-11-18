@@ -454,6 +454,7 @@
                   </div>
                   <div class="space-y-1.5">
                     <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">模型用时</span><span>{{ formatDuration(turnDurationMs) }}</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">工具调用用时</span><span>{{ formatDuration(turnToolMs) }}</span></div>
                     <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">首 token 平均（TTFT）</span><span>{{ formatDuration(turnTtftMs) }}</span></div>
                     <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出速度（TPS）</span><span>{{ lastTps ? `${lastTps} tok/s` : '—' }}</span></div>
                   </div>
@@ -691,6 +692,8 @@ const turnStartedAt = ref(0)
 const turnFirstTokenAt = ref(0)
 const turnDurationMs = ref(0)
 const turnTtftMs = ref(0)
+const turnToolMs = ref(0)
+const toolStartedAt = new Map<string, number>()
 const webSearch = ref(Boolean(userStore.profile?.autoWebSearch))
 const draft = ref<string | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
@@ -907,6 +910,8 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
   turnFirstTokenAt.value = 0
   turnDurationMs.value = 0
   turnTtftMs.value = 0
+  turnToolMs.value = 0
+  toolStartedAt.clear()
   try {
     await chatApi.stream({
       modelId: currentModel.value.id,
@@ -949,6 +954,8 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
       },
       onReasoning: (delta) => {
         status.value = 'streaming'
+        if (!turnFirstTokenAt.value)
+          turnFirstTokenAt.value = performance.now()
         let part = assistant.parts.find(item => item.type === 'reasoning') as Extract<ChatPart, { type: 'reasoning' }> | undefined
         if (!part) {
           part = { type: 'reasoning', text: '', state: 'streaming' }
@@ -969,6 +976,15 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
       },
       onTool: (data) => {
         status.value = 'streaming'
+        if (data.id && data.status === 'running') {
+          toolStartedAt.set(data.id, performance.now())
+        } else if (data.id && data.status === 'done') {
+          const started = toolStartedAt.get(data.id)
+          if (started) {
+            turnToolMs.value += Math.round(performance.now() - started)
+            toolStartedAt.delete(data.id)
+          }
+        }
         let part = assistant.parts.find(item => item.type === 'tool-runCommand' && item.toolCallId === data.id) as ToolPart | undefined
         if (!part) {
           part = {
