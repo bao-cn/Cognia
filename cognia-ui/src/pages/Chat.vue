@@ -259,7 +259,7 @@
                 v-if="trayVisible"
                 ref="trayRef"
                 data-composer-tray
-                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 rounded-t-2xl border border-b-0 bg-background/80 px-3 pb-7 pt-3 shadow-[0_-10px_30px_-16px_rgba(0,0,0,0.28)] backdrop-blur-xl backdrop-saturate-150 dark:bg-background/75">
+                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 composer-tray-surface rounded-t-2xl border border-b-0 px-3 pb-7 pt-3 shadow-[0_-10px_30px_-16px_rgba(0,0,0,0.28)]">
                 <div class="flex max-h-[32vh] flex-col gap-2 overflow-y-auto">
                   <div v-if="temporary || (webSearchEnabled && capabilities.webSearchAvailable)" class="flex flex-wrap items-center gap-2">
                     <Badge v-if="temporary" variant="outline" class="gap-1"><SparklesIcon class="size-3" />临时对话 · 关闭后不保存</Badge>
@@ -1544,6 +1544,14 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.composer-tray-surface {
+  background-color: color-mix(in oklab, var(--background) 36%, transparent);
+  -webkit-backdrop-filter: blur(44px) saturate(185%) brightness(1.04);
+  backdrop-filter: blur(44px) saturate(185%) brightness(1.04);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--foreground) 8%, transparent),
+    0 -10px 30px -16px rgba(0, 0, 0, 0.35);
+}
 .composer-tray-enter-active,
 .composer-tray-leave-active {
   transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
