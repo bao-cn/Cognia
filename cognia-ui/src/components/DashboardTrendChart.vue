@@ -61,8 +61,26 @@ const chartData = computed(() => props.data.map(item => ({
 })))
 
 const yDomain = computed<[number, number]>(() => {
-  const max = Math.max(1, ...props.data.flatMap(item => props.series.map(series => item[series.key])))
+  const max = Math.max(1, ...props.data.map(item => {
+    return props.series.reduce((sum, series) => sum + Number(item[series.key] ?? 0), 0)
+  }))
   return [0, Math.max(4, Math.ceil(max * 1.15))]
+})
+
+const areaYAccessors = computed(() =>
+  props.series.map(item => (d: any) => Number(d[item.key] ?? 0))
+)
+
+const lineYAccessors = computed(() => {
+  return props.series.map((_, index) => {
+    return (d: any) => {
+      let sum = 0
+      for (let i = 0; i <= index; i++) {
+        sum += Number(d[props.series[i].key] ?? 0)
+      }
+      return sum
+    }
+  })
 })
 
 const svgDefs = computed(() => props.series.map((item, index) => `
@@ -75,7 +93,6 @@ const svgDefs = computed(() => props.series.map((item, index) => `
 const areaColors = computed(() => props.series.map(item => `url(#fill-${uid}-${item.key})`))
 const lineColors = computed(() => colors.value)
 const x = (d: any) => d.dateValue
-const yAccessors = computed(() => props.series.map(item => (d: any) => Number(d[item.key] ?? 0)))
 
 function formatDate(value: number | Date) {
   const date = new Date(value)
@@ -85,48 +102,18 @@ function formatDate(value: number | Date) {
 
 <template>
   <ChartContainer :config="chartConfig" class="w-full" :cursor="true" :style="{ height: `${height}px` }">
-    <VisXYContainer
-      :data="chartData"
-      :svg-defs="svgDefs"
-      :margin="{ left: -20, right: 12, top: 12, bottom: 0 }"
-      :y-domain="yDomain"
-    >
-      <VisArea
-        :x="x"
-        :y="yAccessors"
-        :color="areaColors"
-        :opacity="1"
-        :stacked="false"
-      />
-      <VisLine
-        :x="x"
-        :y="yAccessors"
-        :color="lineColors"
-        :line-width="1.5"
-      />
-      <VisAxis
-        type="x"
-        :x="x"
-        :tick-line="false"
-        :domain-line="false"
-        :grid-line="false"
-        :num-ticks="6"
-        :tick-format="formatDate"
-      />
-      <VisAxis
-        type="y"
-        :num-ticks="4"
-        :tick-line="false"
-        :domain-line="false"
-        :tick-format="(value: number) => Math.round(value).toString()"
-      />
+    <VisXYContainer :data="chartData" :svg-defs="svgDefs" :margin="{ left: -20, right: 12, top: 12, bottom: 0 }"
+      :y-domain="yDomain">
+      <VisArea :x="x" :y="areaYAccessors" :color="areaColors" :opacity="1" />
+      <VisLine :x="x" :y="lineYAccessors" :color="lineColors" :line-width="1.5" />
+      <VisAxis type="x" :x="x" :tick-line="false" :domain-line="false" :grid-line="false" :num-ticks="6"
+        :tick-format="formatDate" />
+      <VisAxis type="y" :num-ticks="4" :tick-line="false" :domain-line="false"
+        :tick-format="(value: number) => Math.round(value).toString()" />
       <ChartTooltip />
-      <ChartCrosshair
-        :template="componentToString(chartConfig, ChartTooltipContent, {
-          labelFormatter: formatDate,
-        })"
-        :color="lineColors"
-      />
+      <ChartCrosshair :template="componentToString(chartConfig, ChartTooltipContent, {
+        labelFormatter: formatDate,
+      })" :color="lineColors" />
     </VisXYContainer>
     <ChartLegendContent />
   </ChartContainer>
