@@ -944,6 +944,10 @@ export interface ModelConfig {
   dimension?: number
   contextWindow?: number
   maxOutputTokens?: number
+  billingMode: 'TOKEN' | 'ROUND'
+  inputCreditsPerMillion: number
+  outputCreditsPerMillion: number
+  creditsPerRound: number
   updatedAt?: string
 }
 
@@ -964,6 +968,10 @@ export interface SaveModelConfigPayload {
   dimension?: number
   contextWindow?: number
   maxOutputTokens?: number
+  billingMode?: 'TOKEN' | 'ROUND'
+  inputCreditsPerMillion?: number
+  outputCreditsPerMillion?: number
+  creditsPerRound?: number
 }
 
 export interface PublicChatModel {

@@ -890,7 +890,7 @@ Authorization: Bearer <accessToken>
 | `POST` | `/admin/models/providers/{id}/fetch` | `model:update` | 拉取该供应商的 `/models` |
 | `POST` | `/admin/models/providers/fetch` | `model:update` | 使用临时端点与 Key 拉取模型 |
 | `GET` | `/admin/models/configs` | `model:read` | 已配置模型列表 |
-| `POST` | `/admin/models/configs` | `model:update` | 新增/更新模型配置（类型、可见性、工具、思考、推理强度、`extra_body`、`contextWindow` 最大上下文长度） |
+| `POST` | `/admin/models/configs` | `model:update` | 新增/更新模型配置及计费（类型、可见性、工具、思考、推理强度、`extra_body`、上下文与计费字段） |
 | `DELETE` | `/admin/models/configs/{id}` | `model:update` | 删除模型配置 |
 | `GET` | `/admin/models/available` | `model:read` | 管理端可选模型 |
 | `GET` | `/admin/rag/settings` | `rag:read` 或 `settings:read` | 读取 Chat/Embedding/Rerank、切片/召回、上下文压缩、对话标题生成与两层缓存参数 |
@@ -902,6 +902,25 @@ Authorization: Bearer <accessToken>
 | `PUT` | `/admin/prompts/settings` | `rag:update` 或 `settings:update` | 保存系统提示词、RAG/过期/工具规则 |
 | `GET` | `/admin/prompts/defaults` | `rag:read` 或 `settings:read` | 默认提示词 |
 | `POST` | `/admin/prompts/reset` | `rag:update` 或 `settings:update` | 恢复默认提示词 |
+
+模型计费字段可随 `POST /admin/models/configs` 一并保存：
+
+```json
+{
+  "providerId": 1,
+  "modelId": "gpt-4o",
+  "modelType": "CHAT",
+  "billingMode": "TOKEN",
+  "inputCreditsPerMillion": 2500000,
+  "outputCreditsPerMillion": 10000000,
+  "creditsPerRound": 1000
+}
+```
+
+- `billingMode` 支持 `TOKEN`（按实际输入/输出 Token 计费）和 `ROUND`（按一轮对话计费）。
+- `TOKEN` 模式按 `(inputTokens × inputCreditsPerMillion + outputTokens × outputCreditsPerMillion) / 1,000,000` 向上取整；未配置费率的旧模型保持输入、输出各 1,000,000 积分/百万 Token 的默认值。
+- `ROUND` 模式每次用户提问与助手回复扣除一次 `creditsPerRound`；同一轮中工具调用触发的额外模型请求不重复计轮。
+- 模型配置页可从 Models.dev 导入精确匹配的聊天模型价格。其价格单位为 USD/百万 Token，按 `1 USD = 1,000,000 积分` 换算；导入前会列出匹配数量并要求确认，未匹配或存在供应商歧义的模型会跳过。
 
 ### 5.9.8 对话与流式输出
 

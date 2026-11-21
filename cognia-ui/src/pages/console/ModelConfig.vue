@@ -143,11 +143,17 @@
       <TabsContent value="models">
         <fieldset :disabled="!canUpdate" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
           <section class="rounded-xl border bg-card">
-            <header class="flex flex-col gap-1 border-b px-4 py-3">
-              <h2 class="text-sm font-semibold">已配置模型</h2>
-              <p class="text-xs text-muted-foreground">
-                「对用户可见」决定普通用户能否在聊天中选择该模型；向量/重排模型由检索参数配置引用。
-              </p>
+            <header class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+              <div class="flex flex-col gap-1">
+                <h2 class="text-sm font-semibold">已配置模型</h2>
+                <p class="text-xs text-muted-foreground">
+                  「对用户可见」决定普通用户能否在聊天中选择该模型；Models.dev 的价格以 USD/百万 Token 提供，并按 1 USD = 1,000,000 积分换算。
+                </p>
+              </div>
+              <Button variant="outline" size="sm" :disabled="saving || importingPrices" @click="importModelsDevPrices">
+                <Spinner v-if="importingPrices" class="mr-1 size-4" />
+                <IconCloudDownload v-else class="mr-1 size-4" />从 Models.dev 导入价格
+              </Button>
             </header>
             <div class="overflow-x-auto">
               <Table>
@@ -156,6 +162,7 @@
                     <TableHead>模型</TableHead>
                     <TableHead>供应商</TableHead>
                     <TableHead>类型</TableHead>
+                    <TableHead>计费</TableHead>
                     <TableHead>启用</TableHead>
                     <TableHead>用户可见</TableHead>
                     <TableHead>工具</TableHead>
@@ -166,7 +173,7 @@
                 </TableHeader>
                 <TableBody>
                   <TableRow v-if="configs.length === 0">
-                    <TableCell :colspan="9" class="h-24 text-center text-sm text-muted-foreground">
+                    <TableCell :colspan="10" class="h-24 text-center text-sm text-muted-foreground">
                       暂无模型，先在供应商中拉取模型。
                     </TableCell>
                   </TableRow>
@@ -179,6 +186,11 @@
                     </TableCell>
                     <TableCell>{{ model.providerName }}</TableCell>
                     <TableCell><Badge variant="outline">{{ typeLabel(model.modelType) }}</Badge></TableCell>
+                    <TableCell class="whitespace-nowrap text-xs">
+                      {{ model.modelType !== 'CHAT' ? '—' : model.billingMode === 'ROUND'
+                        ? `每轮 ${model.creditsPerRound} 积分`
+                        : `输入/输出 ${model.inputCreditsPerMillion}/${model.outputCreditsPerMillion} 积分/百万 Token` }}
+                    </TableCell>
                     <TableCell><Switch :model-value="model.enabled" @update:model-value="toggle(model, 'enabled', $event)" /></TableCell>
                     <TableCell><Switch :model-value="model.visible" @update:model-value="toggle(model, 'visible', $event)" /></TableCell>
                     <TableCell><Switch :model-value="model.supportsTools" @update:model-value="toggle(model, 'supportsTools', $event)" /></TableCell>
@@ -353,6 +365,33 @@
               <p class="text-xs text-muted-foreground">单次回复的输出上限，留空使用默认 4096。</p>
             </div>
           </div>
+          <div v-if="modelForm.modelType === 'CHAT'" class="grid gap-3 rounded-lg border p-4">
+            <div class="grid gap-2">
+              <Label>计费模式</Label>
+              <Select v-model="modelForm.billingMode">
+                <SelectTrigger class="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TOKEN">按输入 / 输出 Token 计费</SelectItem>
+                  <SelectItem value="ROUND">按对话轮次计费</SelectItem>
+                </SelectContent>
+              </Select>
+              <p class="text-xs text-muted-foreground">按轮模式下，每次用户提问与助手回复计一轮；工具调用过程中的额外模型请求不单独计费。</p>
+            </div>
+            <div v-if="modelForm.billingMode === 'TOKEN'" class="grid grid-cols-2 gap-3">
+              <div class="grid gap-2">
+                <Label for="model-input-price">输入额度 / 百万 Token</Label>
+                <Input id="model-input-price" v-model.number="modelForm.inputCreditsPerMillion" type="number" min="0" max="1000000000000" step="1" />
+              </div>
+              <div class="grid gap-2">
+                <Label for="model-output-price">输出额度 / 百万 Token</Label>
+                <Input id="model-output-price" v-model.number="modelForm.outputCreditsPerMillion" type="number" min="0" max="1000000000000" step="1" />
+              </div>
+            </div>
+            <div v-else class="grid gap-2">
+              <Label for="model-round-price">每轮额度</Label>
+              <Input id="model-round-price" v-model.number="modelForm.creditsPerRound" type="number" min="1" max="1000000000000" step="1" />
+            </div>
+          </div>
           <div class="grid gap-2">
             <Label>输入类型</Label>
             <div class="flex flex-wrap items-center gap-6">
@@ -500,6 +539,7 @@ const canUpdate = computed(() => userStore.hasPermission('model:update') || user
 
 const loading = ref(true)
 const saving = ref(false)
+const importingPrices = ref(false)
 const error = ref('')
 const activeTab = ref('providers')
 const providers = ref<ModelProvider[]>([])
@@ -543,6 +583,10 @@ const modelForm = reactive({
   displayName: '', modelType: 'CHAT' as ModelType, dimension: undefined as number | undefined,
   contextWindow: 32000 as number | undefined,
   maxOutputTokens: 4096 as number | undefined,
+  billingMode: 'TOKEN' as 'TOKEN' | 'ROUND',
+  inputCreditsPerMillion: 1_000_000,
+  outputCreditsPerMillion: 1_000_000,
+  creditsPerRound: 0,
   supportsText: true,
   reasoningEffort: '', extraBody: '', enabled: true, visible: true, supportsTools: false, thinkingEnabled: false, supportsVision: false,
   reasoningLevels: [] as ReasoningLevel[],
@@ -624,6 +668,147 @@ async function loadAll() {
     error.value = err?.message || '加载模型配置失败'
   } finally {
     loading.value = false
+  }
+}
+
+interface ModelsDevPriceMatch {
+  model: ModelConfig
+  sourceProvider: string
+  inputCreditsPerMillion: number
+  outputCreditsPerMillion: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizedProviderName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function matchModelsDevProvider(provider: ModelProvider, catalogProviderId: string, catalogName: string): boolean {
+  const vendorAliases: Record<string, string[]> = {
+    OPENAI: ['openai'],
+    DEEPSEEK: ['deepseek'],
+    QWEN: ['alibaba', 'qwen'],
+    OLLAMA: ['ollama'],
+  }
+  const configured = [
+    provider.name,
+    provider.vendor ?? '',
+    ...(vendorAliases[provider.vendor ?? ''] ?? []),
+  ].map(normalizedProviderName).filter(Boolean)
+  const catalog = [catalogProviderId, catalogName].map(normalizedProviderName).filter(Boolean)
+  return configured.some(name => catalog.includes(name))
+}
+
+function findModelsDevPriceMatches(catalog: unknown): ModelsDevPriceMatch[] {
+  if (!isRecord(catalog))
+    return []
+  const catalogModels: Array<{
+    id: string
+    providerId: string
+    providerName: string
+    input: number
+    output: number
+  }> = []
+  for (const [providerId, providerValue] of Object.entries(catalog)) {
+    if (!isRecord(providerValue) || !isRecord(providerValue.models))
+      continue
+    const providerName = typeof providerValue.name === 'string' ? providerValue.name : providerId
+    for (const [modelKey, modelValue] of Object.entries(providerValue.models)) {
+      if (!isRecord(modelValue) || !isRecord(modelValue.cost))
+        continue
+      const input = modelValue.cost.input
+      const output = modelValue.cost.output
+      if (typeof input !== 'number' || !Number.isFinite(input) || input < 0
+        || typeof output !== 'number' || !Number.isFinite(output) || output < 0)
+        continue
+      const inputCreditsPerMillion = Math.round(input * 1_000_000)
+      const outputCreditsPerMillion = Math.round(output * 1_000_000)
+      if (inputCreditsPerMillion > 1_000_000_000_000 || outputCreditsPerMillion > 1_000_000_000_000)
+        continue
+      catalogModels.push({
+        id: typeof modelValue.id === 'string' ? modelValue.id : modelKey,
+        providerId,
+        providerName,
+        input: inputCreditsPerMillion,
+        output: outputCreditsPerMillion,
+      })
+    }
+  }
+
+  const matches: ModelsDevPriceMatch[] = []
+  for (const model of configs.value.filter(item => item.modelType === 'CHAT')) {
+    const exactMatches = catalogModels.filter(item => item.id.toLowerCase() === model.modelId.toLowerCase())
+    const provider = providers.value.find(item => item.id === model.providerId)
+    if (!provider)
+      continue
+    const providerMatches = exactMatches.filter(item =>
+      matchModelsDevProvider(provider, item.providerId, item.providerName))
+    const match = providerMatches.length === 1
+      ? providerMatches[0]
+      : providerMatches.length === 0 && exactMatches.length === 1 ? exactMatches[0] : undefined
+    if (match) {
+      matches.push({
+        model,
+        sourceProvider: match.providerName,
+        inputCreditsPerMillion: match.input,
+        outputCreditsPerMillion: match.output,
+      })
+    }
+  }
+  return matches
+}
+
+async function importModelsDevPrices() {
+  importingPrices.value = true
+  try {
+    const response = await fetch('https://models.dev/api.json?type=all')
+    if (!response.ok)
+      throw new Error(`Models.dev 请求失败（HTTP ${response.status}）`)
+    const matches = findModelsDevPriceMatches(await response.json())
+    if (!matches.length) {
+      toast.error('没有找到供应商和模型 ID 唯一匹配且包含输入、输出价格的聊天模型')
+      return
+    }
+    const preview = matches.slice(0, 5)
+      .map(match => `${match.model.modelId} ← ${match.sourceProvider}`)
+      .join('\n')
+    const more = matches.length > 5 ? `\n以及其他 ${matches.length - 5} 个模型` : ''
+    const confirmed = window.confirm(
+      `找到 ${matches.length} 个可匹配的聊天模型：\n${preview}${more}\n\n继续后将覆盖这些模型的输入/输出计费价格，并切换为按 Token 计费。`,
+    )
+    if (!confirmed)
+      return
+    saving.value = true
+    let applied = 0
+    try {
+      for (const match of matches) {
+        await modelApi.saveConfig({
+          providerId: match.model.providerId,
+          modelId: match.model.modelId,
+          modelType: match.model.modelType,
+          billingMode: 'TOKEN',
+          inputCreditsPerMillion: match.inputCreditsPerMillion,
+          outputCreditsPerMillion: match.outputCreditsPerMillion,
+          creditsPerRound: match.model.creditsPerRound,
+        })
+        applied++
+      }
+      toast.success(`已从 Models.dev 更新 ${applied} 个模型的计费价格`)
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : '请求失败'
+      toast.error(`价格导入中断，已更新 ${applied}/${matches.length} 个模型：${message}`)
+    }
+    if (applied > 0)
+      await loadAll()
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : '请求失败'
+    toast.error(`读取 Models.dev 价格失败：${message}`)
+  } finally {
+    saving.value = false
+    importingPrices.value = false
   }
 }
 
@@ -817,6 +1002,10 @@ function openModelDialog(model: ModelConfig) {
   modelForm.dimension = model.dimension
   modelForm.contextWindow = model.contextWindow ?? 32000
   modelForm.maxOutputTokens = model.maxOutputTokens ?? 4096
+  modelForm.billingMode = model.billingMode ?? 'TOKEN'
+  modelForm.inputCreditsPerMillion = model.inputCreditsPerMillion ?? 1_000_000
+  modelForm.outputCreditsPerMillion = model.outputCreditsPerMillion ?? 1_000_000
+  modelForm.creditsPerRound = model.creditsPerRound ?? 0
   modelForm.supportsText = model.supportsText ?? true
   modelForm.reasoningEffort = model.reasoningEffort ?? ''
   modelForm.extraBody = model.extraBody ?? ''
@@ -855,6 +1044,10 @@ async function saveModel() {
       dimension: modelForm.dimension,
       contextWindow: modelForm.contextWindow,
       maxOutputTokens,
+      billingMode: modelForm.billingMode,
+      inputCreditsPerMillion: modelForm.inputCreditsPerMillion,
+      outputCreditsPerMillion: modelForm.outputCreditsPerMillion,
+      creditsPerRound: modelForm.creditsPerRound,
     })
     toast.success('模型已更新')
     modelDialogOpen.value = false

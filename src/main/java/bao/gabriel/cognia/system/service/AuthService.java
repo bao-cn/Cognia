@@ -106,7 +106,8 @@ public class AuthService {
     }
 
     public SendCodeResponse sendLoginCode(LoginCodeSendRequest request, String clientIp) {
-        return verificationCodeService.sendLoginCode(request.account(), clientIp, request.turnstileToken());
+        return verificationCodeService.sendLoginCode(
+                request.account(), clientIp, request.captcha(), request.turnstileToken());
     }
 
     public LoginResponse loginWithEmailCode(LoginEmailCodeRequest request, String clientIp, String userAgent) {

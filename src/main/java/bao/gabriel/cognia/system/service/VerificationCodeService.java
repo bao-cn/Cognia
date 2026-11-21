@@ -133,7 +133,8 @@ public class VerificationCodeService {
                 properties.getResendInterval().toSeconds(), devCode);
     }
 
-    public SendCodeResponse sendLoginCode(String rawAccount, String clientIp, String turnstileToken) {
+    public SendCodeResponse sendLoginCode(String rawAccount, String clientIp,
+                                          CaptchaSubmission captcha, String turnstileToken) {
         if (!settingService.isEmailCodeLoginEnabled()) {
             throw new BusinessException(ResultCode.FORBIDDEN, "邮箱验证码登录未启用");
         }
@@ -141,7 +142,8 @@ public class VerificationCodeService {
         if (user == null || user.getEmail() == null || user.getEmail().isBlank() || !user.isEnabled()) {
             throw BusinessException.badRequest("该账户暂不支持邮箱验证码登录");
         }
-        turnstileService.verify(turnstileToken, clientIp, settingService.isLoginCaptchaEnabled());
+        captchaService.verify(captcha, turnstileToken, clientIp,
+                settingService.isLoginCaptchaEnabled());
         String email = normalize(user.getEmail());
 
         if (clientIp != null && !clientIp.isBlank()) {

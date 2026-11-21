@@ -1,11 +1,8 @@
 import { http } from './http'
 import type {
   AvailabilityResult,
-<<<<<<< Updated upstream
-  LoginEmailCodePayload,
-=======
   CaptchaSubmission,
->>>>>>> Stashed changes
+  LoginEmailCodePayload,
   LoginOptions,
   LoginPayload,
   LoginResult,
@@ -40,8 +37,8 @@ export const authApi = {
   loginTwoFactor(payload: LoginTwoFactorPayload): Promise<LoginResult> {
     return http.post<LoginResult>('/auth/login/2fa', payload)
   },
-  sendLoginCode(account: string, turnstileToken?: string): Promise<SendCodeResult> {
-    return http.post<SendCodeResult>('/auth/login/code', { account, turnstileToken })
+  sendLoginCode(account: string, captcha?: CaptchaSubmission): Promise<SendCodeResult> {
+    return http.post<SendCodeResult>('/auth/login/code', { account, captcha })
   },
   loginEmailCode(payload: LoginEmailCodePayload): Promise<LoginResult> {
     return http.post<LoginResult>('/auth/login/email-code', payload)

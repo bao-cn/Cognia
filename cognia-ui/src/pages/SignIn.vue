@@ -60,19 +60,13 @@ const loginMode = ref<'password' | 'twofa' | 'email'>('password')
 const loginOptions = ref<LoginOptions | null>(null)
 const checkingAccount = ref(false)
 const submitting = ref(false)
-<<<<<<< Updated upstream
-const turnstileToken = ref('')
-const turnstileError = ref('')
-const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+const captchaSolution = ref<CaptchaSolution | null>(null)
+const captchaError = ref('')
+const captchaRef = ref<InstanceType<typeof CaptchaWidget> | null>(null)
 const emailCodeSent = ref(false)
 const emailCodeSending = ref(false)
 const emailCodeCooldown = ref(0)
 let cooldownTimer: ReturnType<typeof setInterval> | undefined
-=======
-const captchaSolution = ref<CaptchaSolution | null>(null)
-const captchaError = ref('')
-const captchaRef = ref<InstanceType<typeof CaptchaWidget> | null>(null)
->>>>>>> Stashed changes
 
 const oauthProviders = ref<PublicOAuthProvider[]>([])
 
@@ -100,12 +94,11 @@ const canSubmit = computed(() => {
   if (loginStep.value !== 2) return false
   if (loginMode.value === 'password' && !form.password) return false
   if (loginMode.value === 'twofa' && form.twoFactorCode.length !== 6) return false
-<<<<<<< Updated upstream
   if (loginMode.value === 'email' && (!emailCodeSent.value || form.emailCode.length !== 6)) return false
-  return !submitting.value && (!loginCaptchaRequired.value || Boolean(turnstileToken.value))
-=======
-  return !submitting.value && (!loginCaptchaRequired.value || Boolean(captchaSolution.value))
->>>>>>> Stashed changes
+  // Email-code sign-in consumes the challenge when the code is sent, so only
+  // password / two-factor submissions need a fresh solution.
+  const captchaGate = loginCaptchaRequired.value && loginMode.value !== 'email'
+  return !submitting.value && (!captchaGate || Boolean(captchaSolution.value))
 })
 
 async function nextFromAccount(): Promise<void> {
@@ -118,11 +111,15 @@ async function nextFromAccount(): Promise<void> {
   try {
     const options = await authApi.loginOptions(form.account.trim())
     loginOptions.value = options
-    if (!options.hasPassword && !options.twoFactorEnabled) {
+    if (!options.hasPassword && !options.twoFactorEnabled && !options.emailCodeLoginEnabled) {
       errors.account = '该账户未设置密码，请使用第三方登录或联系管理员'
       return
     }
-    loginMode.value = options.hasPassword ? 'password' : 'twofa'
+    loginMode.value = options.hasPassword
+      ? 'password'
+      : options.twoFactorEnabled
+        ? 'twofa'
+        : 'email'
     form.twoFactorCode = ''
     form.password = ''
     loginStep.value = 2
@@ -141,13 +138,10 @@ function backToAccount(): void {
   errors.emailCode = undefined
   form.password = ''
   form.twoFactorCode = ''
-<<<<<<< Updated upstream
   form.emailCode = ''
   emailCodeSent.value = false
   stopCooldown()
-=======
   captchaSolution.value = null
->>>>>>> Stashed changes
 }
 
 function validate(): boolean {
@@ -169,7 +163,6 @@ function validate(): boolean {
   return true
 }
 
-<<<<<<< Updated upstream
 function stopCooldown(): void {
   if (cooldownTimer) {
     clearInterval(cooldownTimer)
@@ -178,42 +171,44 @@ function stopCooldown(): void {
   emailCodeCooldown.value = 0
 }
 
+function startCooldown(): void {
+  stopCooldown()
+  emailCodeCooldown.value = 60
+  cooldownTimer = setInterval(() => {
+    emailCodeCooldown.value -= 1
+    if (emailCodeCooldown.value <= 0) stopCooldown()
+  }, 1000)
+}
+
 async function sendEmailCode(): Promise<void> {
   if (emailCodeSending.value || emailCodeCooldown.value > 0) return
-  if (loginCaptchaRequired.value && !turnstileToken.value) {
+  if (loginCaptchaRequired.value && !captchaSolution.value) {
     toast.warning('请先完成人机验证')
     return
   }
   emailCodeSending.value = true
   try {
-    await authApi.sendLoginCode(form.account.trim(), loginCaptchaRequired.value ? turnstileToken.value : undefined)
+    await authApi.sendLoginCode(
+      form.account.trim(),
+      loginCaptchaRequired.value ? toCaptchaSubmission(captchaSolution.value) : undefined,
+    )
     emailCodeSent.value = true
-    emailCodeCooldown.value = 60
-    stopCooldown()
-    emailCodeCooldown.value = 60
-    cooldownTimer = setInterval(() => {
-      emailCodeCooldown.value -= 1
-      if (emailCodeCooldown.value <= 0) stopCooldown()
-    }, 1000)
+    startCooldown()
     toast.success('验证码已发送到账户绑定邮箱')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '验证码发送失败')
-    resetTurnstile()
   } finally {
     emailCodeSending.value = false
+    // The challenge is single-use, whether the send succeeded or not.
+    resetCaptcha()
   }
 }
 
 onUnmounted(stopCooldown)
 
-function handleTurnstileVerified(token: string): void {
-  turnstileToken.value = token
-  turnstileError.value = ''
-=======
 function handleCaptchaVerified(solution: CaptchaSolution): void {
   captchaSolution.value = solution
   captchaError.value = ''
->>>>>>> Stashed changes
 }
 
 function handleCaptchaExpired(): void {
@@ -240,15 +235,14 @@ function resolveRedirect(): string {
 
 async function handleSubmit(): Promise<void> {
   if (!validate()) return
-  if (loginCaptchaRequired.value && !captchaSolution.value) {
+  const captchaGate = loginCaptchaRequired.value && loginMode.value !== 'email'
+  if (captchaGate && !captchaSolution.value) {
     toast.warning('请先完成人机验证')
     return
   }
   submitting.value = true
   try {
-    const captcha = loginCaptchaRequired.value
-      ? toCaptchaSubmission(captchaSolution.value)
-      : undefined
+    const captcha = captchaGate ? toCaptchaSubmission(captchaSolution.value) : undefined
     const user = loginMode.value === 'twofa'
       ? await userStore.loginTwoFactor({
           account: form.account.trim(),
@@ -256,28 +250,18 @@ async function handleSubmit(): Promise<void> {
           captcha,
           rememberMe: form.rememberMe,
         })
-<<<<<<< Updated upstream
       : loginMode.value === 'email'
         ? await userStore.loginEmailCode({
             account: form.account.trim(),
             code: form.emailCode,
-            turnstileToken: loginCaptchaRequired.value ? turnstileToken.value : undefined,
             rememberMe: form.rememberMe,
           })
         : await userStore.login({
             account: form.account.trim(),
             password: form.password,
-            turnstileToken: loginCaptchaRequired.value ? turnstileToken.value : undefined,
+            captcha,
             rememberMe: form.rememberMe,
           })
-=======
-      : await userStore.login({
-          account: form.account.trim(),
-          password: form.password,
-          captcha,
-          rememberMe: form.rememberMe,
-        })
->>>>>>> Stashed changes
     toast.success(`欢迎回来，${user.nickname || user.username}`)
     await router.replace(resolveRedirect())
   } catch (error) {
@@ -390,7 +374,7 @@ async function handleSubmit(): Promise<void> {
               <FieldLabel for="login-email-code">邮箱验证码</FieldLabel>
               <div class="flex gap-2">
                 <Input id="login-email-code" v-model="form.emailCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位验证码" />
-                <Button type="button" variant="outline" class="shrink-0" :disabled="emailCodeSending || emailCodeCooldown > 0" @click="sendEmailCode">
+                <Button type="button" variant="outline" class="shrink-0" :disabled="emailCodeSending || emailCodeCooldown > 0 || (loginCaptchaRequired && !captchaSolution)" @click="sendEmailCode">
                   <Spinner v-if="emailCodeSending" class="mr-1.5" />
                   {{ emailCodeCooldown > 0 ? `${emailCodeCooldown}s` : '发送验证码' }}
                 </Button>

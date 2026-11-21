@@ -37,15 +37,10 @@ public interface SiteSettingService {
 
     boolean isTwoFactorEnabled();
 
-<<<<<<< Updated upstream
     boolean isSmtpEnabled();
 
     boolean isEmailCodeLoginEnabled();
 
-    boolean isTurnstileConfigured();
-
-=======
->>>>>>> Stashed changes
     boolean isRegistrationEmailAllowed(String email);
 
     ZoneId getZoneId();
