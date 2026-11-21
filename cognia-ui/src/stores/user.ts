@@ -77,6 +77,19 @@ export const useUserStore = defineStore('user', {
       }
     },
 
+    async loginEmailCode(payload: import('@/types/api').LoginEmailCodePayload): Promise<UserProfile> {
+      this.loading = true
+      try {
+        const result: LoginResult = await authApi.loginEmailCode(payload)
+        this.applyTokens(result.accessToken, result.refreshToken)
+        this.setProfile(result.user)
+        this.initialized = true
+        return result.user
+      } finally {
+        this.loading = false
+      }
+    },
+
     async register(payload: RegisterPayload): Promise<UserProfile> {
       return authApi.register(payload)
     },

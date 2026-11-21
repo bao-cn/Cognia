@@ -67,7 +67,7 @@
           <ColorfulIcon :icon="IconShieldCheck" color="#22C55E" class="size-6" />
           <span class="text-sm font-medium">{{ $t('settings.account.2fa') }}</span>
           <div class="flex-1"></div>
-          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="openSecurity('twofa')">{{ userStore.profile?.twoFactorEnabled ? '管理' : '开启' }}</Button>
+          <Button variant="ghost" class="h-8 text-blue-500 hover:text-blue-600" @click="handleTwoFactor">{{ userStore.profile?.twoFactorEnabled ? '管理' : '开启' }}</Button>
         </div>
         <div class="border-t border-border"></div>
         <button type="button" class="flex h-12 w-full items-center gap-2 px-3 text-left text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950/20" @click="openSecurity('delete')">
@@ -390,12 +390,14 @@ import { useRouter } from 'vue-router'
 import type { AcceptableValue } from 'reka-ui'
 import { toast } from 'vue-sonner'
 import { useUserStore } from '@/stores/user'
+import { useSiteStore } from '@/stores/site'
 import { AVATAR_OPTIONS, avatarPath, avatarThumbnailFromUrl, avatarThumbPath } from '@/lib/avatars'
 import { userApi } from '@/api'
 import { oauthApi, type UserOAuthAccount } from '@/api/oauth'
 
 const router = useRouter()
 const userStore = useUserStore()
+const siteStore = useSiteStore()
 const configStore = useConfigStore()
 
 const displayName = computed(() => userStore.displayName)
@@ -586,6 +588,14 @@ async function confirmUnlink() {
 onMounted(loadOAuthAccounts)
 const autoWebSearch = computed(() => Boolean(userStore.profile?.autoWebSearch))
 const savingPreference = ref(false)
+
+function handleTwoFactor() {
+  if (!siteStore.twoFactorEnabled) {
+    toast.info('两步验证功能未启用')
+    return
+  }
+  openSecurity('twofa')
+}
 
 function openSecurity(mode: typeof securityMode.value) {
   securityMode.value = mode

@@ -42,6 +42,11 @@ public class VerificationCodeService {
     private static final String ATTEMPT_KEY = "auth:verify:register:attempt:";
     private static final String DAILY_KEY = "auth:verify:register:daily:";
     private static final String IP_KEY = "auth:verify:ip:";
+    private static final String LOGIN_CODE_KEY = "auth:verify:login:code:";
+    private static final String LOGIN_RATE_KEY = "auth:verify:login:rate:";
+    private static final String LOGIN_ATTEMPT_KEY = "auth:verify:login:attempt:";
+    private static final String LOGIN_DAILY_KEY = "auth:verify:login:daily:";
+    private static final String LOGIN_IP_KEY = "auth:verify:login:ip:";
     private static final String EMAIL_CHANGE_CODE_KEY = "auth:verify:email-change:code:";
     private static final String EMAIL_CHANGE_RATE_KEY = "auth:verify:email-change:rate:";
     private static final String EMAIL_CHANGE_ATTEMPT_KEY = "auth:verify:email-change:attempt:";
@@ -123,6 +128,104 @@ public class VerificationCodeService {
         String devCode = mailProperties.isExposeCode() ? code : null;
         return new SendCodeResponse("验证码已发送，请注意查收", properties.getTtl().toSeconds(),
                 properties.getResendInterval().toSeconds(), devCode);
+    }
+
+    public SendCodeResponse sendLoginCode(String rawAccount, String clientIp, String turnstileToken) {
+        if (!settingService.isEmailCodeLoginEnabled()) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "邮箱验证码登录未启用");
+        }
+        User user = findLoginUser(rawAccount);
+        if (user == null || user.getEmail() == null || user.getEmail().isBlank() || !user.isEnabled()) {
+            throw BusinessException.badRequest("该账户暂不支持邮箱验证码登录");
+        }
+        turnstileService.verify(turnstileToken, clientIp, settingService.isLoginCaptchaEnabled());
+        String email = normalize(user.getEmail());
+
+        if (clientIp != null && !clientIp.isBlank()) {
+            String ipKey = LOGIN_IP_KEY + clientIp;
+            Long ipCount = redis.opsForValue().increment(ipKey);
+            if (ipCount != null && ipCount == 1) {
+                redis.expire(ipKey, Duration.ofHours(1));
+            }
+            if (ipCount != null && ipCount > IP_HOURLY_LIMIT) {
+                throw new BusinessException(ResultCode.TOO_MANY_REQUESTS, "请求过于频繁，请稍后重试");
+            }
+        }
+
+        Boolean acquired = redis.opsForValue().setIfAbsent(LOGIN_RATE_KEY + email, "1", properties.getResendInterval());
+        if (!Boolean.TRUE.equals(acquired)) {
+            Long ttl = redis.getExpire(LOGIN_RATE_KEY + email);
+            long wait = ttl == null || ttl < 0 ? properties.getResendInterval().toSeconds() : ttl;
+            throw new BusinessException(ResultCode.TOO_MANY_REQUESTS,
+                    "验证码发送过于频繁，请 " + wait + " 秒后再试");
+        }
+
+        String dailyKey = LOGIN_DAILY_KEY + email + ":" + LocalDate.now();
+        Long dailyCount = redis.opsForValue().increment(dailyKey);
+        if (dailyCount != null && dailyCount == 1) {
+            redis.expire(dailyKey, Duration.ofDays(1));
+        }
+        if (dailyCount != null && dailyCount > properties.getDailyLimit()) {
+            throw new BusinessException(ResultCode.TOO_MANY_REQUESTS, "今日验证码发送次数已达上限");
+        }
+
+        String code = generateCode(properties.getLength());
+        redis.opsForValue().set(LOGIN_CODE_KEY + email, code, properties.getTtl());
+        redis.delete(LOGIN_ATTEMPT_KEY + email);
+        try {
+            emailService.sendLoginCode(email, code, properties.getTtl().toMinutes());
+        } catch (RuntimeException ex) {
+            redis.delete(LOGIN_CODE_KEY + email);
+            throw ex;
+        }
+
+        String devCode = mailProperties.isExposeCode() ? code : null;
+        return new SendCodeResponse("验证码已发送，请注意查收", properties.getTtl().toSeconds(),
+                properties.getResendInterval().toSeconds(), devCode);
+    }
+
+    public User verifyLoginCode(String rawAccount, String code) {
+        if (!settingService.isEmailCodeLoginEnabled()) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "邮箱验证码登录未启用");
+        }
+        User user = findLoginUser(rawAccount);
+        if (user == null || user.getEmail() == null || user.getEmail().isBlank() || !user.isEnabled()) {
+            throw BusinessException.badRequest("该账户暂不支持邮箱验证码登录");
+        }
+        String email = normalize(user.getEmail());
+        String codeKey = LOGIN_CODE_KEY + email;
+        String stored = redis.opsForValue().get(codeKey);
+        if (stored == null) {
+            throw BusinessException.badRequest("验证码已过期，请重新获取");
+        }
+        String attemptKey = LOGIN_ATTEMPT_KEY + email;
+        Long attempts = redis.opsForValue().increment(attemptKey);
+        if (attempts != null && attempts == 1) {
+            redis.expire(attemptKey, properties.getTtl());
+        }
+        if (attempts != null && attempts > properties.getMaxAttempts()) {
+            redis.delete(codeKey);
+            redis.delete(attemptKey);
+            throw new BusinessException(ResultCode.TOO_MANY_REQUESTS, "验证码错误次数过多，请重新获取");
+        }
+        boolean matches = MessageDigest.isEqual(stored.getBytes(StandardCharsets.UTF_8), code.getBytes(StandardCharsets.UTF_8));
+        if (!matches) {
+            long remaining = Math.max(0, properties.getMaxAttempts() - (attempts == null ? 0 : attempts));
+            throw BusinessException.badRequest("验证码不正确，还可尝试 " + remaining + " 次");
+        }
+        redis.delete(codeKey);
+        redis.delete(attemptKey);
+        return user;
+    }
+
+    private User findLoginUser(String rawAccount) {
+        String account = rawAccount == null ? "" : rawAccount.trim();
+        if (account.isEmpty()) {
+            return null;
+        }
+        return userMapper.selectOne(new LambdaQueryWrapper<User>()
+                .and(w -> w.eq(User::getUsername, account).or().eq(User::getEmail, account.toLowerCase(Locale.ROOT)))
+                .last("LIMIT 1"));
     }
 
     public SendCodeResponse sendEmailChangeCode(Long userId, String rawEmail) {

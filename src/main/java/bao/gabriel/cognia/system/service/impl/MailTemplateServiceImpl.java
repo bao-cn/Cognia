@@ -59,6 +59,21 @@ public class MailTemplateServiceImpl implements MailTemplateService {
                     List.of("siteName", "email", "code", "ttlMinutes", "expiresAt", "year")
             ),
             new TemplateDefault(
+                    LOGIN_CODE,
+                    "登录验证码邮件",
+                    "邮箱验证码登录时发送的验证码（HTML）",
+                    "【{{siteName}}】登录验证码",
+                    """
+                    <h1 style="margin:0 0 16px;font-size:22px;line-height:1.35;color:#111827;">登录验证码</h1>
+                    <p style="margin:0 0 16px;">您好！</p>
+                    <p style="margin:0 0 16px;">您正在登录 {{siteName}} 账户，本次验证码为：</p>
+                    <div style="margin:24px 0;padding:16px 20px;background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;text-align:center;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:28px;font-weight:700;letter-spacing:8px;color:#111827;">{{code}}</div>
+                    <p style="margin:0 0 16px;">验证码 {{ttlMinutes}} 分钟内有效（{{expiresAt}} 前）。如非本人操作，请忽略本邮件。</p>
+                    <p style="margin:0;">—— {{siteName}} 团队</p>
+                    """,
+                    List.of("siteName", "email", "code", "ttlMinutes", "expiresAt", "year")
+            ),
+            new TemplateDefault(
                     SMTP_TEST,
                     "SMTP 测试邮件",
                     "控制台发送测试邮件时使用的模板（HTML）",
@@ -105,6 +120,21 @@ public class MailTemplateServiceImpl implements MailTemplateService {
                     <p style="margin:0;">—— {{siteName}}</p>
                     """,
                     List.of("siteName", "channelName", "subject", "content", "year")
+            ),
+            new TemplateDefault(
+                    ISSUE_NOTIFICATION,
+                    "工单通知",
+                    "工单评论、回复、@提及和指派通知（发送给工单相关用户）",
+                    "【{{siteName}}】{{channelName}}工单 #{{issueNumber}}：{{issueTitle}}",
+                    """
+                    <h1 style="margin:0 0 16px;font-size:22px;line-height:1.35;color:#111827;">{{issueTitle}}</h1>
+                    <p style="margin:0 0 12px;color:#6b7280;font-size:13px;">频道「{{channelName}}」 · 工单 #{{issueNumber}}</p>
+                    <p style="margin:0 0 16px;">{{reason}}</p>
+                    <p style="margin:0 0 8px;color:#6b7280;font-size:13px;">{{actorName}} 的评论</p>
+                    <blockquote style="margin:0 0 16px;padding:12px 16px;border-left:3px solid #e5e7eb;background:#f9fafb;white-space:pre-wrap;">{{comment}}</blockquote>
+                    <p style="margin:0;">—— {{siteName}}</p>
+                    """,
+                    List.of("siteName", "channelName", "issueTitle", "issueNumber", "actorName", "reason", "comment", "year")
             )
     );
 

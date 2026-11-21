@@ -1,6 +1,7 @@
 import { http } from './http'
 import type {
   AvailabilityResult,
+  LoginEmailCodePayload,
   LoginOptions,
   LoginPayload,
   LoginResult,
@@ -34,6 +35,12 @@ export const authApi = {
   },
   loginTwoFactor(payload: LoginTwoFactorPayload): Promise<LoginResult> {
     return http.post<LoginResult>('/auth/login/2fa', payload)
+  },
+  sendLoginCode(account: string, turnstileToken?: string): Promise<SendCodeResult> {
+    return http.post<SendCodeResult>('/auth/login/code', { account, turnstileToken })
+  },
+  loginEmailCode(payload: LoginEmailCodePayload): Promise<LoginResult> {
+    return http.post<LoginResult>('/auth/login/email-code', payload)
   },
   verifyRegisterCode(email: string, code: string): Promise<void> {
     return http.post<void>('/auth/register/verify-code', { email, code })

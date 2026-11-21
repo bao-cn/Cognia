@@ -64,6 +64,23 @@ public class DatabaseEmailService implements EmailService {
     }
 
     @Override
+    public void sendLoginCode(String email, String code, long ttlMinutes) {
+        SmtpConfig config = settingService.getSmtpConfig();
+        if (!config.usable()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "邮件服务未启用，无法使用邮箱验证码登录");
+        }
+        RenderedMail mail = mailTemplateService.render(MailTemplateService.LOGIN_CODE, Map.of(
+                "siteName", siteName(),
+                "email", email,
+                "code", code,
+                "ttlMinutes", String.valueOf(ttlMinutes),
+                "expiresAt", settingService.formatDateTime(LocalDateTime.now().plusMinutes(ttlMinutes)),
+                "year", String.valueOf(LocalDate.now().getYear())
+        ));
+        send(config, email, mail.subject(), mail.content());
+    }
+
+    @Override
     public void sendEmailChangeCode(String email, String code, long ttlMinutes) {
         SmtpConfig config = settingService.getSmtpConfig();
         if (!config.usable()) {
@@ -118,6 +135,26 @@ public class DatabaseEmailService implements EmailService {
                 + "</h1><pre style=\"white-space:pre-wrap;font-family:inherit;\">"
                 + HtmlUtils.htmlEscape(message) + "</pre><p>—— " + site + " 运维告警</p>";
         send(config, recipient, "【" + siteName() + "】" + subject, html);
+    }
+
+    @Override
+    public void sendIssueNotification(String recipient, String channelName, String issueTitle, int issueNumber,
+                                      String actorName, String reason, String comment) {
+        SmtpConfig config = settingService.getSmtpConfig();
+        if (!config.usable()) {
+            log.info("Issue notification skipped (SMTP disabled): {} #{} -> {}", channelName, issueNumber, recipient);
+            return;
+        }
+        RenderedMail mail = mailTemplateService.render(MailTemplateService.ISSUE_NOTIFICATION, Map.of(
+                "channelName", channelName == null ? "" : channelName,
+                "issueTitle", issueTitle == null ? "" : issueTitle,
+                "issueNumber", String.valueOf(issueNumber),
+                "actorName", actorName == null ? "" : actorName,
+                "reason", reason == null ? "" : reason,
+                "comment", comment == null ? "" : comment,
+                "year", String.valueOf(LocalDate.now().getYear())
+        ));
+        send(config, recipient, mail.subject(), mail.content());
     }
 
     @Override

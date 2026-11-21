@@ -5,6 +5,8 @@ import bao.gabriel.cognia.common.util.WebUtils;
 import bao.gabriel.cognia.system.dto.auth.LoginOptionsRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginOptionsResponse;
 import bao.gabriel.cognia.system.dto.auth.LoginRequest;
+import bao.gabriel.cognia.system.dto.auth.LoginCodeSendRequest;
+import bao.gabriel.cognia.system.dto.auth.LoginEmailCodeRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginTwoFactorRequest;
 import bao.gabriel.cognia.system.dto.auth.VerifyCodeRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginResponse;
@@ -67,6 +69,19 @@ public class AuthController {
     @PostMapping("/login/options")
     public ApiResponse<LoginOptionsResponse> loginOptions(@Valid @RequestBody LoginOptionsRequest request) {
         return ApiResponse.success(authService.loginOptions(request.account()));
+    }
+
+    @PostMapping("/login/code")
+    public ApiResponse<SendCodeResponse> sendLoginCode(@Valid @RequestBody LoginCodeSendRequest request,
+                                                       HttpServletRequest httpRequest) {
+        return ApiResponse.success(authService.sendLoginCode(request, WebUtils.getClientIp(httpRequest)));
+    }
+
+    @PostMapping("/login/email-code")
+    public ApiResponse<LoginResponse> loginWithEmailCode(@Valid @RequestBody LoginEmailCodeRequest request,
+                                                         HttpServletRequest httpRequest) {
+        return ApiResponse.success(authService.loginWithEmailCode(request,
+                WebUtils.getClientIp(httpRequest), WebUtils.getUserAgent(httpRequest)));
     }
 
     @PostMapping("/login/2fa")
