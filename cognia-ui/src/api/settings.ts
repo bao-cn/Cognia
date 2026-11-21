@@ -20,6 +20,14 @@ export const settingsApi = {
   update(payload: UpdateSiteSettingsPayload): Promise<AdminSiteSettings> {
     return http.put<AdminSiteSettings>('/settings', payload)
   },
+  uploadLogo(file: File): Promise<{ url: string }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    return http.post<{ url: string }>('/settings/logo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+  },
   testSmtp(recipient: string): Promise<void> {
     return http.post<void>('/settings/smtp/test', { recipient })
   },

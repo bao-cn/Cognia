@@ -26,6 +26,9 @@ public class SiteSetting {
 
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String logoUrl;
+
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String logoObjectKey;
     private String siteName;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String siteDescription;
@@ -47,6 +50,7 @@ public class SiteSetting {
 
     private Boolean loginCaptchaEnabled;
     private Boolean twoFactorEnabled;
+    private Boolean emailCodeLoginEnabled;
     private Boolean registrationEmailWhitelistEnabled;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String registrationEmailWhitelist;
@@ -102,6 +106,10 @@ public class SiteSetting {
 
     public boolean twoFactorEnabled() {
         return Boolean.TRUE.equals(twoFactorEnabled);
+    }
+
+    public boolean emailCodeLoginEnabled() {
+        return Boolean.TRUE.equals(emailCodeLoginEnabled);
     }
 
     public boolean emailWhitelistEnabled() {

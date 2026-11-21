@@ -24,8 +24,10 @@ const form = reactive({ enabled: false, clientId: '', clientSecret: '', issuer: 
 const clearSecret = ref(false)
 const origin = window.location.origin
 const twoFactorEnabled = ref(false)
+const emailCodeLoginEnabled = ref(false)
 const settings = ref<AdminSiteSettings | null>(null)
 const savingTwoFactor = ref(false)
+const savingEmailCode = ref(false)
 
 async function load() {
   loading.value = true; error.value = ''
@@ -34,6 +36,7 @@ async function load() {
     providers.value = list
     settings.value = config
     twoFactorEnabled.value = Boolean(config.twoFactorEnabled)
+    emailCodeLoginEnabled.value = Boolean(config.emailCodeLoginEnabled)
   } catch (e) { error.value = e instanceof Error ? e.message : '加载失败' } finally { loading.value = false }
 }
 function openEdit(p: AdminOAuthProvider) {
@@ -56,6 +59,23 @@ async function save() {
     toast.success('登录方式已更新')
   } catch (e) { toast.error(e instanceof Error ? e.message : '保存失败') } finally { saving.value = false }
 }
+async function toggleEmailCode(enabled: boolean) {
+  if (!settings.value || savingEmailCode.value) return
+  if (enabled && !settings.value.smtpEnabled) {
+    toast.error('请先在邮件服务中启用 SMTP 发信')
+    return
+  }
+  savingEmailCode.value = true
+  try {
+    const updated = await settingsApi.update({ ...settings.value, emailCodeLoginEnabled: enabled })
+    settings.value = updated
+    emailCodeLoginEnabled.value = Boolean(updated.emailCodeLoginEnabled)
+    toast.success(enabled ? '已开启邮箱验证码登录' : '已关闭邮箱验证码登录')
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : '保存失败')
+  } finally { savingEmailCode.value = false }
+}
+
 async function toggleTwoFactor(enabled: boolean) {
   if (!settings.value || savingTwoFactor.value) return
   savingTwoFactor.value = true
@@ -94,6 +114,13 @@ onMounted(load)
           <p class="text-xs text-muted-foreground">全站开关。关闭后，已绑定的两步验证不会在登录时生效。</p>
         </div>
         <Switch :model-value="twoFactorEnabled" :disabled="savingTwoFactor" @update:model-value="toggleTwoFactor" />
+      </div>
+      <div class="flex items-center justify-between gap-4 border-t p-4">
+        <div class="flex flex-col gap-1">
+          <p class="text-sm font-medium">邮箱验证码登录</p>
+          <p class="text-xs text-muted-foreground">需在邮件服务中启用 SMTP 发信后才能开启；关闭后登录页不显示该方式。</p>
+        </div>
+        <Switch :model-value="emailCodeLoginEnabled" :disabled="savingEmailCode || !settings?.smtpEnabled" @update:model-value="toggleEmailCode" />
       </div>
     </section>
     <div v-if="!loading" class="grid gap-4 md:grid-cols-2">

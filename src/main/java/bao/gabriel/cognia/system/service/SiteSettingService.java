@@ -21,6 +21,8 @@ public interface SiteSettingService {
 
     AdminSettingsResponse updateSettings(UpdateSettingsRequest request, Long operatorId);
 
+    void updateBrandLogo(String logoUrl, String logoObjectKey, Long operatorId);
+
     SmtpConfig getSmtpConfig();
 
     TurnstileConfig getTurnstileConfig();
@@ -34,6 +36,10 @@ public interface SiteSettingService {
     boolean isLoginCaptchaEnabled();
 
     boolean isTwoFactorEnabled();
+
+    boolean isSmtpEnabled();
+
+    boolean isEmailCodeLoginEnabled();
 
     boolean isTurnstileConfigured();
 

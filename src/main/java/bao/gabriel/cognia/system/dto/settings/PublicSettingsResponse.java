@@ -20,6 +20,7 @@ public record PublicSettingsResponse(
         boolean registerEmailCaptchaEnabled,
         boolean loginCaptchaEnabled,
         boolean twoFactorEnabled,
+        boolean emailCodeLoginEnabled,
         boolean appleLoginEnabled,
         boolean googleLoginEnabled,
         boolean turnstileConfigured,
