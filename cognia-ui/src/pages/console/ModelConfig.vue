@@ -102,7 +102,7 @@
                   <Button variant="ghost" size="icon-sm" title="编辑" @click="openProviderDialog(provider)">
                     <IconPencil class="size-4" />
                   </Button>
-                  <Button variant="ghost" size="icon-sm" title="删除" :disabled="saving" @click="removeProvider(provider)">
+                  <Button variant="ghost" size="icon-sm" title="删除" :disabled="saving" @click="askRemoveProvider(provider)">
                     <IconTrash class="size-4" />
                   </Button>
                 </div>
@@ -188,7 +188,7 @@
                       <Button variant="ghost" size="icon-sm" title="编辑" @click="openModelDialog(model)">
                         <IconPencil class="size-4" />
                       </Button>
-                      <Button variant="ghost" size="icon-sm" title="删除" @click="removeModel(model)">
+                      <Button variant="ghost" size="icon-sm" title="删除" @click="askRemoveModel(model)">
                         <IconTrash class="size-4" />
                       </Button>
                     </TableCell>
@@ -338,7 +338,7 @@
             </div>
             <div class="grid gap-2">
               <Label>向量维度</Label>
-              <Input v-model.number="modelForm.dimension" type="number" placeholder="1536" />
+              <Input v-model.number="modelForm.dimension" type="number" placeholder="1024" />
             </div>
           </div>
           <div class="grid grid-cols-2 gap-4">
@@ -437,6 +437,25 @@
           <Button variant="outline" @click="modelDialogOpen = false">取消</Button>
           <Button :disabled="saving" @click="saveModel">
             <Spinner v-if="saving" class="mr-2" />保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog :open="!!deleteTarget" @update:open="(open) => { if (!open) deleteTarget = null }">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>确认删除</DialogTitle>
+          <DialogDescription>
+            {{ deleteTarget?.kind === 'provider'
+              ? `删除供应商「${deleteTarget?.name}」及其下全部模型？此操作不可撤销。`
+              : `删除模型「${deleteTarget?.name}」？此操作不可撤销。` }}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" :disabled="deleting" @click="deleteTarget = null">取消</Button>
+          <Button variant="destructive" :disabled="deleting" @click="confirmRemove">
+            <Spinner v-if="deleting" class="mr-2" />删除
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -650,18 +669,36 @@ async function saveProvider() {
   }
 }
 
-async function removeProvider(provider: ModelProvider) {
-  if (!window.confirm(`删除供应商「${provider.name}」及其下全部模型？`))
-    return
-  saving.value = true
+type DeleteTarget = { kind: 'provider' | 'model'; id: number; name: string }
+const deleteTarget = ref<DeleteTarget | null>(null)
+const deleting = ref(false)
+
+function askRemoveProvider(provider: ModelProvider) {
+  deleteTarget.value = { kind: 'provider', id: provider.id, name: provider.name }
+}
+
+function askRemoveModel(model: ModelConfig) {
+  deleteTarget.value = { kind: 'model', id: model.id, name: model.displayName || model.modelId }
+}
+
+async function confirmRemove() {
+  const target = deleteTarget.value
+  if (!target) return
+  deleting.value = true
   try {
-    await modelApi.deleteProvider(provider.id)
-    toast.success('供应商已删除')
+    if (target.kind === 'provider') {
+      await modelApi.deleteProvider(target.id)
+      toast.success('供应商已删除')
+    } else {
+      await modelApi.deleteConfig(target.id)
+      toast.success('模型已删除')
+    }
+    deleteTarget.value = null
     await loadAll()
   } catch (err: any) {
     toast.error(err?.message || '删除失败')
   } finally {
-    saving.value = false
+    deleting.value = false
   }
 }
 
@@ -829,17 +866,6 @@ async function saveModel() {
   }
 }
 
-async function removeModel(model: ModelConfig) {
-  if (!window.confirm(`删除模型「${model.displayName || model.modelId}」？`))
-    return
-  try {
-    await modelApi.deleteConfig(model.id)
-    toast.success('模型已删除')
-    await loadAll()
-  } catch (err: any) {
-    toast.error(err?.message || '删除失败')
-  }
-}
 
 function typeLabel(type: ModelType) {
   return type === 'CHAT' ? '聊天' : type === 'EMBEDDING' ? '向量' : '重排'

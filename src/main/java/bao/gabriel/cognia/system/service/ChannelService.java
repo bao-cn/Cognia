@@ -34,6 +34,8 @@ public interface ChannelService {
 
     int reembedAll(Long channelId, Long userId);
 
+    int cancelReembed(Long channelId, Long userId);
+
     java.util.Map<Long, Boolean> embeddingReadiness(java.util.List<Long> channelIds);
 
     FolderResponse createFolder(Long userId, Long channelId, CreateFolderRequest request);
@@ -50,6 +52,10 @@ public interface ChannelService {
     List<ChannelDocumentResponse> documents(Long channelId, Long viewerId, Long folderId);
 
     void deleteDocument(Long userId, Long channelId, Long documentId);
+
+    ChannelDocumentResponse moveDocument(Long userId, Long channelId, Long documentId, Long folderId);
+
+    int moveDocuments(Long userId, Long channelId, List<Long> documentIds, Long folderId);
 
     /**
      * Raw document bytes for the in-app citation preview. Access follows the

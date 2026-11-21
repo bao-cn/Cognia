@@ -6,7 +6,6 @@ import {
   IconLogout,
   IconBookmark,
   IconSettings,
-  IconHelp,
   IconDashboard,
   IconDownload,
   IconArrowUpRight,
@@ -121,15 +120,17 @@ async function handleLogout(): Promise<void> {
               <IconArchive />
               归档对话
             </DropdownMenuItem>
+            <!-- 
             <DropdownMenuItem @click="toast.info('帮助中心即将上线')">
               <IconHelp />
               帮助
             </DropdownMenuItem>
+             -->
             <DropdownMenuItem @click="router.push('/settings')">
               <IconSettings />
               设置
             </DropdownMenuItem>
-            <DropdownMenuItem v-if="userStore.isAdmin" @click="router.push('/console')">
+            <DropdownMenuItem v-if="userStore.hasPermission('console:access')" @click="router.push('/console')">
               <IconDashboard />
               控制台
             </DropdownMenuItem>

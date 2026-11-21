@@ -85,7 +85,14 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("billing:order-read", "查看计费订单", "API", "/api/v1/admin/billing/orders", "GET", 79),
             new PermissionSeed("billing:usage-read", "查看计费用量", "API", "/api/v1/admin/billing/usage", "GET", 80),
             new PermissionSeed("billing:grant", "手动发放 Token", "API", "/api/v1/admin/billing/users", "POST", 81),
-            new PermissionSeed("billing:adjust", "手动调整额度", "API", "/api/v1/admin/billing/users", "POST", 82)
+            new PermissionSeed("billing:adjust", "手动调整额度", "API", "/api/v1/admin/billing/users", "POST", 82),
+            new PermissionSeed("chat:read", "查看对话历史", "API", "/api/v1/chat/conversations", "GET", 83),
+            new PermissionSeed("chat:use", "使用对话与 LLM 聊天", "API", "/api/v1/chat/stream", "POST", 84),
+            new PermissionSeed("team:create", "创建团队", "API", "/api/v1/teams", "POST", 85),
+            new PermissionSeed("channel:read", "查看频道", "API", "/api/v1/channels", "GET", 86),
+            new PermissionSeed("channel:create", "创建频道", "API", "/api/v1/channels", "POST", 87),
+            new PermissionSeed("document:read", "查看频道文档", "API", "/api/v1/channels/{id}/documents", "GET", 88),
+            new PermissionSeed("document:upload", "上传频道文件", "API", "/api/v1/channels/{id}/documents", "POST", 89)
     );
 
     private final InitProperties initProperties;
@@ -103,9 +110,10 @@ public class DataInitializer implements ApplicationRunner {
 
         List<Permission> permissions = syncPermissions();
         Role adminRole = ensureRole(ADMIN_ROLE, "超级管理员", "拥有平台全部权限", 0);
-        ensureRole(USER_ROLE, "普通用户", "可访问个人空间与对话功能", 10);
+        Role userRole = ensureRole(USER_ROLE, "普通用户", "可访问个人空间与对话功能", 10);
 
         syncAdminPermissions(adminRole, permissions);
+        syncUserBaseline(userRole, permissions);
         ensureAdminUser(adminRole);
     }
 
@@ -168,6 +176,21 @@ public class DataInitializer implements ApplicationRunner {
             rolePermissionMapper.insert(new RolePermission(adminRole.getId(), permission.getId()));
         }
         log.info("ADMIN role granted {} permissions", permissions.size());
+    }
+
+    private void syncUserBaseline(Role userRole, List<Permission> permissions) {
+        java.util.Set<String> baseline = java.util.Set.of(
+                "chat:read", "chat:use", "team:create", "channel:read",
+                "channel:create", "document:read", "document:upload");
+        for (Permission permission : permissions) {
+            if (!baseline.contains(permission.getCode())) continue;
+            Long count = rolePermissionMapper.selectCount(new LambdaQueryWrapper<RolePermission>()
+                    .eq(RolePermission::getRoleId, userRole.getId())
+                    .eq(RolePermission::getPermissionId, permission.getId()));
+            if (count == 0) {
+                rolePermissionMapper.insert(new RolePermission(userRole.getId(), permission.getId()));
+            }
+        }
     }
 
     private void ensureAdminUser(Role adminRole) {

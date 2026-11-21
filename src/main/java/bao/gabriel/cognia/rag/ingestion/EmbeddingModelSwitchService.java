@@ -1,6 +1,8 @@
 package bao.gabriel.cognia.rag.ingestion;
 
+import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.rag.service.VectorDimensionService;
+import bao.gabriel.cognia.system.dto.rag.EmbeddingDimensionCheckResponse;
 import bao.gabriel.cognia.system.entity.Channel;
 import bao.gabriel.cognia.system.entity.ModelConfig;
 import bao.gabriel.cognia.system.mapper.ChannelMapper;
@@ -44,11 +46,34 @@ public class EmbeddingModelSwitchService {
         if (model == null || !ModelConfig.TYPE_EMBEDDING.equals(model.getModelType())) {
             throw new IllegalArgumentException("向量模型选择不正确");
         }
-        if (model.getDimension() != null && model.getDimension() != dimensionService.currentDimension()) {
-            throw new IllegalStateException("目标向量模型维度为 " + model.getDimension()
+        if (model.getDimension() == null) {
+            throw BusinessException.badRequest("目标向量模型尚未配置输出维度，无法切换");
+        }
+        if (model.getDimension() != dimensionService.currentDimension()) {
+            throw BusinessException.badRequest("目标向量模型维度为 " + model.getDimension()
                     + "，当前知识库为 " + dimensionService.currentDimension()
                     + " 维；请选择相同维度的模型，已有向量不会被清空。");
         }
+    }
+
+    public EmbeddingDimensionCheckResponse checkSwitch(Long newModelId) {
+        int current = dimensionService.currentDimension();
+        if (newModelId == null) {
+            return new EmbeddingDimensionCheckResponse(current, null, false, "请选择向量模型");
+        }
+        ModelConfig model = modelConfigMapper.selectById(newModelId);
+        if (model == null || !ModelConfig.TYPE_EMBEDDING.equals(model.getModelType())) {
+            return new EmbeddingDimensionCheckResponse(current, null, false, "向量模型选择不正确");
+        }
+        Integer target = model.getDimension();
+        if (target == null) {
+            return new EmbeddingDimensionCheckResponse(current, null, false, "该向量模型尚未配置输出维度");
+        }
+        boolean compatible = target == current;
+        String message = compatible ? "维度一致，可以切换" :
+                "目标向量模型维度为 " + target + "，当前知识库为 " + current
+                        + " 维；请选择相同维度的模型，已有向量不会被清空。";
+        return new EmbeddingDimensionCheckResponse(current, target, compatible, message);
     }
 
     public void onSwitch(Long oldModelId, Long newModelId) {

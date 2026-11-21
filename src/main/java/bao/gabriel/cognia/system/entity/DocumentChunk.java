@@ -22,6 +22,7 @@ public class DocumentChunk {
     private String chunkText;
     private String chunkTextHash;
     private String embeddingModel;
+    private String embeddingStatus;
     private String embedding;
     private Integer pageNumber;
     private String title;

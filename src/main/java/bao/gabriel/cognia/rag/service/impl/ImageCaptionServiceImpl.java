@@ -6,6 +6,7 @@ import bao.gabriel.cognia.rag.service.ImageCaptionService;
 import bao.gabriel.cognia.system.entity.KbDocument;
 import bao.gabriel.cognia.system.entity.RagSetting;
 import bao.gabriel.cognia.system.service.ModelConfigService;
+import bao.gabriel.cognia.system.service.PromptSettingService;
 import bao.gabriel.cognia.system.service.RagSettingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -25,6 +26,7 @@ public class ImageCaptionServiceImpl implements ImageCaptionService {
 
     private final RagSettingService ragSettingService;
     private final ModelConfigService modelConfigService;
+    private final PromptSettingService promptSettingService;
     private final OpenAiCompatibleClient client;
 
     @Override
@@ -42,20 +44,36 @@ public class ImageCaptionServiceImpl implements ImageCaptionService {
         ObjectNode body = client.mapper().createObjectNode();
         body.put("model", model.modelId());
         body.put("temperature", 0.1);
-        body.put("max_tokens", 1200);
+        body.put("max_tokens", Math.max(1200, model.maxOutputTokensOrDefault()));
+        // Captioning must return visible text, not spend the token budget on reasoning.
+        if ("DEEPSEEK".equals(model.vendor())) {
+            body.putObject("thinking").put("type", "disabled");
+        } else if ("QWEN".equals(model.vendor())) {
+            body.put("enable_thinking", false);
+        }
         ArrayNode messages = body.putArray("messages");
         ObjectNode user = messages.addObject();
         user.put("role", "user");
         ArrayNode content = user.putArray("content");
-        content.addObject().put("type", "text").put("text", setting.imageCaptionPrompt());
+        content.addObject().put("type", "text").put("text", promptSettingService.getSetting().imageCaptionPrompt());
         ObjectNode image = content.addObject();
         image.put("type", "image_url");
         image.putObject("image_url").put("url", dataUrl);
         JsonNode response = client.postJson(model.baseUrl(), "/chat/completions", model.apiKey(), body,
                 Duration.ofSeconds(120));
-        String text = response.path("choices").path(0).path("message").path("content").asText("");
+        JsonNode contentNode = response.path("choices").path(0).path("message").path("content");
+        String text = contentNode.asText("");
+        if (!StringUtils.hasText(text) && contentNode.isArray()) {
+            StringBuilder joined = new StringBuilder();
+            for (JsonNode part : contentNode) {
+                String piece = part.path("text").asText("");
+                if (StringUtils.hasText(piece)) joined.append(piece);
+            }
+            text = joined.toString();
+        }
         if (!StringUtils.hasText(text)) {
-            throw new IllegalStateException("图生文模型返回空描述");
+            String reason = response.path("choices").path(0).path("finish_reason").asText("");
+            throw new IllegalStateException("图生文模型返回空描述" + (reason.isBlank() ? "" : "（finish_reason=" + reason + "）"));
         }
         log.info("Image captioned for document {} ({} chars)", document.getId(), text.length());
         return text;

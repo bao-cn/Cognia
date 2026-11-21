@@ -68,8 +68,16 @@
               <p class="text-xs text-muted-foreground">用于登录页、控制台侧边栏、浏览器标题和站点元信息。</p>
             </header>
             <div class="grid gap-4 p-4 lg:grid-cols-[180px_minmax(0,1fr)]">
-              <div class="flex h-24 items-center justify-center rounded-lg border bg-muted/30 p-3">
-                <img :src="form.logoUrl || '/logo.png'" alt="站点 Logo 预览" class="max-h-16 max-w-full object-contain" />
+              <div class="flex flex-col items-center gap-2">
+                <div class="flex h-24 w-full items-center justify-center rounded-lg border bg-muted/30 p-3">
+                  <img :src="form.logoUrl || '/logo.png'" alt="站点 Logo 预览" class="max-h-16 max-w-full object-contain" />
+                </div>
+                <input ref="logoInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" @change="onLogoSelected" />
+                <Button type="button" variant="outline" size="sm" :disabled="logoUploading || !canUpdate" @click="logoInput?.click()">
+                  <Spinner v-if="logoUploading" class="mr-1 size-4" />
+                  <IconUpload v-else class="mr-1 size-4" />
+                  上传 Logo
+                </Button>
               </div>
               <div class="grid gap-4 md:grid-cols-2">
                 <div class="grid gap-2 md:col-span-2">
@@ -863,6 +871,7 @@ import {
   IconEye,
   IconFileText,
   IconRefresh,
+  IconUpload,
   IconSend,
   IconSettings,
   IconUserPlus,
@@ -876,6 +885,8 @@ const legalStore = useLegalStore()
 
 const activeTab = ref('site')
 const loading = ref(true)
+const logoInput = ref<HTMLInputElement | null>(null)
+const logoUploading = ref(false)
 const saving = ref(false)
 const settingsError = ref('')
 const updatedAt = ref('')
@@ -1362,6 +1373,24 @@ async function loadAll(): Promise<void> {
     settingsError.value = error instanceof Error ? error.message : '系统设置加载失败'
   } finally {
     loading.value = false
+  }
+}
+
+async function onLogoSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  logoUploading.value = true
+  try {
+    const result = await settingsApi.uploadLogo(file)
+    form.logoUrl = result.url
+    toast.success('Logo 已上传')
+    await loadAll()
+  } catch (err: any) {
+    toast.error(err?.message || 'Logo 上传失败')
+  } finally {
+    logoUploading.value = false
   }
 }
 

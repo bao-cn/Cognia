@@ -217,16 +217,7 @@
             <MessageScrollerButton :style="{ bottom: trayVisible ? `${16 + trayHeight}px` : undefined, transition: 'bottom 240ms cubic-bezier(0.22, 1, 0.36, 1)' }" />
           </MessageScroller>
         </div>
-        <div
-          :class="messages.length === 0
-            ? 'absolute inset-x-0 top-1/2 z-10 mx-auto w-full max-w-4xl -translate-y-1/2 px-8'
-            : 'shrink-0 p-8 pt-0'">
-          <div v-if="messages.length === 0" class="mb-6 text-left">
-            <p class="animate-pop-in text-2xl font-semibold leading-relaxed tracking-tight">
-              <span class="block">你好，{{ userStore.displayName }}。</span>
-              <span class="block">今天要创造点什么？</span>
-            </p>
-          </div>
+        <div class="shrink-0 px-8 pt-0">
           <div v-if="truncatedNotice"
             class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <span>{{ truncatedNotice }}</span>
@@ -239,6 +230,9 @@
             <span>该对话已归档，恢复后才能继续对话。</span>
             <Button variant="outline" size="sm" class="h-7" @click="restoreArchived">恢复对话</Button>
           </div>
+          <div v-if="!canUseChat" class="mx-auto mb-2 w-full max-w-3xl rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            当前角色没有发起对话的权限，只能查看历史对话。
+          </div>
           <div v-if="editingIndex !== null"
             class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
             <span>正在编辑第 {{ editingIndex + 1 }} 条消息，发送后将重新生成后续回答</span>
@@ -247,6 +241,7 @@
           <form ref="formRef" class="group relative w-full" @submit.prevent="onSubmit()">
             <Button
               v-if="hasTrayContent && !mentionOpen"
+              type="button"
               variant="ghost"
               class="absolute right-2.5 top-2 z-20 flex size-7 items-center justify-center rounded-full opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100"
               :aria-label="trayOpen ? '收起状态栏' : '展开状态栏'"
@@ -259,7 +254,7 @@
                 v-if="trayVisible"
                 ref="trayRef"
                 data-composer-tray
-                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 composer-tray-surface rounded-t-2xl px-3 pb-7 pt-3 shadow-[0_-10px_30px_-16px_rgba(0,0,0,0.28)]">
+                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 composer-tray-surface rounded-t-2xl px-3 pb-7 pt-3">
                 <div class="flex max-h-[32vh] flex-col gap-2 overflow-y-auto">
                   <div v-if="temporary || (webSearchEnabled && capabilities.webSearchAvailable)" class="flex flex-wrap items-center gap-2">
                     <Badge v-if="temporary" variant="outline" class="gap-1"><SparklesIcon class="size-3" />临时对话 · 关闭后不保存</Badge>
@@ -330,8 +325,8 @@
               </div>
             </div>
             <InputGroup class="relative z-10 rounded-3xl bg-background dark:bg-background">
-              <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived" placeholder="描述任务，输入 @ 引用知识库，或直接上传材料开始" aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
-                @input="onComposerInput" @keydown="onKeydown" @blur="onComposerBlur" />
+              <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived || !canUseChat" :placeholder="canUseChat ? 'Ask the agent...' : '当前角色没有发起对话的权限'" aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
+                @input="onComposerInput" @keydown="onKeydown" @blur="onComposerBlur" @paste="onComposerPaste" />
               <InputGroupAddon align="block-end" class="pt-1">
                 <InputGroupButton type="button" size="icon-sm" variant="outline" class="rounded-full"
                   aria-label="上传附件" :disabled="!supportsAttachments || uploadingAttachment"
@@ -388,12 +383,12 @@
                     <InputGroupButton size="sm" variant="ghost"
                       :aria-label="`Model: ${currentModel.name}${currentModel.thinking ? `, effort: ${currentEffort.name}` : ''}`"
                       class="ml-auto max-w-[min(46vw,22rem)] rounded-full">
-                      <span class="truncate">{{ currentModel.name }}</span>
-                      <span v-if="currentModel.thinking" class="shrink-0 text-muted-foreground">{{ currentEffort.name }}</span>
+                      <span class="truncate text-foreground">{{ currentModel.name }}</span>
+                      <span v-if="currentModel.thinking" class="shrink-0 text-foreground/50">{{ currentEffort.name }}</span>
                       <ChevronDownIcon class="shrink-0" />
                     </InputGroupButton>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" class="w-64">
+                  <DropdownMenuContent side="top" align="start" class="w-64">
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>
                         <span class="w-16 shrink-0 text-muted-foreground">模型</span>
@@ -436,70 +431,68 @@
               </InputGroupAddon>
             </InputGroup>
           </form>
-          <div v-if="outlineRounds.length || usageInfo || contextInfo"
-            class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-2 text-[11px] text-muted-foreground">
+          <div v-if="usageInfo || contextInfo"
+            class="flex items-center justify-center gap-1 px-3 pt-1.5 text-[11px] text-muted-foreground">
             <TooltipProvider>
-              <div class="flex min-w-0 flex-wrap items-center gap-1">
-                <Tooltip v-if="outlineRounds.length">
-                  <TooltipTrigger as-child>
-                    <button type="button" class="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <ActivityIcon class="size-3.5" />
-                      <span class="font-medium tabular-nums text-foreground">{{ roundCount }} 轮</span>
-                      <span>{{ stepCount }} 步</span>
-                      <span v-if="lastTps" class="border-l border-border/70 pl-1.5 font-mono tabular-nums">{{ lastTps }} tok/s</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
-                    <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
-                      <span class="flex items-center gap-1.5 font-medium text-foreground"><ActivityIcon class="size-3.5" />会话统计</span>
-                      <span class="text-muted-foreground">{{ roundCount }} 轮 {{ stepCount }} 步</span>
-                    </div>
-                    <div class="space-y-1.5">
-                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">模型用时</span><span>{{ formatDuration(turnDurationMs) }}</span></div>
-                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">工具调用用时</span><span>{{ formatDuration(turnToolMs) }}</span></div>
-                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">首 token 平均（TTFT）</span><span>{{ formatDuration(turnTtftMs) }}</span></div>
-                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出速度（TPS）</span><span>{{ lastTps ? `${lastTps} tok/s` : '—' }}</span></div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
+              <Tooltip v-if="outlineRounds.length">
+                <TooltipTrigger as-child>
+                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
+                    <ActivityIcon class="size-3.5" />
+                    <span class="text-foreground/80">{{ roundCount }} 轮 · {{ stepCount }} 步</span>
+                    <span v-if="lastTps" class="text-foreground/70">· {{ lastTps }} tok/s</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
+                  <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
+                    <span class="flex items-center gap-1.5 font-medium text-foreground"><ActivityIcon class="size-3.5" />会话统计</span>
+                    <span class="text-muted-foreground">{{ roundCount }} 轮 {{ stepCount }} 步</span>
+                  </div>
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">模型用时</span><span>{{ formatDuration(turnDurationMs) }}</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">工具调用用时</span><span>{{ formatDuration(turnToolMs) }}</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">首 token 平均（TTFT）</span><span>{{ formatDuration(turnTtftMs) }}</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出速度（TPS）</span><span>{{ lastTps ? `${lastTps} tok/s` : '—' }}</span></div>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
 
-                <Tooltip v-if="usageInfo">
-                  <TooltipTrigger as-child>
-                    <button type="button" class="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <DatabaseIcon class="size-3.5" />
-                      <span class="tabular-nums">{{ formatCompact(tokenTotal) }} tok</span>
-                      <span>缓存 {{ tokenCachePercent }}%</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
-                    <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
-                      <span class="flex items-center gap-1.5 font-medium text-foreground"><DatabaseIcon class="size-3.5" />Token 用量</span>
-                      <span class="font-medium text-foreground">{{ usageInfo.promptTokens + usageInfo.completionTokens }} tok</span>
-                    </div>
-                    <div class="space-y-1.5">
-                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存命中</span><span>{{ tokenCachePercent }}%</span></div>
-                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">未缓存输入</span><span>{{ usageInfo.cacheMissTokens.toLocaleString() }} tok</span></div>
-                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存读取</span><span>{{ usageInfo.cacheHitTokens.toLocaleString() }} tok</span></div>
-                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出</span><span>{{ usageInfo.completionTokens.toLocaleString() }} tok</span></div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+              <Tooltip v-if="usageInfo">
+                <TooltipTrigger as-child>
+                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
+                    <DatabaseIcon class="size-3.5" />
+                    <span class="text-foreground/80">{{ formatCompact(tokenTotal) }} tok</span>
+                    <span class="text-foreground/70">· 缓存命中 {{ tokenCachePercent }}%</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
+                  <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
+                    <span class="flex items-center gap-1.5 font-medium text-foreground"><DatabaseIcon class="size-3.5" />Token 用量</span>
+                    <span class="font-medium text-foreground">{{ usageInfo.promptTokens + usageInfo.completionTokens }} tok</span>
+                  </div>
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存命中</span><span>{{ tokenCachePercent }}%</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">未缓存输入</span><span>{{ usageInfo.cacheMissTokens.toLocaleString() }} tok</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存读取</span><span>{{ usageInfo.cacheHitTokens.toLocaleString() }} tok</span></div>
+                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出</span><span>{{ usageInfo.completionTokens.toLocaleString() }} tok</span></div>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
 
               <Tooltip v-if="contextInfo">
                 <TooltipTrigger as-child>
-                  <button type="button" :aria-label="`上下文占用 ${contextPercent}%`"
-                    class="inline-flex h-7 shrink-0 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <span>上下文</span>
-                    <span class="block h-1.5 w-16 overflow-hidden rounded-full bg-muted sm:w-24" aria-hidden="true">
-                      <span class="block h-full rounded-full transition-[width,background-color] duration-300"
-                        :class="contextPercent >= 95 ? 'bg-destructive' : contextPercent >= (contextInfo.compressionThreshold ?? 80) ? 'bg-amber-500' : 'bg-primary'"
-                        :style="{ width: `${contextPercent}%` }" />
-                    </span>
-                    <span class="w-8 text-right font-mono tabular-nums text-foreground">{{ contextPercent }}%</span>
-                  </button>
+                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
+                    <div class="relative size-4">
+                      <svg viewBox="0 0 20 20" class="size-4 -rotate-90">
+                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5" class="text-foreground/40" />
+                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5"
+                          stroke-linecap="round" class="text-primary transition-[stroke-dashoffset] duration-300"
+                          :stroke-dasharray="ringLength" :stroke-dashoffset="contextRingOffset" />
+                      </svg>
+                    </div>
+                    <span class="text-foreground/80">{{ contextPercent }}%</span>
+                  </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
                   <div class="w-64">
                     <div class="mb-2 flex items-center justify-between border-b pb-2">
                       <span>上下文已用 <strong class="font-semibold text-foreground">{{ contextPercent }}%</strong></span>
@@ -662,7 +655,8 @@ const router = useRouter()
 const chatStore = useChatStore()
 const debugStore = useDebugStore()
 const userStore = useUserStore()
-const canDebug = computed(() => userStore.hasPermission('trace:read') || userStore.isAdmin)
+const canDebug = computed(() => userStore.hasPermission('trace:read'))
+const canUseChat = computed(() => userStore.hasPermission('chat:use'))
 
 function setActiveConversation(id: string | null, title: string) {
   chatStore.$patch({
@@ -741,7 +735,8 @@ const text = computed({
     draft.value = value
   },
 })
-const canSend = computed(() => (text.value.trim().length > 0 || chatAttachments.value.length > 0)
+const canSend = computed(() => canUseChat.value
+  && (text.value.trim().length > 0 || chatAttachments.value.length > 0)
   && !busy.value && !archived.value && !!currentModel.value)
 
 const chatAttachments = ref<ChatAttachmentPayload[]>([])
@@ -811,6 +806,16 @@ function removeAttachment(index: number) {
   attachmentPreviews.value.splice(index, 1)
 }
 
+function onComposerPaste(event: ClipboardEvent) {
+  if (!supportsAttachments.value || archived.value)
+    return
+  const files = Array.from(event.clipboardData?.files || []).filter(file => file.type.startsWith('image/'))
+  if (!files.length)
+    return
+  event.preventDefault()
+  void addFiles(files)
+}
+
 function onAttachmentInput(event: Event) {
   const input = event.target as HTMLInputElement
   if (input.files)
@@ -865,6 +870,10 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
   cacheInfo.value = null
   contextInfo.value = null
   usageInfo.value = null
+  if (!canUseChat.value) {
+    toast.error('当前角色没有发起对话的权限')
+    return
+  }
   if (!canSend.value || !currentModel.value)
     return
   const pendingAttachments = [...chatAttachments.value]

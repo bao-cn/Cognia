@@ -93,6 +93,12 @@ public class ChannelEmbeddingController {
         return ApiResponse.success(channelService.reembedAll(channelId, SecurityUtils.getUserId()));
     }
 
+    @PostMapping("/cancel")
+    public ApiResponse<Integer> cancel(@PathVariable Long channelId) {
+        requireManager(channelId);
+        return ApiResponse.success(channelService.cancelReembed(channelId, SecurityUtils.getUserId()));
+    }
+
     @PostMapping("/jobs/{jobId}/retry")
     public ApiResponse<Void> retry(@PathVariable Long channelId, @PathVariable Long jobId) {
         requireManager(channelId);

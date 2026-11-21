@@ -15,7 +15,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
-type View = 'loading' | 'markdown' | 'image' | 'pdf' | 'docx' | 'text' | 'html' | 'web' | 'unsupported' | 'error'
+type View = 'loading' | 'markdown' | 'image' | 'pdf' | 'docx' | 'pptx' | 'text' | 'html' | 'web' | 'unsupported' | 'error'
 
 const view = ref<View>('loading')
 const error = ref('')
@@ -24,6 +24,7 @@ const textContent = ref('')
 const objectUrl = ref('')
 const downloadUrl = ref('')
 const docxRoot = ref<HTMLElement | null>(null)
+const pptxSlides = ref<{ index: number; texts: string[] }[]>([])
 let loadToken = 0
 const scriptPromises = new Map<string, Promise<void>>()
 
@@ -105,6 +106,28 @@ async function load() {
     if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext) || contentType.startsWith('image/')) {
       objectUrl.value = URL.createObjectURL(blob)
       view.value = 'image'
+      return
+    }
+    if (ext === 'pptx' || contentType.includes('presentationml')) {
+      await loadScript('/vendor/jszip.min.js')
+      const JsZip = (window as any).JSZip
+      if (!JsZip) throw new Error('PPTX 预览组件加载失败')
+      const zip = await JsZip.loadAsync(blob)
+      const names = Object.keys(zip.files)
+        .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+        .sort((a, b) => Number(a.match(/slide(\d+)\.xml/)?.[1] || 0) - Number(b.match(/slide(\d+)\.xml/)?.[1] || 0))
+      const parsed: { index: number; texts: string[] }[] = []
+      for (const name of names) {
+        const xml = await zip.file(name)?.async('text')
+        if (!xml) continue
+        const doc = new DOMParser().parseFromString(xml, 'application/xml')
+        const texts = Array.from(doc.getElementsByTagName('a:t'))
+          .map(node => node.textContent?.trim() || '')
+          .filter(Boolean)
+        parsed.push({ index: Number(name.match(/slide(\d+)\.xml/)?.[1] || parsed.length + 1), texts })
+      }
+      pptxSlides.value = parsed
+      view.value = 'pptx'
       return
     }
     if (ext === 'docx' || contentType.includes('wordprocessingml')) {
@@ -197,6 +220,16 @@ onBeforeUnmount(() => {
           <img :src="objectUrl" alt="引用图片" class="max-h-full max-w-full rounded-lg object-contain shadow-sm">
         </div>
         <div v-else-if="view === 'docx'" ref="docxRoot" class="docx-preview-host bg-white p-6" />
+        <div v-else-if="view === 'pptx'" class="mx-auto flex max-w-4xl flex-col gap-4 p-6">
+          <p class="text-xs text-muted-foreground">PPTX 在线预览展示每页文字内容，复杂版式请下载原文查看。</p>
+          <div v-for="slide in pptxSlides" :key="slide.index" class="rounded-lg border bg-white p-5 shadow-sm">
+            <div class="mb-3 text-xs font-medium text-slate-500">第 {{ slide.index }} 页</div>
+            <div v-if="slide.texts.length" class="space-y-1.5 text-sm leading-6 text-slate-800">
+              <p v-for="(line, i) in slide.texts" :key="i">{{ line }}</p>
+            </div>
+            <p v-else class="text-sm text-slate-400">本页无文字内容</p>
+          </div>
+        </div>
         <pre v-else-if="view === 'text'" class="whitespace-pre-wrap p-8 text-sm leading-6">{{ textContent }}</pre>
         <iframe
           v-else-if="view === 'html'"

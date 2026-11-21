@@ -5,6 +5,7 @@ export { settingsApi } from './settings'
 export { legalApi } from './legal'
 export { teamApi } from './team'
 export { storageApi } from './storage'
+export { issueApi } from './issue'
 export { ollamaApi } from './ollama'
 export { ingestionApi } from './ingestion'
 export { dashboardApi } from './dashboard'
@@ -32,6 +33,7 @@ import { userApi } from './user'
 import { permissionApi, roleApi } from './role'
 import { settingsApi } from './settings'
 import { legalApi } from './legal'
+import { issueApi } from './issue'
 import { teamApi } from './team'
 import { storageApi } from './storage'
 import { ollamaApi } from './ollama'
@@ -65,6 +67,7 @@ export const api = {
   legal: legalApi,
   teams: teamApi,
   storage: storageApi,
+  issue: issueApi,
   ollama: ollamaApi,
   ingestion: ingestionApi,
   dashboard: dashboardApi,

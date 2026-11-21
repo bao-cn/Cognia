@@ -84,6 +84,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
                 Boolean.TRUE.equals(setting.getRegisterEmailCaptchaEnabled()),
                 Boolean.TRUE.equals(setting.getLoginCaptchaEnabled()),
                 Boolean.TRUE.equals(setting.getTwoFactorEnabled()),
+                setting.emailCodeLoginEnabled() && setting.smtpEnabled() && StringUtils.hasText(setting.getSmtpHost()),
                 Boolean.TRUE.equals(setting.getAppleLoginEnabled()),
                 Boolean.TRUE.equals(setting.getGoogleLoginEnabled()),
                 isTurnstileConfigured(setting),
@@ -96,6 +97,18 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     @Override
     public AdminSettingsResponse getAdminSettings() {
         return toAdminResponse(getSetting());
+    }
+
+    @Override
+    public void updateBrandLogo(String logoUrl, String logoObjectKey, Long operatorId) {
+        SiteSetting setting = getSetting();
+        setting.setLogoUrl(logoUrl);
+        setting.setLogoObjectKey(logoObjectKey);
+        setting.setUpdatedBy(operatorId);
+        setting.setUpdatedAt(LocalDateTime.now());
+        settingMapper.updateById(setting);
+        cachedSetting = setting;
+        cachedAt = System.currentTimeMillis();
     }
 
     @Override
@@ -151,6 +164,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
                 setting.getRegisterEmailCaptchaEnabled()));
         setting.setLoginCaptchaEnabled(valueOr(request.loginCaptchaEnabled(), setting.getLoginCaptchaEnabled()));
         setting.setTwoFactorEnabled(valueOr(request.twoFactorEnabled(), setting.getTwoFactorEnabled()));
+        setting.setEmailCodeLoginEnabled(valueOr(request.emailCodeLoginEnabled(), setting.getEmailCodeLoginEnabled()));
         setting.setRegistrationEmailWhitelistEnabled(valueOr(request.registrationEmailWhitelistEnabled(),
                 setting.getRegistrationEmailWhitelistEnabled()));
         if (request.registrationEmailWhitelist() != null) {
@@ -308,6 +322,17 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     }
 
     @Override
+    public boolean isSmtpEnabled() {
+        return getSetting().smtpEnabled();
+    }
+
+    @Override
+    public boolean isEmailCodeLoginEnabled() {
+        SiteSetting setting = getSetting();
+        return setting.emailCodeLoginEnabled() && setting.smtpEnabled() && StringUtils.hasText(setting.getSmtpHost());
+    }
+
+    @Override
     public boolean isLoginCaptchaEnabled() {
         return Boolean.TRUE.equals(getSetting().getLoginCaptchaEnabled());
     }
@@ -386,6 +411,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
                 Boolean.TRUE.equals(setting.getRegisterEmailCaptchaEnabled()),
                 Boolean.TRUE.equals(setting.getLoginCaptchaEnabled()),
                 Boolean.TRUE.equals(setting.getTwoFactorEnabled()),
+                Boolean.TRUE.equals(setting.getEmailCodeLoginEnabled()),
                 Boolean.TRUE.equals(setting.getRegistrationEmailWhitelistEnabled()),
                 splitCsv(setting.getRegistrationEmailWhitelist()),
                 Boolean.TRUE.equals(setting.getAppleLoginEnabled()),
@@ -419,12 +445,13 @@ public class SiteSettingServiceImpl implements SiteSettingService {
         setting.setRouteSuffix(" - Cognia Open");
         setting.setDefaultLanguage("zhCn");
         setting.setTimezone("Asia/Shanghai");
-        setting.setAllowedUploadTypes("pdf,doc,docx,xls,xlsx,ppt,pptx,txt,md,html,csv");
+        setting.setAllowedUploadTypes("pdf,doc,docx,xls,xlsx,ppt,pptx,txt,md,html,csv,jpg,jpeg,png,gif,webp");
         setting.setRegistrationEnabled(true);
         setting.setRegistrationEmailVerification(false);
         setting.setRegisterEmailCaptchaEnabled(true);
         setting.setLoginCaptchaEnabled(false);
         setting.setTwoFactorEnabled(false);
+        setting.setEmailCodeLoginEnabled(false);
         setting.setRegistrationEmailWhitelistEnabled(false);
         setting.setRegistrationEmailWhitelist(null);
         setting.setAppleLoginEnabled(false);

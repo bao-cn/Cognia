@@ -10,9 +10,11 @@ import java.util.Map;
 public interface MailTemplateService {
 
     String REGISTER_CODE = "REGISTER_CODE";
+    String LOGIN_CODE = "LOGIN_CODE";
     String SMTP_TEST = "SMTP_TEST";
     String CHANNEL_ADMIN_ALERT = "CHANNEL_ADMIN_ALERT";
     String CHANNEL_NOTIFICATION = "CHANNEL_NOTIFICATION";
+    String ISSUE_NOTIFICATION = "ISSUE_NOTIFICATION";
 
     List<MailTemplateResponse> listTemplates();
 

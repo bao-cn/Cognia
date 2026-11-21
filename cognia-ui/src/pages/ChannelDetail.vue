@@ -1,36 +1,61 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+
+defineOptions({ name: 'ChannelDetail' })
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { channelApi, dashboardApi, discoverApi, profileApi, recycleApi } from '@/api'
+import { channelApi, dashboardApi, discoverApi, issueApi, profileApi, recycleApi } from '@/api'
+import { useUserStore } from '@/stores/user'
 import type { ChannelDetail, ChannelDocument, ChannelEmbeddingStatus, ChannelFolder, ChannelInsights, ChannelProcessingRecord, OwnerProfile, RecycleBinEntry } from '@/types/api'
 import DashboardTrendChart from '@/components/DashboardTrendChart.vue'
 import ChannelSettings from '@/pages/ChannelSettings.vue'
+import ChannelIssues from '@/pages/ChannelIssues.vue'
+import IssueDetail from '@/pages/IssueDetail.vue'
+import IssueCreate from '@/pages/IssueCreate.vue'
 import CitationPreviewDialog from '@/components/CitationPreviewDialog.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import Markdown from '@/components/Markdown.vue'
+import ChunkInspectorDialog from '@/components/ChunkInspectorDialog.vue'
 import {
   IconArrowLeft, IconArrowRight, IconArrowUp, IconBookmark, IconBookmarkFilled,
-  IconActivity, IconBook, IconChartBar, IconChevronRight, IconCloudUpload, IconEye, IconEyeOff, IconFileText,
+  IconActivity, IconBook, IconChartBar, IconChevronDown, IconChevronRight, IconCloudUpload, IconEye, IconEyeOff, IconFileText,
   IconFolder, IconFolderPlus, IconLayoutGrid, IconList, IconPin, IconPlus, IconRefresh,
-  IconSettings, IconStar, IconTrash,
+  IconSettings, IconStar, IconTrash, IconMessageCircle,
 } from '@tabler/icons-vue'
 import type { CitationSource } from '@/types/api'
 
+let cachedDetailKey = ''
+let cachedDetail: ChannelDetail | null = null
+let cachedOwner: OwnerProfile | null = null
+
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
-const loading = ref(true)
+const routeKey = computed(() => `${String(route.params.owner ?? '')}/${String(route.params.channelSlug ?? '')}`)
+const canUseCache = Boolean(cachedDetail && cachedDetailKey === routeKey.value)
+const loading = ref(!canUseCache)
 const error = ref('')
-const detail = ref<ChannelDetail | null>(null)
+const detail = ref<ChannelDetail | null>(canUseCache ? cachedDetail : null)
 const viewMode = ref<'grid' | 'list'>(localStorage.getItem('cognia.channel.viewMode') === 'grid' ? 'grid' : 'list')
+const chunkOpen = ref(false)
+const chunkDocument = ref<{ id: string | number; name: string } | null>(null)
+
+function openChunks(document: { id: string | number; name: string }) {
+  chunkDocument.value = document
+  chunkOpen.value = true
+}
+
+
 
 function setViewMode(mode: 'grid' | 'list') {
   viewMode.value = mode
@@ -43,10 +68,36 @@ const channel = computed(() => detail.value?.channel)
 const ownerPath = computed(() => `/${ownerParam.value}`)
 const canWrite = computed(() => detail.value?.canWrite ?? false)
 const canManage = computed(() => detail.value?.canManage ?? false)
+const canUpload = computed(() => canWrite.value && userStore.hasPermission('document:upload'))
 const canViewInsights = computed(() => detail.value?.canViewInsights ?? false)
 const about = computed(() => detail.value?.about)
-const ownerProfile = ref<OwnerProfile | null>(null)
-const activeView = ref<'documents' | 'insights' | 'settings' | 'recycle' | 'embedding'>('documents')
+const ownerProfile = ref<OwnerProfile | null>(canUseCache ? cachedOwner : null)
+const baseChannelPath = computed(() => `/${ownerParam.value}/${slugParam.value}`)
+const activeView = computed<'documents' | 'insights' | 'settings' | 'recycle' | 'embedding' | 'issues'>(() => {
+  if (route.name === 'ChannelInsights') return 'insights'
+  if (route.name === 'ChannelEmbedding') return 'embedding'
+  if (route.name === 'ChannelRecycle') return 'recycle'
+  if (route.name === 'ChannelSettings') return 'settings'
+  if (route.name === 'ChannelIssues' || route.name === 'IssueDetail' || route.name === 'ChannelIssueCreate') return 'issues'
+  return 'documents'
+})
+const openIssueCount = ref(0)
+
+function goTab(tab: 'documents' | 'insights' | 'settings' | 'recycle' | 'embedding' | 'issues') {
+  if (tab === 'documents') router.push(baseChannelPath.value)
+  else if (tab === 'settings') router.push(`${baseChannelPath.value}/settings`)
+  else router.push(`${baseChannelPath.value}/${tab}`)
+}
+
+async function loadIssueCount() {
+  if (!channel.value) return
+  try {
+    const res = await issueApi.list(Number(channel.value.id), { status: 'OPEN', page: 1, size: 1 })
+    openIssueCount.value = res.total
+  } catch {
+    openIssueCount.value = 0
+  }
+}
 const recycleEntries = ref<RecycleBinEntry[]>([])
 const recycleLoading = ref(false)
 const restoringId = ref<string | null>(null)
@@ -54,7 +105,7 @@ const insights = ref<ChannelInsights | null>(null)
 const insightsLoading = ref(false)
 
 async function openInsights() {
-  activeView.value = 'insights'
+  if (route.name !== 'ChannelInsights') { await router.push(`${baseChannelPath.value}/insights`) }
   if (!channel.value || insights.value) return
   insightsLoading.value = true
   try {
@@ -94,10 +145,25 @@ async function reembed() {
   try {
     const queued = await channelApi.reembed(detail.value.channel.id)
     toast.success(`已加入重新向量化队列（${queued} 个文档）`)
-    activeView.value = 'embedding'
+    if (route.name !== 'ChannelEmbedding') await router.push(`${baseChannelPath.value}/embedding`)
     await refreshEmbedding()
   } catch (e: any) {
     toast.error(e?.message || '重新向量化失败')
+  } finally {
+    reembedding.value = false
+  }
+}
+
+async function cancelEmbedding() {
+  if (!channel.value) return
+  reembedding.value = true
+  try {
+    const cancelled = await channelApi.cancelEmbedding(channel.value.id)
+    toast.success(`已取消 ${cancelled} 个处理任务`)
+    await refreshEmbedding()
+    await load()
+  } catch (e: any) {
+    toast.error(e?.message || '取消失败')
   } finally {
     reembedding.value = false
   }
@@ -115,7 +181,7 @@ async function refreshEmbedding() {
 
 async function openEmbedding() {
   if (!channel.value) return
-  activeView.value = 'embedding'
+  if (route.name !== 'ChannelEmbedding') { await router.push(`${baseChannelPath.value}/embedding`) }
   embeddingLoading.value = true
   try {
     await refreshEmbedding()
@@ -146,10 +212,8 @@ function recordProgress(record: ChannelProcessingRecord) {
 
 async function retryRecord(record: ChannelProcessingRecord) {
   if (!channel.value) return
-  const job = embeddingStatus.value?.jobs.find(j => j.documentId === record.documentId && j.status === 'DEAD')
-  if (!job) { toast.error('没有可重试的失败任务'); return }
   try {
-    await channelApi.retryEmbeddingJob(channel.value.id, job.id)
+    await channelApi.retryDocument(channel.value.id, record.documentId)
     toast.success('已重新加入处理队列')
     await refreshEmbedding()
   } catch (e: any) {
@@ -159,7 +223,7 @@ async function retryRecord(record: ChannelProcessingRecord) {
 
 
 async function openRecycle() {
-  activeView.value = 'recycle'
+  if (route.name !== 'ChannelRecycle') await router.push(`${baseChannelPath.value}/recycle`)
   await loadRecycle()
 }
 
@@ -361,7 +425,12 @@ function formatBytes(value: number) {
 }
 
 async function load() {
-  loading.value = true
+  const key = routeKey.value
+  const hasCached = Boolean(cachedDetail && cachedDetailKey === key)
+  if (!hasCached) {
+    loading.value = true
+    detail.value = null
+  }
   error.value = ''
   try {
     const profile = await profileApi.get(ownerParam.value)
@@ -371,14 +440,22 @@ async function load() {
     if (!target) {
       error.value = '频道不存在或你没有访问权限'
       detail.value = null
+      cachedDetail = null
+      cachedDetailKey = ''
       return
     }
     detail.value = await channelApi.detail(target.id)
+    cachedDetail = detail.value
+    cachedDetailKey = key
+    cachedOwner = profile
     void loadEngagement()
+    void loadIssueCount()
     await loadReadme(target.id)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '加载频道失败'
     detail.value = null
+    cachedDetail = null
+    cachedDetailKey = ''
   } finally {
     loading.value = false
   }
@@ -435,6 +512,7 @@ async function deleteFolder(folder: ChannelFolder) {
 }
 
 const fileInput = ref<HTMLInputElement | null>(null)
+const directoryInput = ref<HTMLInputElement | null>(null)
 
 type UploadStatus = 'pending' | 'uploading' | 'done' | 'error'
 
@@ -444,6 +522,7 @@ interface UploadItem {
   title: string
   documentType: string
   expirationTime: string
+  folderId?: string
   status: UploadStatus
   progress: number
   error: string
@@ -457,6 +536,21 @@ const uploadItems = ref<UploadItem[]>([])
 const reembedding = ref(false)
 const reembedLocked = computed(() => reembedding.value || Boolean(embeddingStatus.value?.reembedding) || Boolean(about.value?.reembedding))
 const embeddingStatus = ref<ChannelEmbeddingStatus | null>(null)
+
+const recordsPage = ref(1)
+const recordsPageSize = 10
+const showCompletedRecords = ref(false)
+const completedRecords = computed(() => embeddingStatus.value?.records.filter(r => r.status === 'SUCCESS') ?? [])
+const pendingRecords = computed(() => embeddingStatus.value?.records.filter(r => r.status !== 'SUCCESS') ?? [])
+const filteredRecords = computed(() => showCompletedRecords.value
+  ? (embeddingStatus.value?.records ?? [])
+  : pendingRecords.value)
+const recordsTotalPages = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / recordsPageSize)))
+const pagedRecords = computed(() => {
+  const page = Math.min(recordsPage.value, recordsTotalPages.value)
+  return filteredRecords.value.slice((page - 1) * recordsPageSize, page * recordsPageSize)
+})
+watch(recordsTotalPages, (pages) => { if (recordsPage.value > pages) recordsPage.value = pages })
 const embeddingLoading = ref(false)
 
 const uploadPendingCount = computed(() => uploadItems.value.filter(item => item.status !== 'done').length)
@@ -466,6 +560,56 @@ function triggerUpload() {
   if (!canWrite.value) return
   uploadItems.value = []
   fileInput.value?.click()
+}
+
+function triggerDirectoryUpload() {
+  if (!canWrite.value) return
+  uploadItems.value = []
+  directoryInput.value?.click()
+}
+
+async function onDirectorySelected(event: Event) {
+  const target = event.target as HTMLInputElement
+  const files = Array.from(target.files ?? [])
+  target.value = ''
+  if (!files.length || !channel.value) return
+  const folders = detail.value?.folders ?? []
+  const byParentName = new Map<string, string>()
+  for (const folder of folders) byParentName.set(`${folder.parentId ?? 'root'}/${folder.name}`, folder.id)
+  const baseParent = selectedFolder.value ?? 'root'
+  const resolve = async (segments: string[]): Promise<string | undefined> => {
+    let parent = baseParent
+    for (const segment of segments) {
+      const key = `${parent}/${segment}`
+      let id = byParentName.get(key)
+      if (!id) {
+        const created = await channelApi.createFolder(channel.value!.id, {
+          parentId: parent === 'root' ? undefined : parent,
+          name: segment,
+        })
+        id = created.id
+        byParentName.set(key, id)
+        detail.value?.folders.push(created)
+      }
+      parent = id
+    }
+    return parent === 'root' ? undefined : parent
+  }
+  const items: UploadItem[] = []
+  for (const file of files) {
+    const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+    const parts = relative.split('/').filter(Boolean)
+    const segments = parts.slice(0, -1)
+    const folderId = await resolve(segments)
+    items.push({
+      id: uploadItemId(), file, folderId,
+      title: file.name.replace(/\.[^.]+$/, ''),
+      documentType: file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : 'text',
+      expirationTime: '', status: 'pending', progress: 0, error: '',
+    })
+  }
+  uploadItems.value = items
+  uploadOpen.value = true
 }
 
 function uploadItemId() {
@@ -541,7 +685,7 @@ async function confirmUpload() {
     uploadingName.value = item.file.name
     uploadProgress.value = 0
     try {
-      await channelApi.uploadDocument(channel.value.id, item.file, selectedFolder.value ?? undefined, (percent) => {
+      await channelApi.uploadDocument(channel.value.id, item.file, item.folderId ?? selectedFolder.value ?? undefined, (percent) => {
         item.progress = percent
         uploadProgress.value = percent
       }, {
@@ -573,6 +717,46 @@ async function confirmUpload() {
     toast.error(`${succeeded} 个成功，${failed} 个失败，请检查后重试`)
   }
 }
+
+const selectedDocuments = ref<string[]>([])
+const moveBuffer = ref<string[]>([])
+const moving = ref(false)
+
+function isSelected(id: string) {
+  return selectedDocuments.value.includes(id)
+}
+
+function toggleDocumentSelection(id: string, checked: boolean) {
+  if (checked) {
+    if (!selectedDocuments.value.includes(id)) selectedDocuments.value.push(id)
+  } else {
+    selectedDocuments.value = selectedDocuments.value.filter(item => item !== id)
+  }
+}
+
+function stageMove() {
+  if (!selectedDocuments.value.length) return
+  moveBuffer.value = [...selectedDocuments.value]
+  selectedDocuments.value = []
+  toast.info(`已记录 ${moveBuffer.value.length} 个文件，进入目标文件夹后点击“移动到这里”`)
+}
+
+async function moveBufferHere() {
+  if (!channel.value || !moveBuffer.value.length) return
+  moving.value = true
+  try {
+    const moved = await channelApi.moveDocuments(channel.value.id, moveBuffer.value, currentFolder.value?.id)
+    moveBuffer.value = []
+    detail.value = await channelApi.detail(channel.value.id)
+    toast.success(`已移动 ${moved} 个文件`)
+  } catch (e: any) {
+    toast.error(e?.message || '移动失败')
+  } finally {
+    moving.value = false
+  }
+}
+
+watch(() => route.fullPath, () => { selectedDocuments.value = [] })
 
 const deleteOpen = ref(false)
 const deleting = ref(false)
@@ -655,6 +839,11 @@ const fileTypeSegments = computed(() => {
 onUnmounted(() => stopEmbeddingPoll())
 onMounted(load)
 watch(() => [route.params.owner, route.params.channelSlug], load)
+watch(() => route.name, (name) => {
+  if (name === 'ChannelInsights') void openInsights()
+  else if (name === 'ChannelEmbedding') void openEmbedding()
+  else if (name === 'ChannelRecycle') void openRecycle()
+})
 </script>
 
 <template>
@@ -711,13 +900,14 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             </Badge>
           </Button>
           <input ref="fileInput" type="file" multiple class="hidden" @change="onFileSelected" />
+          <input ref="directoryInput" type="file" webkitdirectory multiple class="hidden" @change="onDirectorySelected" />
         </div>
       </div>
 
       <div class="flex items-center gap-1 border-b">
         <button type="button" class="border-b-2 px-3 py-2 text-sm transition"
           :class="activeView === 'documents' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
-          @click="activeView = 'documents'">文档</button>
+          @click="goTab('documents')">文档</button>
         <button v-if="canViewInsights" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
           :class="activeView === 'insights' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
           @click="openInsights">
@@ -728,9 +918,15 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
           @click="openEmbedding">
           <IconActivity class="size-4" />向量化
         </button>
+        <button v-if="channel.isPublic || canManage" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
+          :class="activeView === 'issues' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+          @click="goTab('issues')">
+          <IconMessageCircle class="size-4" />工单
+          <Badge v-if="openIssueCount" variant="secondary" class="h-5 min-w-5 px-1.5 text-[10px]">{{ openIssueCount }}</Badge>
+        </button>
         <button v-if="canManage" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
           :class="activeView === 'settings' ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
-          @click="activeView = 'settings'">
+          @click="goTab('settings')">
           <IconSettings class="size-4" />频道设置
         </button>
         <button v-if="canManage" type="button" class="flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition"
@@ -764,6 +960,11 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
         <div class="h-1.5 overflow-hidden rounded-full bg-muted">
           <div class="h-full rounded-full bg-primary transition-all" :style="{ width: `${uploadProgress}%` }" />
         </div>
+      </div>
+
+      <div v-if="moveBuffer.length" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/30 px-4 py-3 text-sm">
+        <span>已记录 {{ moveBuffer.length }} 个文件。进入目标文件夹后点击“移动到这里”。</span>
+        <Button variant="ghost" size="sm" @click="moveBuffer = []">取消</Button>
       </div>
 
       <section class="min-w-0 overflow-hidden rounded-xl border bg-card">
@@ -804,12 +1005,32 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
               <Button variant="outline" size="sm" :disabled="loading" @click="load">
                 <IconRefresh class="mr-1 size-4" />刷新
               </Button>
-              <Button v-if="canWrite && !channel.archived" variant="outline" size="sm" :disabled="uploading" @click="openCreateFolder">
+              <Button v-if="canUpload && !channel.archived" variant="outline" size="sm" :disabled="uploading" @click="openCreateFolder">
                 <IconFolderPlus class="mr-1 size-4" />新建文件夹
               </Button>
-              <Button v-if="canWrite && !channel.archived" size="sm" :disabled="uploading" @click="triggerUpload">
-                <IconPlus class="mr-1 size-4" />添加
+              <DropdownMenu v-if="canUpload && !channel.archived">
+                <DropdownMenuTrigger as-child>
+                  <Button size="sm" :disabled="uploading">
+                    <IconPlus class="mr-1 size-4" />添加<IconChevronDown class="ml-1 size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="w-40">
+                  <DropdownMenuItem @select="triggerUpload">
+                    <IconFileText class="mr-2 size-4" />上传文件
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @select="triggerDirectoryUpload">
+                    <IconFolder class="mr-2 size-4" />上传文件夹
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button v-if="canUpload && !channel.archived && selectedDocuments.length" variant="outline" size="sm" @click="stageMove">
+                <IconFolder class="mr-1 size-4" />移动（{{ selectedDocuments.length }}）
               </Button>
+              <Button v-if="canUpload && !channel.archived && moveBuffer.length" size="sm" :disabled="moving" @click="moveBufferHere">
+                <Spinner v-if="moving" class="mr-1 size-3" />
+                <IconFolder v-else class="mr-1 size-4" />移动到这里（{{ moveBuffer.length }}）
+              </Button>
+              <Button v-if="moveBuffer.length" variant="ghost" size="sm" @click="moveBuffer = []">取消移动</Button>
             </div>
           </div>
           <div class="flex flex-wrap items-center justify-between gap-1 text-xs text-muted-foreground">
@@ -826,11 +1047,11 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             <p class="text-sm font-medium">{{ currentFolder ? '这个文件夹还是空的' : '这里还没有文件' }}</p>
             <p class="mt-1 text-xs text-muted-foreground">上传 PDF、Markdown、TXT 等文件，或新建文件夹整理内容。</p>
           </div>
-          <div v-if="canWrite && !channel.archived" class="flex gap-2">
+          <div v-if="canUpload && !channel.archived" class="flex gap-2">
             <Button variant="outline" size="sm" @click="openCreateFolder">
               <IconFolderPlus class="mr-1 size-4" />新建文件夹
             </Button>
-            <Button v-if="canWrite" variant="outline" size="sm" @click="triggerUpload">
+            <Button v-if="canUpload" variant="outline" size="sm" @click="triggerUpload">
               <IconCloudUpload class="mr-1 size-4" />上传文件
             </Button>
           </div>
@@ -847,7 +1068,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
               <p class="truncate text-sm font-medium">{{ folder.name }}</p>
               <p class="text-xs text-muted-foreground">{{ folderDocumentCount(folder) }} 个文件</p>
             </div>
-            <Button v-if="canWrite" variant="ghost" size="icon"
+            <Button v-if="canUpload" variant="ghost" size="icon"
               class="absolute right-1 top-1 size-7 opacity-100 text-muted-foreground hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100"
               title="删除文件夹" @click.stop="deleteFolder(folder)">
               <IconTrash class="size-3.5" />
@@ -858,6 +1079,9 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             class="group relative flex cursor-default flex-col gap-2 rounded-lg border p-3 transition hover:border-primary/40 hover:bg-muted/40"
             @dblclick="openDocument(document)">
             <div class="flex min-w-0 items-center gap-2 pr-12">
+              <Checkbox v-if="canUpload && !channel.archived" :model-value="isSelected(document.id)"
+                class="shrink-0" @click.stop
+                @update:model-value="(value) => toggleDocumentSelection(document.id, Boolean(value))" />
               <IconFileText class="size-4 shrink-0 text-muted-foreground" />
               <span class="truncate text-sm font-medium" :title="document.name">{{ document.name }}</span>
             </div>
@@ -866,7 +1090,10 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
               <span>{{ document.createTime || '' }}</span>
             </div>
             <div class="absolute right-1 top-1 flex items-center gap-0.5">
-              <Button v-if="canWrite" variant="ghost" size="icon"
+              <Button v-if="canManage" variant="ghost" size="icon" class="size-7 text-muted-foreground" title="查看分片" @click.stop="openChunks(document)">
+                <IconList class="size-3.5" />
+              </Button>
+              <Button v-if="canUpload" variant="ghost" size="icon"
                 class="size-7 text-muted-foreground hover:text-destructive" title="删除" @click.stop="askDelete(document)">
                 <IconTrash class="size-3.5" />
               </Button>
@@ -878,6 +1105,11 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
           <table class="w-full text-sm">
             <thead class="border-b bg-muted/40 text-xs text-muted-foreground">
               <tr>
+                <th class="w-10 px-3 py-2.5 text-left font-medium">
+                  <Checkbox v-if="canWrite && !channel.archived"
+                    :model-value="currentDocuments.length > 0 && currentDocuments.every(d => isSelected(d.id))"
+                    @update:model-value="(value) => selectedDocuments = value ? currentDocuments.map(d => d.id) : []" />
+                </th>
                 <th class="px-4 py-2.5 text-left font-medium">名称</th>
                 <th class="px-3 py-2.5 text-left font-medium">类型</th>
                 <th class="px-3 py-2.5 text-left font-medium">大小</th>
@@ -887,6 +1119,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             </thead>
             <tbody class="divide-y">
               <tr v-for="folder in visibleFolders" :key="`folder-${folder.id}`" class="cursor-default hover:bg-muted/30" @dblclick="goFolder(folder)">
+                <td class="w-10 px-3 py-3"></td>
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-2">
                     <IconFolder class="size-4 shrink-0 text-primary" />
@@ -898,7 +1131,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                 <td class="px-3 py-3 text-xs text-muted-foreground">-</td>
                 <td class="whitespace-nowrap px-3 py-3">
                   <div class="flex justify-end">
-                    <Button v-if="canWrite" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
+                    <Button v-if="canUpload" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
                       title="删除文件夹" @click.stop="deleteFolder(folder)">
                       <IconTrash class="size-4" />
                     </Button>
@@ -906,6 +1139,11 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                 </td>
               </tr>
               <tr v-for="document in currentDocuments" :key="document.id" class="cursor-default hover:bg-muted/30" @dblclick="openDocument(document)">
+                <td class="w-10 px-3 py-3">
+                  <Checkbox v-if="canUpload && !channel.archived" :model-value="isSelected(document.id)"
+                    class="shrink-0" @click.stop
+                    @update:model-value="(value) => toggleDocumentSelection(document.id, Boolean(value))" />
+                </td>
                 <td class="max-w-[320px] px-4 py-3">
                   <div class="flex items-center gap-2">
                     <IconFileText class="size-4 shrink-0 text-muted-foreground" />
@@ -920,7 +1158,11 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                 <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ document.createTime || '-' }}</td>
                 <td class="whitespace-nowrap px-3 py-3">
                   <div class="flex justify-end gap-1">
-                    <Button v-if="canWrite" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
+                    <Button v-if="canManage" variant="ghost" size="icon" class="size-8 text-muted-foreground"
+                      title="查看分片" @click.stop="openChunks(document)">
+                      <IconList class="size-4" />
+                    </Button>
+                    <Button v-if="canUpload" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
                       title="删除" @click.stop="askDelete(document)">
                       <IconTrash class="size-4" />
                     </Button>
@@ -1076,6 +1318,9 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
               <Button size="sm" :disabled="reembedLocked" @click="reembed">
                 <Spinner v-if="reembedLocked" class="mr-1 size-3" />{{ reembedLocked ? '正在重新向量化' : '全部重新向量化' }}
               </Button>
+              <Button v-if="embeddingStatus?.reembedding" variant="outline" size="sm" :disabled="reembedding" @click="cancelEmbedding">
+                取消向量化
+              </Button>
             </div>
           </header>
           <div v-if="embeddingLoading" class="flex h-40 items-center justify-center"><Spinner class="size-5" /></div>
@@ -1116,9 +1361,16 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
         <section class="rounded-xl border bg-card">
           <header class="flex items-center justify-between border-b px-4 py-3">
             <h2 class="text-sm font-semibold">文件处理记录</h2>
-            <Badge variant="secondary">{{ embeddingStatus?.records.length ?? 0 }} 个文件</Badge>
+            <div class="flex items-center gap-2">
+              <Button v-if="completedRecords.length" variant="ghost" size="sm" @click="showCompletedRecords = !showCompletedRecords">
+                {{ showCompletedRecords ? '隐藏已完成' : `显示已完成（${completedRecords.length}）` }}
+              </Button>
+              <Badge variant="secondary">{{ embeddingStatus?.records.length ?? 0 }} 个文件</Badge>
+            </div>
           </header>
-          <div v-if="!embeddingStatus?.records.length" class="flex h-32 items-center justify-center text-sm text-muted-foreground">暂无处理记录</div>
+          <div v-if="!pagedRecords.length" class="flex h-32 items-center justify-center text-sm text-muted-foreground">
+            {{ pendingRecords.length ? '当前页暂无记录' : (showCompletedRecords ? '暂无处理记录' : '没有待处理记录，已完成项已折叠') }}
+          </div>
           <div v-else class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead class="border-b bg-muted/40 text-xs text-muted-foreground">
@@ -1133,7 +1385,7 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                 </tr>
               </thead>
               <tbody class="divide-y">
-                <tr v-for="record in embeddingStatus.records" :key="record.documentId">
+                <tr v-for="record in pagedRecords" :key="record.documentId">
                   <td class="max-w-[280px] px-4 py-3">
                     <div class="flex items-center gap-2">
                       <IconFileText class="size-4 shrink-0 text-muted-foreground" />
@@ -1154,15 +1406,25 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
                   </td>
                   <td class="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{{ record.uploadedAt || '-' }}</td>
                   <td class="whitespace-nowrap px-3 py-3 text-right">
-                    <Button v-if="record.status === 'FAILED'" variant="outline" size="sm" @click="retryRecord(record)">重试</Button>
+                    <Button v-if="record.status !== 'SUCCESS'" variant="outline" size="sm" @click="retryRecord(record)">重试</Button>
                   </td>
                 </tr>
               </tbody>
             </table>
+            <div class="flex items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
+              <span>第 {{ Math.min(recordsPage, recordsTotalPages) }} / {{ recordsTotalPages }} 页 · 共 {{ filteredRecords.length }} 条</span>
+              <div class="flex gap-2">
+                <Button variant="outline" size="sm" :disabled="recordsPage <= 1" @click="recordsPage--">上一页</Button>
+                <Button variant="outline" size="sm" :disabled="recordsPage >= recordsTotalPages" @click="recordsPage++">下一页</Button>
+              </div>
+            </div>
           </div>
         </section>
       </div>
 
+      <ChannelIssues v-else-if="activeView === 'issues' && route.name === 'ChannelIssues'" embedded />
+      <IssueDetail v-else-if="activeView === 'issues' && route.name === 'IssueDetail'" embedded />
+      <IssueCreate v-else-if="activeView === 'issues' && route.name === 'ChannelIssueCreate'" embedded />
       <div v-else-if="activeView === 'settings'">
         <ChannelSettings embedded />
       </div>
@@ -1309,5 +1571,11 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
       </DialogContent>
     </Dialog>
 
+    <ChunkInspectorDialog
+      v-model:open="chunkOpen"
+      :channel-id="channel?.id ?? null"
+      :document-id="chunkDocument?.id ?? null"
+      :document-name="chunkDocument?.name"
+    />
   </div>
 </template>

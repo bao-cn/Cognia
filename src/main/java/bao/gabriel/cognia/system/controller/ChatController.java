@@ -63,7 +63,7 @@ public class ChatController {
     }
 
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('chat:use')")
     public SseEmitter stream(@Valid @RequestBody ChatRequest request) {
         String requestId = java.util.UUID.randomUUID().toString();
         ChatRequest effectiveRequest = request;
@@ -103,28 +103,28 @@ public class ChatController {
     }
 
     @GetMapping("/conversations")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('chat:read')")
     public ApiResponse<List<bao.gabriel.cognia.system.dto.chat.ConversationSummaryResponse>> conversations(
             @RequestParam(defaultValue = "false") boolean archived) {
         return ApiResponse.success(conversationService.list(SecurityUtils.getUserId(), archived));
     }
 
     @GetMapping("/conversations/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('chat:read')")
     public ApiResponse<bao.gabriel.cognia.system.dto.chat.ConversationDetailResponse> conversation(
             @PathVariable String id) {
         return ApiResponse.success(conversationService.detail(id, SecurityUtils.getUserId()));
     }
 
     @PostMapping("/conversations/{id}/fork")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('chat:use')")
     public ApiResponse<bao.gabriel.cognia.system.dto.chat.ConversationDetailResponse> forkConversation(
             @PathVariable String id, @Valid @RequestBody ForkConversationRequest request) {
         return ApiResponse.success(conversationService.fork(id, SecurityUtils.getUserId(), request.messageIndex()));
     }
 
     @PutMapping("/conversations/{id}/pin")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('chat:read')")
     public ApiResponse<Void> pinConversation(@PathVariable String id,
                                              @Valid @RequestBody bao.gabriel.cognia.system.dto.chat.PinConversationRequest request) {
         conversationService.setPinned(id, SecurityUtils.getUserId(), Boolean.TRUE.equals(request.pinned()));
@@ -132,7 +132,7 @@ public class ChatController {
     }
 
     @PutMapping("/conversations/{id}/archive")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAuthority('chat:read')")
     public ApiResponse<Void> archiveConversation(@PathVariable String id,
                                                  @RequestBody(required = false) bao.gabriel.cognia.system.dto.chat.ArchiveConversationRequest request) {
         boolean archived = request == null || request.archived() == null || request.archived();

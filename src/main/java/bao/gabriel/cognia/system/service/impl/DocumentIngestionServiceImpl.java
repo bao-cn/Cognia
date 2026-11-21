@@ -90,7 +90,9 @@ public class DocumentIngestionServiceImpl implements DocumentIngestionService {
             text = documentTextExtractor.extract(document.getName(), bytes);
         }
         if (text == null || text.isBlank()) {
-            throw new IllegalStateException("文档中没有可向量化的文本内容");
+            throw new IllegalStateException(image
+                    ? "图生文模型未返回内容，请检查图片理解模型配置后重试"
+                    : "文档中没有可向量化的文本内容");
         }
         RagSetting setting = ragSettingService.getSetting();
         List<String> chunks = StructuralChunker.chunk(text, document.getName(), setting.chunkSize(), setting.chunkOverlap());

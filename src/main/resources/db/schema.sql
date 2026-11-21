@@ -140,6 +140,7 @@ ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS registration_email_whiteli
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS team_creation_limit INTEGER NOT NULL DEFAULT 5;
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS team_join_limit INTEGER NOT NULL DEFAULT 10;
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS email_code_login_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Registration email verification requires a usable outbound mail service.
 UPDATE sys_site_setting
@@ -1600,3 +1601,83 @@ CREATE INDEX IF NOT EXISTS idx_document_chunk_text_trgm ON document_chunk USING 
 ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_embedding_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_caption_model_id BIGINT;
 ALTER TABLE sys_rag_setting ADD COLUMN IF NOT EXISTS image_caption_prompt TEXT;
+
+-- Image caption prompt is edited on the Prompt page and reused by ingestion.
+ALTER TABLE sys_prompt_setting ADD COLUMN IF NOT EXISTS image_caption_prompt TEXT;
+UPDATE sys_prompt_setting
+   SET image_caption_prompt = (SELECT image_caption_prompt FROM sys_rag_setting WHERE id = 1)
+ WHERE id = 1
+   AND (image_caption_prompt IS NULL OR image_caption_prompt = '')
+   AND EXISTS (SELECT 1 FROM sys_rag_setting WHERE id = 1 AND image_caption_prompt IS NOT NULL);
+
+-- Site logo uploaded through the admin console.
+ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS logo_object_key VARCHAR(512);
+
+-- Common image formats are accepted by default.
+UPDATE sys_site_setting
+SET allowed_upload_types = 'pdf,doc,docx,xls,xlsx,ppt,pptx,txt,md,html,csv,jpg,jpeg,png,gif,webp'
+WHERE allowed_upload_types = 'pdf,doc,docx,xls,xlsx,ppt,pptx,txt,md,html,csv';
+
+-- Persistent user contribution history. Rows survive channel/team deletion.
+ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS contributions_public BOOLEAN NOT NULL DEFAULT TRUE;
+CREATE TABLE IF NOT EXISTS sys_user_contribution (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    event_type VARCHAR(32) NOT NULL,
+    channel_id BIGINT,
+    channel_name VARCHAR(255),
+    team_id BIGINT,
+    team_name VARCHAR(255),
+    amount INTEGER NOT NULL DEFAULT 1,
+    metadata TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_user_contribution_user_time ON sys_user_contribution (user_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_user_contribution_team_time ON sys_user_contribution (team_id, create_time DESC);
+
+-- ---------------------------------------------------------------------------
+-- Channel issues
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS kb_issue_label (
+    id          BIGSERIAL PRIMARY KEY,
+    channel_id  BIGINT       NOT NULL,
+    name        VARCHAR(32)  NOT NULL,
+    color       VARCHAR(16)  NOT NULL DEFAULT 'slate',
+    create_time TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_issue_label_channel_name
+    ON kb_issue_label (channel_id, LOWER(name));
+
+CREATE TABLE IF NOT EXISTS kb_issue (
+    id          BIGSERIAL PRIMARY KEY,
+    channel_id  BIGINT        NOT NULL,
+    number      BIGINT        NOT NULL,
+    title       VARCHAR(200)  NOT NULL,
+    body        TEXT          NOT NULL,
+    status      VARCHAR(16)   NOT NULL DEFAULT 'OPEN',
+    author_id   BIGINT        NOT NULL,
+    assignee_id BIGINT,
+    create_time TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    closed_at   TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kb_issue_channel_number ON kb_issue (channel_id, number);
+CREATE INDEX IF NOT EXISTS idx_kb_issue_channel_status ON kb_issue (channel_id, status);
+CREATE INDEX IF NOT EXISTS idx_kb_issue_author ON kb_issue (author_id);
+
+CREATE TABLE IF NOT EXISTS kb_issue_label_link (
+    issue_id BIGINT NOT NULL,
+    label_id BIGINT NOT NULL,
+    PRIMARY KEY (issue_id, label_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kb_issue_label_link_label ON kb_issue_label_link (label_id);
+
+CREATE TABLE IF NOT EXISTS kb_issue_comment (
+    id               BIGSERIAL PRIMARY KEY,
+    issue_id         BIGINT      NOT NULL,
+    author_id        BIGINT      NOT NULL,
+    body             TEXT        NOT NULL,
+    quote_comment_id BIGINT,
+    create_time      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_kb_issue_comment_issue ON kb_issue_comment (issue_id, create_time);

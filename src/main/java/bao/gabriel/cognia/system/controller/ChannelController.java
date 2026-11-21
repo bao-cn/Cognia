@@ -1,12 +1,19 @@
 package bao.gabriel.cognia.system.controller;
 
 import bao.gabriel.cognia.common.api.ApiResponse;
+import bao.gabriel.cognia.common.api.PageResult;
+import bao.gabriel.cognia.system.dto.channel.DocumentChunkResponse;
+import bao.gabriel.cognia.system.entity.DocumentChunk;
+import bao.gabriel.cognia.system.mapper.DocumentChunkMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import bao.gabriel.cognia.security.SecurityUtils;
 import bao.gabriel.cognia.system.dto.channel.*;
 import bao.gabriel.cognia.system.service.ChannelNotificationService;
 import bao.gabriel.cognia.system.service.ChannelService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,6 +26,7 @@ import java.util.Map;
 public class ChannelController {
 
     private final ChannelService channelService;
+    private final DocumentChunkMapper documentChunkMapper;
     private final ChannelNotificationService channelNotificationService;
 
     @GetMapping("/owner/{ownerType}/{ownerId}")
@@ -35,6 +43,7 @@ public class ChannelController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('channel:create')")
     public ApiResponse<ChannelSummaryResponse> create(@Valid @RequestBody CreateChannelRequest request) {
         return ApiResponse.success(channelService.create(SecurityUtils.getUserId(), request));
     }
@@ -76,6 +85,7 @@ public class ChannelController {
     }
 
     @PostMapping("/{id}/folders")
+    @PreAuthorize("hasAuthority('document:upload')")
     public ApiResponse<FolderResponse> createFolder(@PathVariable Long id,
                                                     @Valid @RequestBody CreateFolderRequest request) {
         return ApiResponse.success(channelService.createFolder(SecurityUtils.getUserId(), id, request));
@@ -100,6 +110,7 @@ public class ChannelController {
     }
 
     @PostMapping("/{id}/documents")
+    @PreAuthorize("hasAuthority('document:upload')")
     public ApiResponse<ChannelDocumentResponse> upload(@PathVariable Long id,
                                                        @RequestParam(required = false) Long folderId,
                                                        @RequestParam("file") MultipartFile file,
@@ -127,6 +138,43 @@ public class ChannelController {
     public ApiResponse<Void> deleteDocument(@PathVariable Long id, @PathVariable Long documentId) {
         channelService.deleteDocument(SecurityUtils.getUserId(), id, documentId);
         return ApiResponse.success();
+    }
+
+    @PutMapping("/{id}/documents/move")
+    public ApiResponse<Integer> moveDocuments(@PathVariable Long id,
+                                              @Valid @RequestBody MoveDocumentsRequest request) {
+        return ApiResponse.success(channelService.moveDocuments(
+                SecurityUtils.getUserId(), id, request.documentIds(), request.folderId()));
+    }
+
+    @PutMapping("/{id}/documents/{documentId}/move")
+    public ApiResponse<ChannelDocumentResponse> moveDocument(@PathVariable Long id,
+                                                             @PathVariable Long documentId,
+                                                             @RequestBody MoveDocumentRequest request) {
+        return ApiResponse.success(channelService.moveDocument(
+                SecurityUtils.getUserId(), id, documentId, request == null ? null : request.folderId()));
+    }
+
+    @GetMapping("/{id}/documents/{documentId}/chunks")
+    public ApiResponse<PageResult<DocumentChunkResponse>> documentChunks(@PathVariable Long id,
+                                                                         @PathVariable Long documentId,
+                                                                         @RequestParam(defaultValue = "1") long page,
+                                                                         @RequestParam(defaultValue = "20") long size) {
+        if (!channelService.detail(id, SecurityUtils.getUserId()).canManage()) {
+            throw bao.gabriel.cognia.common.exception.BusinessException.forbidden("没有权限查看分片");
+        }
+        long safeSize = Math.min(Math.max(size, 1), 100);
+        Page<DocumentChunk> result = documentChunkMapper.selectPage(
+                Page.of(Math.max(page, 1), safeSize),
+                new LambdaQueryWrapper<DocumentChunk>()
+                        .eq(DocumentChunk::getDocumentId, documentId)
+                        .orderByAsc(DocumentChunk::getChunkIndex));
+        var records = result.getRecords().stream()
+                .map(chunk -> new DocumentChunkResponse(chunk.getId(), chunk.getChunkId() == null ? null : chunk.getChunkId().toString(), chunk.getChunkIndex(),
+                        chunk.getChunkText(), chunk.getPageNumber(), chunk.getTitle(),
+                        chunk.getEmbeddingModel(), chunk.getEmbeddingStatus()))
+                .toList();
+        return ApiResponse.success(PageResult.of(records, result.getTotal(), result.getCurrent(), result.getSize()));
     }
 
     @PostMapping("/{id}/documents/{documentId}/retry")

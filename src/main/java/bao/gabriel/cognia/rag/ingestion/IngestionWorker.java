@@ -65,6 +65,10 @@ public class IngestionWorker {
             } else {
                 throw new IllegalStateException("未知处理步骤: " + job.getStep());
             }
+            if (queueService.isCancelled(job.getId())) {
+                log.info("Ingestion job {} was cancelled; skip completion", job.getId());
+                return;
+            }
             queueService.complete(job.getId());
         } catch (Exception ex) {
             String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();

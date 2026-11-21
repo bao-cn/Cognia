@@ -9,6 +9,8 @@ public interface EmailService {
 
     void sendRegisterCode(String email, String code, long ttlMinutes);
 
+    void sendLoginCode(String email, String code, long ttlMinutes);
+
     void sendEmailChangeCode(String email, String code, long ttlMinutes);
 
     void sendTestEmail(String recipient);
@@ -18,4 +20,7 @@ public interface EmailService {
     void sendChannelAlert(String recipient, String channelName, String subject, String message);
 
     void sendChannelNotification(String recipient, String channelName, String subject, String content);
+
+    void sendIssueNotification(String recipient, String channelName, String issueTitle, int issueNumber,
+                               String actorName, String reason, String comment);
 }

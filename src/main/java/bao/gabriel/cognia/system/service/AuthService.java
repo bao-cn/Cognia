@@ -10,6 +10,8 @@ import bao.gabriel.cognia.security.TokenService;
 import bao.gabriel.cognia.security.TurnstileService;
 import bao.gabriel.cognia.system.dto.auth.LoginOptionsResponse;
 import bao.gabriel.cognia.system.dto.auth.LoginRequest;
+import bao.gabriel.cognia.system.dto.auth.LoginCodeSendRequest;
+import bao.gabriel.cognia.system.dto.auth.LoginEmailCodeRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginTwoFactorRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginResponse;
 import bao.gabriel.cognia.system.dto.auth.RegisterRequest;
@@ -95,10 +97,26 @@ public class AuthService {
         String account = rawAccount == null ? "" : rawAccount.trim();
         User user = account.isEmpty() ? null : userService.findByAccount(account);
         if (user == null || !user.isEnabled()) {
-            return new LoginOptionsResponse(false, false);
+            return new LoginOptionsResponse(false, false, false);
         }
         boolean twoFactor = settingService.isTwoFactorEnabled() && Boolean.TRUE.equals(user.getTwoFactorEnabled());
-        return new LoginOptionsResponse(StringUtils.hasText(user.getPassword()), twoFactor);
+        boolean emailCode = settingService.isEmailCodeLoginEnabled() && StringUtils.hasText(user.getEmail());
+        return new LoginOptionsResponse(StringUtils.hasText(user.getPassword()), twoFactor, emailCode);
+    }
+
+    public SendCodeResponse sendLoginCode(LoginCodeSendRequest request, String clientIp) {
+        return verificationCodeService.sendLoginCode(request.account(), clientIp, request.turnstileToken());
+    }
+
+    public LoginResponse loginWithEmailCode(LoginEmailCodeRequest request, String clientIp, String userAgent) {
+        if (!settingService.isEmailCodeLoginEnabled()) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "邮箱验证码登录未启用");
+        }
+        User user = verificationCodeService.verifyLoginCode(request.account(), request.code());
+        if (!user.isEnabled()) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "账户已被禁用，请联系管理员");
+        }
+        return completeLogin(user, Boolean.TRUE.equals(request.rememberMe()), clientIp, userAgent);
     }
 
     public UserResponse register(RegisterRequest request) {

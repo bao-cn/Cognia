@@ -6,6 +6,7 @@ public record PromptSettingResponse(
         String expiredPrompt,
         String toolPrompt,
         String compressionPrompt,
+        String imageCaptionPrompt,
         String updatedAt
 ) {
 }

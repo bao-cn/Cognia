@@ -5,6 +5,7 @@ import type {
   ChannelCard,
   ChannelFolder,
   ChannelEmbeddingStatus,
+  DocumentChunkItem,
   CreateChannelPayload,
   UpdateChannelPayload,
 } from '@/types/api'
@@ -43,6 +44,9 @@ export const channelApi = {
   retryEmbeddingJob(id: string, jobId: string): Promise<void> {
     return http.post<void>(`/channels/${id}/embedding/jobs/${jobId}/retry`)
   },
+  cancelEmbedding(id: string): Promise<number> {
+    return http.post<number>(`/channels/${id}/embedding/cancel`)
+  },
   embeddingReadiness(ids: number[]): Promise<Record<string, boolean>> {
     return http.get<Record<string, boolean>>('/channels/embedding-readiness', { params: { ids: ids.join(',') } })
   },
@@ -57,6 +61,13 @@ export const channelApi = {
       params: folderId ? { folderId } : undefined,
     })
   },
+  documentChunks(channelId: string | number, documentId: string | number, page = 1, size = 20) {
+    return http.get<{ records: DocumentChunkItem[]; total: number; page: number; size: number; pages: number }>(
+      `/channels/${channelId}/documents/${documentId}/chunks`,
+      { params: { page, size } },
+    )
+  },
+
   uploadDocument(
     channelId: string,
     file: File,
@@ -83,6 +94,12 @@ export const channelApi = {
   },
   deleteDocument(channelId: string, documentId: string): Promise<void> {
     return http.delete<void>(`/channels/${channelId}/documents/${documentId}`)
+  },
+  moveDocument(channelId: string, documentId: string, folderId?: string): Promise<ChannelDocument> {
+    return http.put<ChannelDocument>(`/channels/${channelId}/documents/${documentId}/move`, { folderId })
+  },
+  moveDocuments(channelId: string, documentIds: string[], folderId?: string): Promise<number> {
+    return http.put<number>(`/channels/${channelId}/documents/move`, { documentIds, folderId })
   },
 
   readMarkdown(channelId: string, kind: 'README' | 'AGENT'): Promise<string> {

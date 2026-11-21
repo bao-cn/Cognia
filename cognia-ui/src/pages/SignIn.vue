@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from "vue"
-import { computed, onMounted, reactive, ref } from "vue"
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { toast } from "vue-sonner"
 import { cn } from "cn"
@@ -50,17 +50,22 @@ const form = reactive({
   password: '',
   rememberMe: false,
   twoFactorCode: '',
+  emailCode: '',
 })
 
-const errors = reactive<{ account?: string; password?: string; twoFactorCode?: string }>({})
+const errors = reactive<{ account?: string; password?: string; twoFactorCode?: string; emailCode?: string }>({})
 const loginStep = ref<1 | 2>(1)
-const loginMode = ref<'password' | 'twofa'>('password')
+const loginMode = ref<'password' | 'twofa' | 'email'>('password')
 const loginOptions = ref<LoginOptions | null>(null)
 const checkingAccount = ref(false)
 const submitting = ref(false)
 const turnstileToken = ref('')
 const turnstileError = ref('')
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+const emailCodeSent = ref(false)
+const emailCodeSending = ref(false)
+const emailCodeCooldown = ref(0)
+let cooldownTimer: ReturnType<typeof setInterval> | undefined
 
 const oauthProviders = ref<PublicOAuthProvider[]>([])
 
@@ -82,10 +87,13 @@ const loginCaptchaRequired = computed(() => siteStore.loginCaptchaEnabled
   && siteStore.turnstileConfigured
   && Boolean(siteStore.turnstileSiteKey))
 
+const emailCodeAvailable = computed(() => Boolean(loginOptions.value?.emailCodeLoginEnabled))
+
 const canSubmit = computed(() => {
   if (loginStep.value !== 2) return false
   if (loginMode.value === 'password' && !form.password) return false
   if (loginMode.value === 'twofa' && form.twoFactorCode.length !== 6) return false
+  if (loginMode.value === 'email' && (!emailCodeSent.value || form.emailCode.length !== 6)) return false
   return !submitting.value && (!loginCaptchaRequired.value || Boolean(turnstileToken.value))
 })
 
@@ -119,13 +127,18 @@ function backToAccount(): void {
   loginMode.value = 'password'
   errors.password = undefined
   errors.twoFactorCode = undefined
+  errors.emailCode = undefined
   form.password = ''
   form.twoFactorCode = ''
+  form.emailCode = ''
+  emailCodeSent.value = false
+  stopCooldown()
 }
 
 function validate(): boolean {
   errors.password = undefined
   errors.twoFactorCode = undefined
+  errors.emailCode = undefined
   if (loginMode.value === 'password' && !form.password) {
     errors.password = '请输入密码'
     return false
@@ -134,8 +147,48 @@ function validate(): boolean {
     errors.twoFactorCode = '请输入 6 位验证码'
     return false
   }
+  if (loginMode.value === 'email' && !/^\d{6}$/.test(form.emailCode)) {
+    errors.emailCode = '请输入 6 位邮箱验证码'
+    return false
+  }
   return true
 }
+
+function stopCooldown(): void {
+  if (cooldownTimer) {
+    clearInterval(cooldownTimer)
+    cooldownTimer = undefined
+  }
+  emailCodeCooldown.value = 0
+}
+
+async function sendEmailCode(): Promise<void> {
+  if (emailCodeSending.value || emailCodeCooldown.value > 0) return
+  if (loginCaptchaRequired.value && !turnstileToken.value) {
+    toast.warning('请先完成人机验证')
+    return
+  }
+  emailCodeSending.value = true
+  try {
+    await authApi.sendLoginCode(form.account.trim(), loginCaptchaRequired.value ? turnstileToken.value : undefined)
+    emailCodeSent.value = true
+    emailCodeCooldown.value = 60
+    stopCooldown()
+    emailCodeCooldown.value = 60
+    cooldownTimer = setInterval(() => {
+      emailCodeCooldown.value -= 1
+      if (emailCodeCooldown.value <= 0) stopCooldown()
+    }, 1000)
+    toast.success('验证码已发送到账户绑定邮箱')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '验证码发送失败')
+    resetTurnstile()
+  } finally {
+    emailCodeSending.value = false
+  }
+}
+
+onUnmounted(stopCooldown)
 
 function handleTurnstileVerified(token: string): void {
   turnstileToken.value = token
@@ -179,12 +232,19 @@ async function handleSubmit(): Promise<void> {
           turnstileToken: loginCaptchaRequired.value ? turnstileToken.value : undefined,
           rememberMe: form.rememberMe,
         })
-      : await userStore.login({
-          account: form.account.trim(),
-          password: form.password,
-          turnstileToken: loginCaptchaRequired.value ? turnstileToken.value : undefined,
-          rememberMe: form.rememberMe,
-        })
+      : loginMode.value === 'email'
+        ? await userStore.loginEmailCode({
+            account: form.account.trim(),
+            code: form.emailCode,
+            turnstileToken: loginCaptchaRequired.value ? turnstileToken.value : undefined,
+            rememberMe: form.rememberMe,
+          })
+        : await userStore.login({
+            account: form.account.trim(),
+            password: form.password,
+            turnstileToken: loginCaptchaRequired.value ? turnstileToken.value : undefined,
+            rememberMe: form.rememberMe,
+          })
     toast.success(`欢迎回来，${user.nickname || user.username}`)
     await router.replace(resolveRedirect())
   } catch (error) {
@@ -252,9 +312,10 @@ async function handleSubmit(): Promise<void> {
                 </div>
                 <Button type="button" variant="ghost" size="sm" @click="backToAccount">更换账号</Button>
               </div>
-              <div v-if="loginOptions?.twoFactorEnabled" class="grid grid-cols-2 gap-2">
-                <Button type="button" :variant="loginMode === 'password' ? 'default' : 'outline'" size="sm" @click="loginMode = 'password'">密码登录</Button>
-                <Button type="button" :variant="loginMode === 'twofa' ? 'default' : 'outline'" size="sm" @click="loginMode = 'twofa'">两步验证登录</Button>
+              <div v-if="loginOptions?.twoFactorEnabled || emailCodeAvailable" class="flex flex-wrap gap-2">
+                <Button v-if="loginOptions?.hasPassword" type="button" :variant="loginMode === 'password' ? 'default' : 'outline'" size="sm" class="flex-1" @click="loginMode = 'password'">密码登录</Button>
+                <Button v-if="loginOptions?.twoFactorEnabled" type="button" :variant="loginMode === 'twofa' ? 'default' : 'outline'" size="sm" class="flex-1" @click="loginMode = 'twofa'">两步验证登录</Button>
+                <Button v-if="emailCodeAvailable" type="button" :variant="loginMode === 'email' ? 'default' : 'outline'" size="sm" class="flex-1" @click="loginMode = 'email'">邮箱验证码登录</Button>
               </div>
             </Field>
             <Field v-if="loginStep === 2 && loginMode === 'password'">
@@ -292,6 +353,19 @@ async function handleSubmit(): Promise<void> {
               <FieldError :errors="[errors.twoFactorCode]" />
               <FieldDescription>{{ loginMode === 'twofa' ? '输入验证器中的 6 位验证码完成登录。' : '该账户已开启两步验证，请输入当前验证码。' }}</FieldDescription>
             </Field>
+            <Field v-if="loginStep === 2 && loginMode === 'email'">
+              <FieldLabel for="login-email-code">邮箱验证码</FieldLabel>
+              <div class="flex gap-2">
+                <Input id="login-email-code" v-model="form.emailCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位验证码" />
+                <Button type="button" variant="outline" class="shrink-0" :disabled="emailCodeSending || emailCodeCooldown > 0" @click="sendEmailCode">
+                  <Spinner v-if="emailCodeSending" class="mr-1.5" />
+                  {{ emailCodeCooldown > 0 ? `${emailCodeCooldown}s` : '发送验证码' }}
+                </Button>
+              </div>
+              <FieldError :errors="[errors.emailCode]" />
+              <FieldDescription>验证码将发送到该账户绑定的邮箱。首次点击后 60 秒内不可重复发送。</FieldDescription>
+            </Field>
+
             <Field v-if="loginStep === 2" orientation="horizontal" class="items-center">
               <Checkbox id="remember-me" v-model="form.rememberMe" />
               <FieldLabel for="remember-me" class="font-normal">

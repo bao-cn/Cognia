@@ -4,10 +4,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { toast } from 'vue-sonner'
 import Markdown from '@/components/Markdown.vue'
+import ContributionPanel from '@/components/ContributionPanel.vue'
 import TeamDetail from '@/pages/TeamDetail.vue'
 import { profileApi, channelApi, userApi } from '@/api'
 import { useUserStore } from '@/stores/user'
-import type { ChannelCard, OwnerProfile, ProfileLink } from '@/types/api'
+import type { ChannelCard, OwnerProfile, ProfileLink, UserContribution } from '@/types/api'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -28,9 +29,13 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const userStore = useUserStore()
+const canCreateChannel = computed(() => userStore.hasPermission('channel:create'))
 const loading = ref(true)
 const error = ref('')
 const profile = ref<OwnerProfile | null>(null)
+const contribution = ref<UserContribution | null>(null)
+const contributionLoading = ref(false)
+const contributionYear = ref(new Date().getFullYear())
 
 const identity = computed(() => String(route.params.identifier ?? ''))
 const isTeam = computed(() => profile.value?.type === 'TEAM')
@@ -44,6 +49,10 @@ async function load() {
   error.value = ''
   try {
     profile.value = await profileApi.get(identity.value)
+    contribution.value = null
+    if (profile.value.type === 'USER') {
+      await loadContributions()
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '加载主页失败'
     profile.value = null
@@ -266,6 +275,51 @@ const timezoneOptions = computed(() => {
   return current && !zones.includes(current) ? [current, ...zones] : zones
 })
 
+async function loadContributions(before?: number) {
+  if (!profile.value || profile.value.type !== 'USER') return
+  contributionLoading.value = true
+  try {
+    const data = await profileApi.contributions(profile.value.username, {
+      year: contributionYear.value,
+      before,
+      limit: 10,
+    })
+    if (before && contribution.value) {
+      contribution.value = {
+        ...data,
+        daily: contribution.value.daily,
+        activities: [...contribution.value.activities, ...data.activities],
+      }
+    } else {
+      contribution.value = data
+    }
+  } catch {
+    if (!before) contribution.value = null
+  } finally {
+    contributionLoading.value = false
+  }
+}
+
+function changeContributionYear(year: number) {
+  if (year === contributionYear.value) return
+  contributionYear.value = year
+  void loadContributions()
+}
+
+async function toggleContributionVisibility(value: boolean) {
+  if (!contribution.value) return
+  contributionLoading.value = true
+  try {
+    await profileApi.updateContributionVisibility(value)
+    contribution.value = { ...contribution.value, publicVisible: value }
+    toast.success(value ? '贡献面板已公开' : '贡献面板已设为仅自己可见')
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : '保存失败')
+  } finally {
+    contributionLoading.value = false
+  }
+}
+
 onMounted(load)
 watch(identity, load)
 </script>
@@ -318,7 +372,7 @@ watch(identity, load)
                   <IconPencil class="mr-1 size-4" />编辑资料
                 </Button>
                 <!-- 
-                <Button v-if="profile.canEdit" size="sm" class="w-full" @click="openCreate">
+                <Button v-if="profile.canEdit && canCreateChannel" size="sm" class="w-full" @click="openCreate">
                   <IconPlus class="mr-1 size-4" />新建频道
                 </Button>
                  -->
@@ -411,7 +465,7 @@ watch(identity, load)
                 <h2 class="flex items-center gap-2 text-sm font-semibold"><IconFolder class="size-4" />全部频道</h2>
                 <p class="mt-0.5 text-xs text-muted-foreground">{{ profile.channels.length }} 个频道</p>
               </div>
-              <Button v-if="profile.canEdit" variant="ghost" size="sm" @click="openCreate">
+              <Button v-if="profile.canEdit && canCreateChannel" variant="ghost" size="sm" @click="openCreate">
                 <IconPlus class="mr-1 size-4" />新建
               </Button>
             </header>
@@ -435,11 +489,22 @@ watch(identity, load)
             <div v-else class="flex flex-col items-center gap-2 px-4 py-10 text-center">
               <IconFolder class="size-8 text-muted-foreground/50" />
               <p class="text-sm text-muted-foreground">还没有频道</p>
-              <Button v-if="profile.canEdit" size="sm" variant="outline" @click="openCreate">
+              <Button v-if="profile.canEdit && canCreateChannel" size="sm" variant="outline" @click="openCreate">
                 <IconPlus class="mr-1 size-4" />创建第一个频道
               </Button>
             </div>
           </section>
+
+          <ContributionPanel
+            v-if="profile.type === 'USER' && contribution"
+            :data="contribution"
+            :self="profile.self"
+            :start-year="profile.createTime ? new Date(profile.createTime).getFullYear() : undefined"
+            :loading="contributionLoading"
+            @toggle-visibility="toggleContributionVisibility"
+            @load-more="loadContributions(contribution.nextBefore ?? undefined)"
+            @year-change="changeContributionYear"
+          />
         </div>
       </div>
     </template>

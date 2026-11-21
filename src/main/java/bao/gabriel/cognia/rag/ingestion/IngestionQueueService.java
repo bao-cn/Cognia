@@ -83,8 +83,32 @@ public class IngestionQueueService {
         jdbcTemplate.update("""
                 UPDATE sys_ingestion_job SET status = 'SUCCEEDED', lease_owner = NULL, lease_until = NULL,
                     finished_at = NOW()
-                WHERE id = ?
+                WHERE id = ? AND status = 'RUNNING'
                 """, jobId);
+    }
+
+    public boolean isCancelled(Long jobId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM sys_ingestion_job WHERE id = ? AND status = 'CANCELLED'",
+                Integer.class, jobId);
+        return count != null && count > 0;
+    }
+
+    public int cancelDocument(Long documentId) {
+        return jdbcTemplate.update("""
+                UPDATE sys_ingestion_job SET status = 'CANCELLED', finished_at = NOW(), lease_owner = NULL,
+                       lease_until = NULL
+                WHERE document_id = ? AND status IN ('QUEUED','RUNNING')
+                """, documentId);
+    }
+
+    public int cancelChannel(Long channelId) {
+        return jdbcTemplate.update("""
+                UPDATE sys_ingestion_job
+                SET status = 'CANCELLED', lease_owner = NULL, lease_until = NULL,
+                    finished_at = NOW(), error_message = COALESCE(error_message, '用户取消')
+                WHERE channel_id = ? AND status IN ('QUEUED','RUNNING')
+                """, channelId);
     }
 
     /** Returns QUEUED for a retry, or DEAD when attempts are exhausted. */
@@ -95,7 +119,7 @@ public class IngestionQueueService {
             jdbcTemplate.update("""
                     UPDATE sys_ingestion_job SET status = 'DEAD', error_message = ?, lease_owner = NULL,
                         lease_until = NULL, finished_at = NOW()
-                    WHERE id = ?
+                    WHERE id = ? AND status = 'RUNNING'
                     """, message, job.getId());
             return "DEAD";
         }
@@ -103,7 +127,7 @@ public class IngestionQueueService {
         jdbcTemplate.update("""
                 UPDATE sys_ingestion_job SET status = 'QUEUED', error_message = ?, lease_owner = NULL,
                     lease_until = NULL, available_at = NOW() + (? * INTERVAL '1 second')
-                WHERE id = ?
+                WHERE id = ? AND status = 'RUNNING'
                 """, message, delay, job.getId());
         return "QUEUED";
     }

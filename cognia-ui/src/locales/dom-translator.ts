@@ -58,6 +58,8 @@ const DYNAMIC_RULES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
   [/^清理超过 (\d+) 天的回收站记录，处理 (\d+) 个$/, m => `Cleaned recycle bin records older than ${m[1]} days; processed ${m[2]}`],
   [/^清理注销超过 (\d+) 天的用户\/团队文件，处理 (\d+) 个$/, m => `Cleaned files of users/teams deleted over ${m[1]} days ago; processed ${m[2]}`],
   [/^将临时文件生命周期同步为 (\d+) 天$/, m => `Synced temporary file lifecycle to ${m[1]} days`],
+  [/^去年你的贡献记录有(\d+)次$/, m => `Your contributions last year: ${m[1]}`],
+  [/^共 (\d+) 个频道 · (\d+) 次贡献$/, m => `${m[1]} channels · ${m[2]} contributions`],
 ]
 
 export function translatePhrase(value: string): string | undefined {
