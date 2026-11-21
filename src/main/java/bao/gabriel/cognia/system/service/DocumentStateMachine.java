@@ -34,6 +34,14 @@ public class DocumentStateMachine {
 
     public KbDocument transition(KbDocument document, DocumentStatus target, String errorMessage) {
         DocumentStatus current = DocumentStatus.parse(document.getStatus());
+        if (current == target) {
+            document.setUpdateTime(LocalDateTime.now());
+            if (target == DocumentStatus.PROCESSING) {
+                document.setErrorMessage(null);
+                document.setProcessedAt(null);
+            }
+            return document;
+        }
         if (!current.canTransitionTo(target)) {
             throw BusinessException.badRequest(
                     "文档状态不能从 " + current + " 变更为 " + target);

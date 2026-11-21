@@ -32,6 +32,7 @@ import bao.gabriel.cognia.system.mapper.UserMapper;
 import bao.gabriel.cognia.system.service.ChannelService;
 import bao.gabriel.cognia.system.service.DocumentIngestionService;
 import bao.gabriel.cognia.system.service.DocumentStateMachine;
+import bao.gabriel.cognia.system.service.ContributionService;
 import bao.gabriel.cognia.system.service.FileDeletionService;
 import bao.gabriel.cognia.system.service.MinioStorageService;
 import bao.gabriel.cognia.system.service.SiteSettingService;
@@ -96,6 +97,7 @@ public class ChannelServiceImpl implements ChannelService {
     private final EmbeddingService embeddingService;
     private final IngestionQueueService ingestionQueueService;
     private final JdbcTemplate jdbcTemplate;
+    private final ContributionService contributionService;
 
     @Override
     public List<ChannelSummaryResponse> list(String ownerType, Long ownerId, Long viewerId) {
@@ -173,6 +175,8 @@ public class ChannelServiceImpl implements ChannelService {
         channel.setCreateTime(now);
         channel.setUpdateTime(now);
         channelMapper.insert(channel);
+        contributionService.record(userId, "CHANNEL_CREATE", channel.getId(), channel.getName(),
+                teamIdOf(channel), teamNameOf(channel), 1, null);
         return toSummary(channel);
     }
 
@@ -209,6 +213,8 @@ public class ChannelServiceImpl implements ChannelService {
             deletionService.logicalDelete(document, userId);
         }
         folderMapper.delete(new LambdaQueryWrapper<Folder>().eq(Folder::getChannelId, channelId));
+        contributionService.record(userId, "CHANNEL_DELETE", channelId, channel.getName(),
+                teamIdOf(channel), teamNameOf(channel), 1, null);
         channelMapper.deleteById(channelId);
     }
 
@@ -402,6 +408,13 @@ public class ChannelServiceImpl implements ChannelService {
         }
         if (!skipIngestion) {
             ingestionService.ingest(document.getId());
+        }
+        if (existingMarkdown == null && !skipIngestion) {
+            contributionService.record(userId, "DOC_CREATE", channelId, channel.getName(),
+                    teamIdOf(channel), teamNameOf(channel), 1, document.getName());
+        } else if (existingMarkdown != null) {
+            contributionService.record(userId, "DOC_UPDATE", channelId, channel.getName(),
+                    teamIdOf(channel), teamNameOf(channel), 1, document.getName());
         }
         KbDocument saved = documentMapper.selectById(document.getId());
         return toDocument(saved == null ? document : saved);
@@ -599,6 +612,47 @@ public class ChannelServiceImpl implements ChannelService {
             throw BusinessException.notFound("文档不存在");
         }
         deletionService.logicalDelete(document, userId);
+        contributionService.record(userId, "DOC_DELETE", channelId, channel.getName(),
+                teamIdOf(channel), teamNameOf(channel), 1, document.getName());
+    }
+
+    @Override
+    public ChannelDocumentResponse moveDocument(Long userId, Long channelId, Long documentId, Long folderId) {
+        Channel channel = requireChannel(channelId);
+        Access access = access(channel, userId);
+        if (!access.write()) {
+            throw BusinessException.forbidden("你没有移动文档的权限");
+        }
+        ensureNotArchived(channel, "频道已存档，取消存档后才能移动文档");
+        KbDocument document = documentMapper.selectById(documentId);
+        if (document == null || !channelId.equals(document.getChannelId())
+                || DocumentStateMachine.DocumentStatus.DELETED.name().equals(document.getStatus())) {
+            throw BusinessException.notFound("文档不存在");
+        }
+        if (document.getFolderId() == null && markdownKind(document.getName()) != null) {
+            throw BusinessException.badRequest("README 和 AGENT 文件必须保留在频道根目录");
+        }
+        if (folderId != null) {
+            Folder target = folderMapper.selectById(folderId);
+            if (target == null || !channelId.equals(target.getChannelId())) {
+                throw BusinessException.notFound("目标文件夹不存在");
+            }
+        }
+        document.setFolderId(folderId);
+        document.setUpdateTime(LocalDateTime.now());
+        documentMapper.updateById(document);
+        return toDocument(document);
+    }
+
+    @Override
+    @Transactional
+    public int moveDocuments(Long userId, Long channelId, List<Long> documentIds, Long folderId) {
+        int moved = 0;
+        for (Long documentId : documentIds) {
+            moveDocument(userId, channelId, documentId, folderId);
+            moved++;
+        }
+        return moved;
     }
 
     @Override
@@ -613,7 +667,12 @@ public class ChannelServiceImpl implements ChannelService {
         if (document == null || !channelId.equals(document.getChannelId())) {
             throw BusinessException.notFound("文档不存在");
         }
-        stateMachine.retry(document);
+        ingestionQueueService.cancelDocument(documentId);
+        document.setStatus("PENDING");
+        document.setErrorMessage(null);
+        document.setProcessedAt(null);
+        document.setRetryCount(document.getRetryCount() == null ? 1 : document.getRetryCount() + 1);
+        document.setUpdateTime(LocalDateTime.now());
         documentMapper.updateById(document);
         ingestionService.ingest(document.getId());
     }
@@ -808,6 +867,23 @@ public class ChannelServiceImpl implements ChannelService {
             if (ingestionQueueService.enqueue(document.getId(), channelId, "EMBED")) queued++;
         }
         return queued;
+    }
+
+    @Override
+    public int cancelReembed(Long channelId, Long userId) {
+        Channel channel = requireChannel(channelId);
+        Access access = access(channel, userId);
+        if (!access.manage()) throw BusinessException.forbidden("只有频道管理者可以取消向量化");
+        int cancelled = ingestionQueueService.cancelChannel(channelId);
+        channel.setReembedding(false);
+        channelMapper.updateById(channel);
+        jdbcTemplate.update("""
+                UPDATE kb_document d SET status = 'FAILED', error_message = '已取消向量化'
+                WHERE d.channel_id = ? AND d.status <> 'DELETED'
+                  AND EXISTS (SELECT 1 FROM document_chunk dc
+                              WHERE dc.document_id = d.id AND dc.embedding_status = 'PENDING')
+                """, channelId);
+        return cancelled;
     }
 
     private ChannelAboutResponse.Contributor contributor(User user, long count) {
@@ -1125,5 +1201,17 @@ public class ChannelServiceImpl implements ChannelService {
     }
 
     private record Access(boolean read, boolean write, boolean manage, boolean member) {
+    }
+
+    private Long teamIdOf(Channel channel) {
+        return Channel.OWNER_TEAM.equals(channel.getOwnerType()) ? channel.getOwnerId() : null;
+    }
+
+    private String teamNameOf(Channel channel) {
+        if (!Channel.OWNER_TEAM.equals(channel.getOwnerType())) {
+            return null;
+        }
+        var team = teamMapper.selectById(channel.getOwnerId());
+        return team == null ? null : team.getName();
     }
 }

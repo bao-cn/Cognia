@@ -1,6 +1,10 @@
 <template>
   <div :class="isStandalonePage ? 'min-h-dvh' : 'h-dvh overflow-hidden'">
-    <router-view />
+    <router-view v-slot="{ Component }">
+          <KeepAlive include="ChannelDetail">
+            <component :is="Component" />
+          </KeepAlive>
+        </router-view>
     <Toaster />
     <GlobalSearch />
     <TraceDrawer />

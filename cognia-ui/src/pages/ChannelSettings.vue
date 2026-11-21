@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import IssueLabelSettings from '@/components/IssueLabelSettings.vue'
 import { Textarea } from '@/components/ui/textarea'
 import {
   IconAlertTriangle, IconArrowLeft, IconLock, IconRefresh,
@@ -275,6 +276,8 @@ watch(() => [route.params.owner, route.params.channelSlug], load)
             </div>
           </div>
         </section>
+
+        <IssueLabelSettings v-if="canManage && channel" :channel-id="channel.id" />
 
         <section class="rounded-xl border border-destructive/25 bg-card">
           <header class="flex flex-col gap-1 border-b border-destructive/20 px-4 py-3">

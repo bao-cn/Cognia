@@ -56,7 +56,7 @@ const routes: Array<RouteRecordRaw> = [
         name: 'ChatTemporary',
         path: 'chat/temporary',
         component: () => import('@/pages/Chat.vue'),
-        meta: { title: '临时对话' },
+        meta: { title: '临时对话', permissions: ['chat:read'] },
       },
       {
         name: 'Chat',
@@ -64,6 +64,7 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@/pages/Chat.vue'),
         meta: {
           title: '新对话',
+          permissions: ['chat:read'],
         },
       },
       {
@@ -72,6 +73,7 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@/pages/Chat.vue'),
         meta: {
           title: '对话',
+          permissions: ['chat:read'],
         },
       },
       {
@@ -85,9 +87,45 @@ const routes: Array<RouteRecordRaw> = [
         redirect: '/settings/teams',
       },
       {
+        name: 'ChannelInsights',
+        path: ':owner/:channelSlug/insights',
+        component: () => import('@/pages/ChannelDetail.vue'),
+        meta: { title: '数据洞察', public: true },
+      },
+      {
+        name: 'ChannelEmbedding',
+        path: ':owner/:channelSlug/embedding',
+        component: () => import('@/pages/ChannelDetail.vue'),
+        meta: { title: '向量化' },
+      },
+      {
+        name: 'ChannelRecycle',
+        path: ':owner/:channelSlug/recycle',
+        component: () => import('@/pages/ChannelDetail.vue'),
+        meta: { title: '回收站' },
+      },
+      {
+        name: 'ChannelIssues',
+        path: ':owner/:channelSlug/issues',
+        component: () => import('@/pages/ChannelDetail.vue'),
+        meta: { title: '工单', public: true },
+      },
+      {
+        name: 'ChannelIssueCreate',
+        path: ':owner/:channelSlug/issues/new',
+        component: () => import('@/pages/ChannelDetail.vue'),
+        meta: { title: '新建工单', public: true },
+      },
+      {
+        name: 'IssueDetail',
+        path: ':owner/:channelSlug/issues/:number',
+        component: () => import('@/pages/ChannelDetail.vue'),
+        meta: { title: '工单详情', public: true },
+      },
+      {
         name: 'ChannelSettings',
         path: ':owner/:channelSlug/settings',
-        component: () => import('@/pages/ChannelSettings.vue'),
+        component: () => import('@/pages/ChannelDetail.vue'),
         meta: { title: '频道设置', public: true },
       },
       {
