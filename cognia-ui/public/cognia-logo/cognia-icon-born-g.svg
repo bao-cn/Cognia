@@ -1,0 +1,34 @@
+<svg viewBox="0 0 191.48 191.398" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="191.480469" height="191.398438" fill="none" customFrame="#000000">
+	<defs>
+		<g id="pixso_custom_effect_6">
+			<effect visibility="visible" effectType="" stdDeviation="4" />
+		</g>
+		<filter id="filter_6" width="191.000000" height="191.000000" x="0.000000" y="0.000000" filterUnits="userSpaceOnUse" customEffect="url(#pixso_custom_effect_6)" color-interpolation-filters="sRGB">
+			<feFlood flood-opacity="0" result="BackgroundImageFix" />
+			<feBlend result="shape" in="SourceGraphic" in2="BackgroundImageFix" mode="normal" />
+		</filter>
+		<g id="pixso_custom_effect_7">
+			<effect visibility="visible" effectType="" stdDeviation="4" />
+			<effect x="0.000000" y="2.000000" visibility="visible" fill="rgb(0,0,0)" fill-opacity="0.280000001" effectType="dropShadow" stdDeviation="4" radius="0" />
+		</g>
+		<filter id="filter_7" width="142.000000" height="142.000488" x="24.000000" y="27.000000" filterUnits="userSpaceOnUse" customEffect="url(#pixso_custom_effect_7)" color-interpolation-filters="sRGB">
+			<feFlood flood-opacity="0" result="BackgroundImageFix" />
+			<feColorMatrix result="hardAlpha" in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.33333 0 " />
+			<feOffset dx="0.000000" dy="2.000000" in="hardAlpha" />
+			<feGaussianBlur stdDeviation="1.33333337" />
+			<feComposite k2="-1" k3="1" in2="hardAlpha" operator="out" />
+			<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.28 0 " />
+			<feBlend result="effect_dropShadow_1" in2="BackgroundImageFix" mode="normal" />
+			<feBlend result="shape" in="SourceGraphic" in2="effect_dropShadow_1" mode="normal" />
+		</filter>
+	</defs>
+	<g id="cognia-icon-born-g">
+		<path id="Vector" d="M145.854 0C173.529 0 191.481 17.9436 191.481 45.6067L191.481 145.792C191.481 173.455 173.529 191.398 145.854 191.398L45.6263 191.398C17.9513 191.398 0 173.455 0 145.792L0 45.6067C0 17.9436 17.9513 0 45.6263 0L145.854 0Z" fill="rgb(76,147,0)" fill-rule="evenodd" />
+		<g filter="url(#filter_6)">
+			<path id="矢量 772" d="M0 96L191 96M0 48L191 48M0 144L191 144M95 0L95 191M143 0L143 191M47 0L47 191" stroke="rgb(255,255,255)" stroke-opacity="0.200000003" stroke-width="2.000000" />
+		</g>
+		<g filter="url(#filter_7)">
+			<path id="矢量 792" d="M104.095 99.9886C107.311 87.9429 104.195 74.5573 94.7445 65.1069C85.2944 55.6566 71.9085 52.5401 59.8628 55.757C61.4458 49.8293 64.5625 44.2258 69.2131 39.5756C83.3137 25.4747 106.175 25.4747 120.276 39.5756C134.377 53.6762 134.377 76.5377 120.276 90.6386C115.625 95.2888 110.023 98.4056 104.095 99.9886ZM54.7567 130.627C51.5402 118.581 54.657 105.195 64.1071 95.7449C73.5572 86.2946 86.9431 83.1781 98.9888 86.395C97.4058 80.4673 94.2891 74.8638 89.6385 70.2136C75.5379 56.1127 52.6763 56.1127 38.5756 70.2136C24.475 84.3142 24.475 107.176 38.5756 121.277C43.2262 125.927 48.829 129.044 54.7567 130.627ZM135.244 61.3739C138.46 73.4196 135.343 86.8052 125.893 96.2556C116.443 105.706 103.057 108.822 91.0115 105.606C92.5945 111.533 95.7113 117.137 100.362 121.787C114.462 135.888 137.324 135.888 151.425 121.787C165.525 107.686 165.525 84.8248 151.425 70.7239C146.774 66.0737 141.171 62.9569 135.244 61.3739ZM85.9048 92.0119C82.6883 104.058 85.8051 117.443 95.2551 126.894C104.705 136.344 118.091 139.46 130.137 136.244C128.554 142.171 125.437 147.775 120.787 152.425C106.686 166.526 83.8243 166.526 69.7237 152.425C55.6231 138.324 55.6231 115.463 69.7237 101.362C74.3743 96.7117 79.9771 93.5949 85.9048 92.0119Z" fill="rgb(255,255,255)" fill-opacity="0.75" fill-rule="evenodd" />
+		</g>
+	</g>
+</svg>

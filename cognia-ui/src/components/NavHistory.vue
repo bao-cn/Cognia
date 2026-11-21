@@ -4,6 +4,7 @@ import { toast } from "vue-sonner"
 import {
   IconDots,
   IconArchive,
+  IconMessageCircle,
   IconMessagePlus,
   IconChevronDown,
   IconPin,
@@ -55,11 +56,11 @@ const isMenuCollapsed = ref(false)
 <template>
   <SidebarGroup class="group-data-[collapsible=icon]:hidden flex min-h-20 flex-1 flex-col overflow-hidden">
     <SidebarGroupLabel class="group/label flex h-auto min-h-6 w-full gap-1 p-0">
-      <span class="shrink-0">最近</span>
+      <span class="shrink-0">会话</span>
 
       <Button variant="ghost" size="icon"
         class="size-6 shrink-0 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/label:opacity-100 group-hover/label:pointer-events-auto focus-visible:opacity-100"
-        :aria-expanded="!isMenuCollapsed" aria-label="折叠或展开最近会话" @click="isMenuCollapsed = !isMenuCollapsed">
+        :aria-expanded="!isMenuCollapsed" aria-label="折叠或展开会话" @click="isMenuCollapsed = !isMenuCollapsed">
         <IconChevronDown class="size-4 transition-transform duration-300" :class="{ 'rotate-180': isMenuCollapsed }" />
       </Button>
 
@@ -81,14 +82,17 @@ const isMenuCollapsed = ref(false)
         ? 'grid-rows-[0fr] opacity-0'
         : 'grid-rows-[1fr] opacity-100'
       ">
-      <div class="min-h-0 overflow-y-auto pr-1">
+      <div class="history-scroll min-h-0 overflow-y-auto">
         <SidebarMenu>
           <SidebarMenuItem v-for="item in items" :key="item.id">
             <SidebarMenuButton as-child>
               <router-link :to="item.url" class="min-w-0">
-                <IconPinFilled v-if="item.pinned" class="size-3 shrink-0 text-primary" />
+                <IconMessageCircle class="size-4 shrink-0" />
                 <span data-i18n-skip class="truncate">{{ item.name }}</span>
-                <IconStarFilled v-if="item.favorited" class="size-3 shrink-0 text-amber-500" />
+                <span v-if="item.pinned || item.favorited" class="ml-auto flex shrink-0 items-center gap-1">
+                  <IconPinFilled v-if="item.pinned" class="size-3 text-primary" />
+                  <IconStarFilled v-if="item.favorited" class="size-3 text-amber-500" />
+                </span>
               </router-link>
             </SidebarMenuButton>
             <DropdownMenu>
@@ -122,3 +126,12 @@ const isMenuCollapsed = ref(false)
 
   </SidebarGroup>
 </template>
+
+<style scoped>
+.history-scroll {
+  scrollbar-width: none;
+}
+.history-scroll::-webkit-scrollbar {
+  display: none;
+}
+</style>

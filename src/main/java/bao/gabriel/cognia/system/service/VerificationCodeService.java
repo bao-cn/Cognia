@@ -4,7 +4,8 @@ import bao.gabriel.cognia.common.api.ResultCode;
 import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.config.properties.AppMailProperties;
 import bao.gabriel.cognia.config.properties.VerificationCodeProperties;
-import bao.gabriel.cognia.security.TurnstileService;
+import bao.gabriel.cognia.security.CaptchaService;
+import bao.gabriel.cognia.security.CaptchaSubmission;
 import bao.gabriel.cognia.system.dto.auth.SendCodeResponse;
 import bao.gabriel.cognia.system.entity.User;
 import bao.gabriel.cognia.system.mapper.UserMapper;
@@ -59,10 +60,11 @@ public class VerificationCodeService {
     private final AppMailProperties mailProperties;
     private final EmailService emailService;
     private final SiteSettingService settingService;
-    private final TurnstileService turnstileService;
+    private final CaptchaService captchaService;
     private final UserMapper userMapper;
 
-    public SendCodeResponse sendRegisterCode(String rawEmail, String clientIp, String turnstileToken) {
+    public SendCodeResponse sendRegisterCode(String rawEmail, String clientIp,
+                                             CaptchaSubmission captcha, String turnstileToken) {
         if (!settingService.isRegistrationEnabled()) {
             throw new BusinessException(ResultCode.FORBIDDEN, "注册功能已关闭");
         }
@@ -75,7 +77,8 @@ public class VerificationCodeService {
         }
 
         // Server-side human verification happens before any email work.
-        turnstileService.verify(turnstileToken, clientIp, settingService.isRegisterEmailCaptchaEnabled());
+        captchaService.verify(captcha, turnstileToken, clientIp,
+                settingService.isRegisterEmailCaptchaEnabled());
 
         Long existing = userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getEmail, email));
         if (existing != null && existing > 0) {
@@ -130,7 +133,8 @@ public class VerificationCodeService {
                 properties.getResendInterval().toSeconds(), devCode);
     }
 
-    public SendCodeResponse sendLoginCode(String rawAccount, String clientIp, String turnstileToken) {
+    public SendCodeResponse sendLoginCode(String rawAccount, String clientIp,
+                                          CaptchaSubmission captcha, String turnstileToken) {
         if (!settingService.isEmailCodeLoginEnabled()) {
             throw new BusinessException(ResultCode.FORBIDDEN, "邮箱验证码登录未启用");
         }
@@ -138,7 +142,8 @@ public class VerificationCodeService {
         if (user == null || user.getEmail() == null || user.getEmail().isBlank() || !user.isEnabled()) {
             throw BusinessException.badRequest("该账户暂不支持邮箱验证码登录");
         }
-        turnstileService.verify(turnstileToken, clientIp, settingService.isLoginCaptchaEnabled());
+        captchaService.verify(captcha, turnstileToken, clientIp,
+                settingService.isLoginCaptchaEnabled());
         String email = normalize(user.getEmail());
 
         if (clientIp != null && !clientIp.isBlank()) {

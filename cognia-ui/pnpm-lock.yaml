@@ -141,6 +141,12 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@rolldown/binding-win32-arm64-msvc':
+        specifier: 1.2.14
+        version: 1.2.14
+      '@tailwindcss/oxide-win32-arm64-msvc':
+        specifier: 4.3.3
+        version: 4.3.3
       '@tailwindcss/vite':
         specifier: ^4.0.0
         version: 4.3.3(vite@8.3.7(@types/node@22.20.5)(jiti@2.7.0))
@@ -156,6 +162,9 @@ importers:
       electron-builder:
         specifier: 26.18.0
         version: 26.18.0(electron-builder-squirrel-windows@26.18.0)
+      lightningcss-win32-arm64-msvc:
+        specifier: 1.32.0
+        version: 1.32.0
       tailwindcss:
         specifier: ^4.0.0
         version: 4.3.3
@@ -2076,9 +2085,13 @@ packages:
   gl-matrix@3.4.4:
     resolution: {integrity: sha512-latSnyDNt/8zYUB6VIJ6PCh2jBjJX6gnDsoCZ7LyW7GkqrD51EWwa9qCoGixj8YqBtETQK/xY7OmpTF8xz1DdQ==}
 
+  glob@7.2.0:
+    resolution: {integrity: sha512-lmLf6gtyrPq8tTjSmrO94wBeQbFR3HbLHbuyD69wuyQkImp2hWqMGB47OX65FBkPffO641IP9jWa1z4ivqG26Q==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
-    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+    deprecated: Glob versions prior to v9 are no longer supported
 
   global-agent@3.0.0:
     resolution: {integrity: sha512-PT6XReJ+D07JvGoxQMkT6qji/jVNfX/h364XHZOWeRzy64sSFr+xJ5OX7LI3b4MPQzdL4H8Y8M0xzPpsVMwA8Q==}
@@ -4030,6 +4043,7 @@ snapshots:
   '@rolldown/binding-openharmony-arm64@1.2.19':
     optional: true
 
+  '@rolldown/binding-win32-arm64-msvc@1.2.14': {}
   '@rolldown/binding-wasm32-wasi@1.2.19':
     dependencies:
       '@emnapi/core': 2.0.0-beta.2
@@ -4181,8 +4195,7 @@ snapshots:
   '@tailwindcss/oxide-wasm32-wasi@4.3.3':
     optional: true
 
-  '@tailwindcss/oxide-win32-arm64-msvc@4.3.3':
-    optional: true
+  '@tailwindcss/oxide-win32-arm64-msvc@4.3.3': {}
 
   '@tailwindcss/oxide-win32-x64-msvc@4.3.3':
     optional: true
@@ -5697,6 +5710,15 @@ snapshots:
 
   gl-matrix@3.4.4: {}
 
+  glob@7.2.0:
+    dependencies:
+      fs.realpath: 1.0.0
+      inflight: 1.0.6
+      inherits: 2.0.4
+      minimatch: 3.1.5
+      once: 1.4.0
+      path-is-absolute: 1.0.1
+
   glob@7.2.3:
     dependencies:
       fs.realpath: 1.0.0
@@ -5993,8 +6015,7 @@ snapshots:
   lightningcss-linux-x64-musl@1.33.0:
     optional: true
 
-  lightningcss-win32-arm64-msvc@1.32.0:
-    optional: true
+  lightningcss-win32-arm64-msvc@1.32.0: {}
 
   lightningcss-win32-arm64-msvc@1.33.0:
     optional: true
@@ -6540,7 +6561,7 @@ snapshots:
 
   rimraf@2.6.3:
     dependencies:
-      glob: 7.2.3
+      glob: 7.2.0
 
   roarr@2.15.4:
     dependencies:

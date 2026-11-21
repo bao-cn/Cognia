@@ -7,6 +7,16 @@
 @import "@fontsource/jetbrains-mono";
 @import "./typeset.css";
 
+@font-face {
+  font-family: 'Alimama FangYuanTi VF-SemiBold-Square';
+  src: url('/alimama.ttf') format('truetype');
+  font-weight: 650;
+  font-stretch: condensed;
+  font-display: swap;
+  font-style: normal;
+  font-variation-settings: "BEVL" 0;
+}
+
 :root {
   --font-noto-sans: "Noto Sans", sans-serif;
   --font-jetbrains-mono: "JetBrains Mono", monospace;
@@ -24,7 +34,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-heading: var(--font-serif);
+  --font-sans: 'Alimama FangYuanTi VF-SemiBold-Square', 'Noto Sans', sans-serif;
+  --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -60,6 +71,121 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+}
+
+@theme {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-pop-in: pop-in 320ms var(--ease-spring) both;
+  --animate-pop-out: pop-out 180ms ease-in both;
+  --animate-overlay-in: overlay-in 220ms var(--ease-out-quint) both;
+  --animate-overlay-out: overlay-out 160ms ease-in both;
+  --animate-menu-in: menu-in 160ms var(--ease-spring) both;
+  --animate-tab-in: tab-in 220ms var(--ease-spring-soft) both;
+  --animate-list-item-in: list-item-in 280ms var(--ease-spring-soft) both;
+  --animate-sheet-in: sheet-in 280ms var(--ease-spring-soft) both;
+  --animate-sheet-out: sheet-out 200ms ease-in both;
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.94) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes pop-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.96) translateY(4px); }
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: scale(0.94) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes tab-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes list-item-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.995); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes sheet-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sheet-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.route-transition-content {
+  view-transition-name: none;
+}
+
+:root[data-route-transition-scope='content'] .route-transition-content {
+  view-transition-name: page-content;
+}
+
+::view-transition-old(root),
+::view-transition-new(root),
+::view-transition-old(page-content),
+::view-transition-new(page-content) {
+  animation: none;
+}
+
+:root[data-route-transition-scope='route']::view-transition-old(root),
+:root[data-route-transition-scope='content']::view-transition-old(page-content) {
+  animation: 120ms cubic-bezier(0.4, 0, 1, 1) both page-transition-out;
+  pointer-events: none;
+}
+
+:root[data-route-transition-scope='route']::view-transition-new(root),
+:root[data-route-transition-scope='content']::view-transition-new(page-content) {
+  animation: 200ms cubic-bezier(0.16, 1, 0.3, 1) both page-transition-in;
+}
+
+@keyframes page-transition-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 0; transform: translate3d(0, -4px, 0); }
+}
+
+@keyframes page-transition-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-old(page-content),
+  ::view-transition-new(page-content) {
+    animation: none !important;
+  }
 }
 
 :root {

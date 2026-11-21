@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { authApi } from '@/api'
-import type { LoginPayload, LoginResult, RegisterPayload, SendCodeResult, UserProfile } from '@/types/api'
+import type { CaptchaSubmission, LoginPayload, LoginResult, RegisterPayload, SendCodeResult, UserProfile } from '@/types/api'
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from '@/utils/token'
 
 interface UserState {
@@ -94,8 +94,8 @@ export const useUserStore = defineStore('user', {
       return authApi.register(payload)
     },
 
-    async sendRegisterCode(email: string, turnstileToken?: string): Promise<SendCodeResult> {
-      return authApi.sendRegisterCode(email, turnstileToken)
+    async sendRegisterCode(email: string, captcha?: CaptchaSubmission): Promise<SendCodeResult> {
+      return authApi.sendRegisterCode(email, captcha)
     },
 
     async fetchProfile(): Promise<UserProfile> {

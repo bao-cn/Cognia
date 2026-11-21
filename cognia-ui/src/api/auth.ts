@@ -1,6 +1,7 @@
 import { http } from './http'
 import type {
   AvailabilityResult,
+  CaptchaSubmission,
   LoginEmailCodePayload,
   LoginOptions,
   LoginPayload,
@@ -12,8 +13,8 @@ import type {
 } from '@/types/api'
 
 export const authApi = {
-  sendRegisterCode(email: string, turnstileToken?: string): Promise<SendCodeResult> {
-    return http.post<SendCodeResult>('/auth/register/code', { email, turnstileToken })
+  sendRegisterCode(email: string, captcha?: CaptchaSubmission): Promise<SendCodeResult> {
+    return http.post<SendCodeResult>('/auth/register/code', { email, captcha })
   },
   checkEmail(email: string): Promise<AvailabilityResult> {
     return http.get<AvailabilityResult>('/auth/register/check-email', { params: { email } })
@@ -36,8 +37,8 @@ export const authApi = {
   loginTwoFactor(payload: LoginTwoFactorPayload): Promise<LoginResult> {
     return http.post<LoginResult>('/auth/login/2fa', payload)
   },
-  sendLoginCode(account: string, turnstileToken?: string): Promise<SendCodeResult> {
-    return http.post<SendCodeResult>('/auth/login/code', { account, turnstileToken })
+  sendLoginCode(account: string, captcha?: CaptchaSubmission): Promise<SendCodeResult> {
+    return http.post<SendCodeResult>('/auth/login/code', { account, captcha })
   },
   loginEmailCode(payload: LoginEmailCodePayload): Promise<LoginResult> {
     return http.post<LoginResult>('/auth/login/email-code', payload)

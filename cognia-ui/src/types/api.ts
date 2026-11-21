@@ -38,9 +38,34 @@ export interface UserProfile {
   hasPassword?: boolean
 }
 
+// ---------------------------------------------------------------------------
+// Human verification
+// ---------------------------------------------------------------------------
+
+export type CaptchaProvider = 'NONE' | 'TURNSTILE' | 'GEETEST'
+
+/**
+ * Challenge result accepted by the backend. Turnstile only fills `token`;
+ * GeeTest 4.0 fills the four validation fields returned by getValidate().
+ */
+export interface CaptchaSubmission {
+  token?: string
+  lotNumber?: string
+  captchaOutput?: string
+  passToken?: string
+  genTime?: string
+}
+
+/** Submission tagged with the provider that produced it (UI bookkeeping). */
+export interface CaptchaSolution extends CaptchaSubmission {
+  provider: Exclude<CaptchaProvider, 'NONE'>
+}
+
 export interface LoginPayload {
   account: string
   password: string
+  captcha?: CaptchaSubmission
+  /** @deprecated use {@link captcha} */
   turnstileToken?: string
   rememberMe?: boolean
   twoFactorCode?: string
@@ -63,6 +88,8 @@ export interface LoginTwoFactorPayload {
   account: string
   code: string
   rememberMe?: boolean
+  captcha?: CaptchaSubmission
+  /** @deprecated use {@link captcha} */
   turnstileToken?: string
 }
 
@@ -162,6 +189,7 @@ export interface PermissionItem {
 export type LanguageCode = 'zhCn' | 'enUs'
 
 export interface PublicSiteSettings {
+  billingEnabled: boolean
   siteName: string
   logoUrl: string
   siteDescription?: string
@@ -179,8 +207,10 @@ export interface PublicSiteSettings {
   emailCodeLoginEnabled: boolean
   appleLoginEnabled: boolean
   googleLoginEnabled: boolean
+  captchaProvider: CaptchaProvider
   turnstileConfigured: boolean
   turnstileSiteKey?: string
+  geetestCaptchaId?: string
   teamCreationLimit: number
   teamJoinLimit: number
 }
@@ -204,8 +234,11 @@ export interface AdminSiteSettings {
   registrationEmailWhitelist: string[]
   appleLoginEnabled: boolean
   googleLoginEnabled: boolean
+  captchaProvider: CaptchaProvider
   turnstileSiteKey?: string
   turnstileSecretKeyConfigured: boolean
+  geetestCaptchaId?: string
+  geetestCaptchaKeyConfigured: boolean
   smtpEnabled: boolean
   smtpHost?: string
   smtpPort: number
@@ -241,9 +274,13 @@ export interface UpdateSiteSettingsPayload {
   registrationEmailWhitelist?: string[]
   appleLoginEnabled?: boolean
   googleLoginEnabled?: boolean
+  captchaProvider?: CaptchaProvider
   turnstileSiteKey?: string
   turnstileSecretKey?: string
   clearTurnstileSecretKey?: boolean
+  geetestCaptchaId?: string
+  geetestCaptchaKey?: string
+  clearGeeTestCaptchaKey?: boolean
   smtpEnabled?: boolean
   smtpHost?: string
   smtpPort?: number
@@ -908,6 +945,10 @@ export interface ModelConfig {
   dimension?: number
   contextWindow?: number
   maxOutputTokens?: number
+  billingMode: 'TOKEN' | 'ROUND'
+  inputCreditsPerMillion: number
+  outputCreditsPerMillion: number
+  creditsPerRound: number
   updatedAt?: string
 }
 
@@ -928,6 +969,10 @@ export interface SaveModelConfigPayload {
   dimension?: number
   contextWindow?: number
   maxOutputTokens?: number
+  billingMode?: 'TOKEN' | 'ROUND'
+  inputCreditsPerMillion?: number
+  outputCreditsPerMillion?: number
+  creditsPerRound?: number
 }
 
 export interface PublicChatModel {

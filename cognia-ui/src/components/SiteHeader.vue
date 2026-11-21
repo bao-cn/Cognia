@@ -7,6 +7,7 @@ import NotificationBell from '@/components/NotificationBell.vue'
 
 const route = useRoute()
 const chatStore = useChatStore()
+const props = withDefaults(defineProps<{ scrolled?: boolean }>(), { scrolled: false })
 const isChatRoute = computed(() => route.name === 'Chat' || route.name === 'ChatConversation' || route.name === 'ChatTemporary')
 const conversationId = computed(() => route.params.conversationId ? String(route.params.conversationId) : null)
 const currentConversation = computed(() => conversationId.value
@@ -50,7 +51,7 @@ const subtitle = computed(() => {
 </script>
 
 <template>
-  <header class="flex h-13 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-13">
+  <header class="relative flex h-13 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-13">
     <div class="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
       <SidebarTrigger class="-ml-1" />
       <div class="flex-1"></div>
@@ -75,5 +76,10 @@ const subtitle = computed(() => {
         </Button> -->
       </div>
     </div>
+    <div
+      aria-hidden="true"
+      class="pointer-events-none absolute inset-x-0 top-full z-20 h-5 bg-linear-to-b from-background via-background/60 to-transparent transition-opacity duration-200"
+      :class="props.scrolled ? 'opacity-100' : 'opacity-0'"
+    />
   </header>
 </template>

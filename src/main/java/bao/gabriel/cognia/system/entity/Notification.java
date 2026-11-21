@@ -25,6 +25,7 @@ public class Notification {
     private String title;
     private String content;
     private String payloadJson;
+    private String sourceKey;
     private Boolean readFlag;
     private Boolean delivered;
     private LocalDateTime readTime;

@@ -35,10 +35,12 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useUserStore } from '@/stores/user'
+import { useConfigStore, THEMES } from '@/stores/config'
 import { isElectronClient } from '@/lib/client-env'
 
 const router = useRouter()
 const userStore = useUserStore()
+const configStore = useConfigStore()
 const { isMobile } = useSidebar()
 const isElectron = isElectronClient()
 
@@ -46,6 +48,21 @@ const displayName = computed(() => userStore.displayName)
 const email = computed(() => userStore.profile?.email || '')
 const avatar = computed(() => userStore.avatar)
 const initials = computed(() => displayName.value.slice(0, 2).toUpperCase())
+
+const themeOptions = [
+  { value: THEMES.SYSTEM, label: '设备' },
+  { value: THEMES.LIGHT, label: '明亮' },
+  { value: THEMES.DARK, label: '黑暗' },
+] as const
+
+const themeIndex = computed(() => {
+  const index = themeOptions.findIndex(option => option.value === configStore.configInfo.theme)
+  return index < 0 ? 0 : index
+})
+
+function selectTheme(theme: THEMES): void {
+  configStore.setTheme(theme)
+}
 
 async function handleLogout(): Promise<void> {
   await userStore.logout()
@@ -135,6 +152,32 @@ async function handleLogout(): Promise<void> {
               控制台
             </DropdownMenuItem>
           </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <div class="px-2 py-2">
+            <p class="mb-2 text-xs font-medium text-muted-foreground">外观</p>
+            <div class="relative">
+              <div class="grid grid-cols-3 rounded-lg bg-muted" role="radiogroup" aria-label="外观">
+                <button
+                  v-for="(option, index) in themeOptions"
+                  :key="option.value"
+                  type="button"
+                  role="radio"
+                  :aria-checked="themeIndex === index"
+                  class="relative z-10 h-7 rounded-md text-xs transition-colors"
+                  :class="themeIndex === index ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'"
+                  @pointerdown.stop
+                  @click.stop="selectTheme(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <span
+                aria-hidden="true"
+                class="pointer-events-none absolute inset-y-0 left-0 w-1/3 rounded-md bg-background shadow-sm transition-transform duration-200"
+                :style="{ transform: `translateX(${themeIndex * 100}%)` }"
+              />
+            </div>
+          </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" @click="handleLogout">
             <IconLogout />

@@ -59,21 +59,18 @@
           <p class="text-xs text-muted-foreground">图片 JPEG / GIF / PNG / WebP，文档 PDF / Office</p>
         </div>
       </div>
+      <div v-if="conversationLoading" class="absolute inset-0 z-40 flex items-center justify-center bg-background">
+        <div class="flex flex-col items-center gap-3 text-muted-foreground">
+          <LoaderCircleIcon class="size-6 animate-spin" />
+          <p class="text-xs">加载中…</p>
+        </div>
+      </div>
       <div class="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-4">
         <div class="min-h-0 flex-1">
           <Empty v-if="messages.length === 0" class="h-full">
             <FlickeringGrid
               class="absolute top-0 left-0 w-full h-full mask-[radial-gradient(450px_circle_at_center,white,transparent)]"
               :square-size="8" :grid-gap="4" :color="'#9C9C9C'" :max-opacity="0.15" :flicker-chance="0.1" />
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <MessageCircleDashedIcon />
-              </EmptyMedia>
-              <EmptyTitle>准备好问点什么了吗？</EmptyTitle>
-              <EmptyDescription>
-                输入@，选择一个你的知识库频道，再向我提问
-              </EmptyDescription>
-            </EmptyHeader>
           </Empty>
           <MessageScroller v-else class="h-full min-h-0">
             <MessageScrollerViewport class="mt-4 scrollbar-none">
@@ -226,7 +223,22 @@
             <MessageScrollerButton :style="{ bottom: trayVisible ? `${16 + trayHeight}px` : undefined, transition: 'bottom 240ms cubic-bezier(0.22, 1, 0.36, 1)' }" />
           </MessageScroller>
         </div>
-        <div class="shrink-0 px-8 pt-0">
+        <div
+          :class="messages.length === 0
+            ? 'absolute inset-x-0 top-1/2 z-10 mx-auto w-full max-w-4xl -translate-y-1/2 px-8'
+            : 'shrink-0 p-8 pt-0'">
+          <div v-if="messages.length === 0" class="mb-6 text-left">
+            <img
+              :src="greetingLogo"
+              alt="Cognia"
+              class="animate-pop-in mb-4 size-15 select-none"
+              draggable="false"
+            />
+            <p class="animate-pop-in text-2xl font-semibold leading-relaxed tracking-tight">
+              <span class="block">你好，{{ userStore.displayName }}。</span>
+              <span class="block">今天要创造点什么？</span>
+            </p>
+          </div>
           <div v-if="truncatedNotice"
             class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <span>{{ truncatedNotice }}</span>
@@ -265,9 +277,8 @@
                 data-composer-tray
                 class="absolute inset-x-0 bottom-full z-0 -mb-3.5 composer-tray-surface rounded-t-2xl px-3 pb-7 pt-3">
                 <div class="flex max-h-[32vh] flex-col gap-2 overflow-y-auto">
-                  <div v-if="temporary || (webSearchEnabled && capabilities.webSearchAvailable)" class="flex flex-wrap items-center gap-2">
-                    <Badge v-if="temporary" variant="outline" class="gap-1"><SparklesIcon class="size-3" />临时对话 · 关闭后不保存</Badge>
-                    <Badge v-if="webSearchEnabled && capabilities.webSearchAvailable" variant="secondary" class="gap-1">
+                  <div v-if="webSearchEnabled && capabilities.webSearchAvailable" class="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary" class="gap-1">
                       <GlobeIcon class="size-3" />联网搜索已开启
                     </Badge>
                   </div>
@@ -334,7 +345,7 @@
               </div>
             </div>
             <InputGroup class="relative z-10 rounded-3xl bg-background dark:bg-background">
-              <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived || !canUseChat" :placeholder="canUseChat ? 'Ask the agent...' : '当前角色没有发起对话的权限'" aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
+              <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived || !canUseChat" :placeholder="canUseChat ? '描述任务，输入 @ 引用知识库，或直接上传材料开始' : '当前角色没有发起对话的权限'" aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
                 @input="onComposerInput" @keydown="onKeydown" @blur="onComposerBlur" @paste="onComposerPaste" />
               <InputGroupAddon align="block-end" class="pt-1">
                 <InputGroupButton type="button" size="icon-sm" variant="outline" class="rounded-full"
@@ -440,75 +451,82 @@
               </InputGroupAddon>
             </InputGroup>
           </form>
-          <div v-if="usageInfo || contextInfo"
-            class="flex items-center justify-center gap-1 px-3 pt-1.5 text-[11px] text-muted-foreground">
+          <Transition name="privacy-mode">
+            <p v-if="temporary" class="mt-2 px-3 text-xs text-muted-foreground">隐私模式</p>
+          </Transition>
+          <div v-if="outlineRounds.length || usageInfo || contextInfo"
+            class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-2 text-[11px] text-muted-foreground">
             <TooltipProvider>
-              <Tooltip v-if="outlineRounds.length">
-                <TooltipTrigger as-child>
-                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
-                    <ActivityIcon class="size-3.5" />
-                    <span class="text-foreground/80">{{ roundCount }} 轮 · {{ stepCount }} 步</span>
-                    <span v-if="lastTps" class="text-foreground/70">· {{ lastTps }} tok/s</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
-                  <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
-                    <span class="flex items-center gap-1.5 font-medium text-foreground"><ActivityIcon class="size-3.5" />会话统计</span>
-                    <span class="text-muted-foreground">{{ roundCount }} 轮 {{ stepCount }} 步</span>
-                  </div>
-                  <div class="space-y-1.5">
-                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">模型用时</span><span>{{ formatDuration(turnDurationMs) }}</span></div>
-                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">工具调用用时</span><span>{{ formatDuration(turnToolMs) }}</span></div>
-                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">首 token 平均（TTFT）</span><span>{{ formatDuration(turnTtftMs) }}</span></div>
-                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出速度（TPS）</span><span>{{ lastTps ? `${lastTps} tok/s` : '—' }}</span></div>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
+              <div class="flex min-w-0 flex-wrap items-center gap-1">
+                <Tooltip v-if="outlineRounds.length">
+                  <TooltipTrigger as-child>
+                    <button type="button" class="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <ActivityIcon class="size-3.5" />
+                      <span class="font-medium tabular-nums text-foreground">{{ roundCount }} 轮</span>
+                      <span>{{ stepCount }} 步</span>
+                      <span v-if="lastTps" class="border-l border-border/70 pl-1.5 font-mono tabular-nums">{{ lastTps }} tok/s</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                    <div class="mb-2 flex w-60 items-center justify-between border-b pb-2">
+                      <span class="flex items-center gap-1.5 font-medium text-foreground"><ActivityIcon class="size-3.5" />会话统计</span>
+                      <span class="text-muted-foreground">{{ roundCount }} 轮 {{ stepCount }} 步</span>
+                    </div>
+                    <div class="space-y-1.5">
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">模型用时</span><span>{{ formatDuration(turnDurationMs) }}</span></div>
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">工具调用用时</span><span>{{ formatDuration(turnToolMs) }}</span></div>
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">首 token 平均（TTFT）</span><span>{{ formatDuration(turnTtftMs) }}</span></div>
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出速度（TPS）</span><span>{{ lastTps ? `${lastTps} tok/s` : '—' }}</span></div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
 
-              <Tooltip v-if="usageInfo">
-                <TooltipTrigger as-child>
-                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
-                    <DatabaseIcon class="size-3.5" />
-                    <span class="text-foreground/80">{{ formatCompact(tokenTotal) }} tok</span>
-                    <span class="text-foreground/70">· 缓存命中 {{ tokenCachePercent }}%</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
-                  <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
-                    <span class="flex items-center gap-1.5 font-medium text-foreground"><DatabaseIcon class="size-3.5" />Token 用量</span>
-                    <span class="font-medium text-foreground">{{ usageInfo.promptTokens + usageInfo.completionTokens }} tok</span>
-                  </div>
-                  <div class="space-y-1.5">
-                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存命中</span><span>{{ tokenCachePercent }}%</span></div>
-                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">未缓存输入</span><span>{{ usageInfo.cacheMissTokens.toLocaleString() }} tok</span></div>
-                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存读取</span><span>{{ usageInfo.cacheHitTokens.toLocaleString() }} tok</span></div>
-                    <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出</span><span>{{ usageInfo.completionTokens.toLocaleString() }} tok</span></div>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
+                <Tooltip v-if="usageInfo">
+                  <TooltipTrigger as-child>
+                    <button type="button" class="inline-flex h-7 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <DatabaseIcon class="size-3.5" />
+                      <span class="tabular-nums">{{ formatCompact(tokenTotal) }} tok</span>
+                      <span>缓存 {{ tokenCachePercent }}%</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
+                    <div class="mb-2 flex w-64 items-center justify-between border-b pb-2">
+                      <span class="flex items-center gap-1.5 font-medium text-foreground"><DatabaseIcon class="size-3.5" />Token 用量</span>
+                      <span class="font-medium text-foreground">{{ usageInfo.promptTokens + usageInfo.completionTokens }} tok</span>
+                    </div>
+                    <div class="space-y-1.5">
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存命中</span><span>{{ tokenCachePercent }}%</span></div>
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">未缓存输入</span><span>{{ usageInfo.cacheMissTokens.toLocaleString() }} tok</span></div>
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">缓存读取</span><span>{{ usageInfo.cacheHitTokens.toLocaleString() }} tok</span></div>
+                      <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">输出</span><span>{{ usageInfo.completionTokens.toLocaleString() }} tok</span></div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
 
               <Tooltip v-if="contextInfo">
                 <TooltipTrigger as-child>
-                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
-                    <div class="relative size-4">
-                      <svg viewBox="0 0 20 20" class="size-4 -rotate-90">
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5" class="text-foreground/40" />
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5"
-                          stroke-linecap="round" class="text-primary transition-[stroke-dashoffset] duration-300"
-                          :stroke-dasharray="ringLength" :stroke-dashoffset="contextRingOffset" />
-                      </svg>
-                    </div>
-                    <span class="text-foreground/80">{{ contextPercent }}%</span>
-                  </Button>
+                  <button type="button" :aria-label="`上下文占用 ${contextPercent}%`"
+                    class="inline-flex h-7 shrink-0 items-center gap-2 rounded-lg px-2 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <span>上下文</span>
+                    <span class="block h-1.5 w-16 overflow-hidden rounded-full bg-muted sm:w-24" aria-hidden="true">
+                      <span class="block h-full rounded-full transition-[width,background-color] duration-300"
+                        :class="contextPercent >= 95 ? 'bg-destructive' : contextPercent >= (contextInfo.compressionThreshold ?? 80) ? 'bg-amber-500' : 'bg-primary'"
+                        :style="{ width: `${contextPercent}%` }" />
+                    </span>
+                    <span class="w-8 text-right font-mono tabular-nums text-foreground">{{ contextPercent }}%</span>
+                  </button>
                 </TooltipTrigger>
-                <TooltipContent side="top" :arrow="false" class="max-w-none border bg-popover p-3 text-xs text-popover-foreground shadow-xl">
+                <TooltipContent side="top" class="max-w-none border bg-popover p-3 text-xs shadow-xl">
                   <div class="w-64">
                     <div class="mb-2 flex items-center justify-between border-b pb-2">
                       <span>上下文已用 <strong class="font-semibold text-foreground">{{ contextPercent }}%</strong></span>
                       <span class="font-mono text-[11px]">~{{ formatCompact(contextInfo.usedTokens) }} / {{ formatCompact(contextInfo.maxTokens) }}</span>
                     </div>
                     <div class="mb-3 h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div class="h-full rounded-full bg-primary transition-[width] duration-300" :style="{ width: `${contextPercent}%` }" />
+                      <div class="h-full rounded-full transition-[width,background-color] duration-300"
+                        :class="contextPercent >= 95 ? 'bg-destructive' : contextPercent >= (contextInfo.compressionThreshold ?? 80) ? 'bg-amber-500' : 'bg-primary'"
+                        :style="{ width: `${contextPercent}%` }" />
                     </div>
                     <div class="space-y-1.5">
                       <div class="flex items-center justify-between gap-6"><span class="text-muted-foreground">已用</span><span>{{ contextInfo.usedTokens.toLocaleString() }} tok</span></div>
@@ -548,7 +566,6 @@
 import {
   ActivityIcon,
   ArrowUpIcon,
-  SparklesIcon,
   CheckIcon,
   CircleCheckIcon,
   ChevronDownIcon,
@@ -557,7 +574,6 @@ import {
   GlobeIcon,
   HashIcon,
   LoaderCircleIcon,
-  MessageCircleDashedIcon,
   PaperclipIcon,
   FileTextIcon,
   TerminalIcon,
@@ -576,6 +592,7 @@ import { toast } from 'vue-sonner'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useDebugStore } from '@/stores/debug'
+import { getDefaultBrandIcon } from '@/lib/branding'
 import { useUserStore } from '@/stores/user'
 import Markdown from '@/components/Markdown.vue'
 import ConversationOutline from '@/components/ConversationOutline.vue'
@@ -594,13 +611,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty'
+import { Empty } from '@/components/ui/empty'
 import {
   InputGroup,
   InputGroupAddon,
@@ -682,6 +693,8 @@ const messages = ref<ChatMessage[]>([])
 const chatRoot = ref<HTMLElement | null>(null)
 const activeRoundId = ref<string | undefined>()
 const conversationId = ref<string | null>(null)
+const conversationLoading = ref(Boolean(route.params.conversationId))
+let conversationLoadToken = 0
 const status = ref<'ready' | 'submitted' | 'streaming'>('ready')
 const archived = ref(false)
 const editingIndex = ref<number | null>(null)
@@ -689,6 +702,7 @@ const truncatedNotice = ref('')
 const citationPreviewOpen = ref(false)
 const citationPreviewSource = ref<CitationSource | null>(null)
 const temporary = computed(() => route.name === 'ChatTemporary')
+const greetingLogo = getDefaultBrandIcon()
 const capabilities = ref<ChatCapabilities>({ webSearchEnabled: false, allowUserWebSearch: false, webSearchAvailable: false })
 const cacheInfo = ref<ChatCacheInfo | null>(null)
 const contextInfo = ref<ChatContextInfo | null>(null)
@@ -711,8 +725,6 @@ const reasoningOpen = reactive<Record<string, boolean | undefined>>({})
 
 const busy = computed(() => status.value !== 'ready')
 const contextPercent = computed(() => Math.round(Math.max(0, Math.min(100, contextInfo.value?.percent ?? 0))))
-const ringLength = 2 * Math.PI * 8
-const contextRingOffset = computed(() => ringLength * (1 - contextPercent.value / 100))
 const roundCount = computed(() => outlineRounds.value.length)
 const stepCount = computed(() => messages.value.reduce((total, message) => total + message.parts.length, 0))
 const tokenTotal = computed(() => usageInfo.value ? usageInfo.value.promptTokens + usageInfo.value.completionTokens : 0)
@@ -1260,8 +1272,8 @@ const selectedChannels = computed(() =>
   availableChannels.value.filter(channel => channelIds.value.includes(channel.id)))
 const webSearchEnabled = computed(() => webSearch.value
   || (capabilities.value.webSearchAvailable && !capabilities.value.allowUserWebSearch))
-const hasTrayContent = computed(() => temporary.value
-  || (webSearchEnabled.value && capabilities.value.webSearchAvailable)
+const hasTrayContent = computed(() =>
+  (webSearchEnabled.value && capabilities.value.webSearchAvailable)
   || selectedChannels.value.length > 0
   || chatAttachments.value.length > 0
   || uploadingAttachment.value)
@@ -1271,7 +1283,7 @@ function toggleTray() {
   trayOpen.value = !trayOpen.value
 }
 watch(
-  [() => selectedChannels.value.length, () => chatAttachments.value.length, uploadingAttachment, webSearchEnabled, temporary],
+  [() => selectedChannels.value.length, () => chatAttachments.value.length, uploadingAttachment, webSearchEnabled],
   () => {
     if (!hasTrayContent.value) {
       trayOpen.value = false
@@ -1427,6 +1439,8 @@ function refreshConversationTitle() {
 }
 
 function resetConversation() {
+  conversationLoadToken += 1
+  conversationLoading.value = false
   messages.value = []
   activeRoundId.value = undefined
   conversationId.value = null
@@ -1441,8 +1455,12 @@ function resetConversation() {
 }
 
 async function loadConversation(id: string) {
+  const token = ++conversationLoadToken
+  conversationLoading.value = true
   try {
     const detail: ChatConversationDetail = await chatApi.conversation(id)
+    if (token !== conversationLoadToken)
+      return
     cacheInfo.value = null
     contextInfo.value = null
     usageInfo.value = null
@@ -1482,8 +1500,13 @@ async function loadConversation(id: string) {
     status.value = 'ready'
     editingIndex.value = null
   } catch (err: any) {
+    if (token !== conversationLoadToken)
+      return
     toast.error(err?.message || '加载对话失败')
     void router.replace({ name: 'Chat' })
+  } finally {
+    if (token === conversationLoadToken)
+      conversationLoading.value = false
   }
 }
 
@@ -1584,8 +1607,10 @@ function syncRoute() {
     resetConversation()
     return
   }
-  if (id === conversationId.value)
+  if (id === conversationId.value) {
+    conversationLoading.value = false
     return
+  }
   void loadConversation(id)
 }
 
@@ -1633,5 +1658,14 @@ onUnmounted(() => {
 .composer-tray-enter-from,
 .composer-tray-leave-to {
   transform: translateY(100%);
+}
+.privacy-mode-enter-active,
+.privacy-mode-leave-active {
+  transition: opacity 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.privacy-mode-enter-from,
+.privacy-mode-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

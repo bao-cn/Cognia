@@ -3,12 +3,14 @@ package bao.gabriel.cognia.system.service.impl;
 import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.security.SecurityCryptoService;
 import bao.gabriel.cognia.system.dto.settings.AdminSettingsResponse;
+import bao.gabriel.cognia.system.dto.settings.CaptchaConfig;
+import bao.gabriel.cognia.system.dto.settings.CaptchaProvider;
 import bao.gabriel.cognia.system.dto.settings.PublicSettingsResponse;
 import bao.gabriel.cognia.system.dto.settings.SmtpConfig;
-import bao.gabriel.cognia.system.dto.settings.TurnstileConfig;
 import bao.gabriel.cognia.system.dto.settings.UpdateSettingsRequest;
 import bao.gabriel.cognia.system.entity.SiteSetting;
 import bao.gabriel.cognia.system.mapper.SiteSettingMapper;
+import bao.gabriel.cognia.system.mapper.BillingSettingMapper;
 import bao.gabriel.cognia.system.service.SiteSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +48,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     private static final Pattern DOMAIN_PATTERN = Pattern.compile("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$");
 
     private final SiteSettingMapper settingMapper;
+    private final BillingSettingMapper billingSettingMapper;
     private final SecurityCryptoService cryptoService;
 
     private volatile SiteSetting cachedSetting;
@@ -69,6 +72,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     @Override
     public PublicSettingsResponse getPublicSettings() {
         SiteSetting setting = getSetting();
+        var billingSetting = billingSettingMapper.selectById(1L);
         return new PublicSettingsResponse(
                 setting.getSiteName(),
                 setting.getLogoUrl(),
@@ -87,10 +91,13 @@ public class SiteSettingServiceImpl implements SiteSettingService {
                 setting.emailCodeLoginEnabled() && setting.smtpEnabled() && StringUtils.hasText(setting.getSmtpHost()),
                 Boolean.TRUE.equals(setting.getAppleLoginEnabled()),
                 Boolean.TRUE.equals(setting.getGoogleLoginEnabled()),
+                effectiveCaptchaProvider(setting),
                 isTurnstileConfigured(setting),
                 setting.getTurnstileSiteKey(),
+                setting.getGeetestCaptchaId(),
                 setting.teamCreationLimit(),
-                setting.teamJoinLimit()
+                setting.teamJoinLimit(),
+                billingSetting == null || !Boolean.FALSE.equals(billingSetting.getBillingEnabled())
         );
     }
 
@@ -174,6 +181,14 @@ public class SiteSettingServiceImpl implements SiteSettingService {
         setting.setAppleLoginEnabled(valueOr(request.appleLoginEnabled(), setting.getAppleLoginEnabled()));
         setting.setGoogleLoginEnabled(valueOr(request.googleLoginEnabled(), setting.getGoogleLoginEnabled()));
 
+        if (request.captchaProvider() != null) {
+            CaptchaProvider provider = CaptchaProvider.fromWire(request.captchaProvider());
+            if (provider == null) {
+                throw BusinessException.badRequest("人机验证服务只能是 NONE、TURNSTILE 或 GEETEST");
+            }
+            setting.setCaptchaProvider(provider.name());
+        }
+
         if (request.turnstileSiteKey() != null) {
             setting.setTurnstileSiteKey(trimToNull(request.turnstileSiteKey()));
         }
@@ -186,6 +201,20 @@ public class SiteSettingServiceImpl implements SiteSettingService {
         boolean hasSecretKey = StringUtils.hasText(setting.getTurnstileSecretKey());
         if (hasSiteKey != hasSecretKey) {
             throw BusinessException.badRequest("Turnstile 站点密钥和密钥需要同时配置");
+        }
+
+        if (request.geetestCaptchaId() != null) {
+            setting.setGeetestCaptchaId(trimToNull(request.geetestCaptchaId()));
+        }
+        if (Boolean.TRUE.equals(request.clearGeeTestCaptchaKey())) {
+            setting.setGeetestCaptchaKey(null);
+        } else if (StringUtils.hasText(request.geetestCaptchaKey())) {
+            setting.setGeetestCaptchaKey(cryptoService.encrypt(request.geetestCaptchaKey()));
+        }
+        boolean hasGeeTestId = StringUtils.hasText(setting.getGeetestCaptchaId());
+        boolean hasGeeTestKey = StringUtils.hasText(setting.getGeetestCaptchaKey());
+        if (hasGeeTestId != hasGeeTestKey) {
+            throw BusinessException.badRequest("极验验证 ID 和密钥需要同时配置");
         }
 
         setting.setSmtpEnabled(valueOr(request.smtpEnabled(), setting.getSmtpEnabled()));
@@ -233,11 +262,11 @@ public class SiteSettingServiceImpl implements SiteSettingService {
             throw BusinessException.badRequest("开启注册邮箱验证前，请先启用并配置发信服务");
         }
 
-        boolean turnstileConfigured = isTurnstileConfigured(setting);
-        if ((Boolean.TRUE.equals(setting.getRegisterEmailCaptchaEnabled())
-                || Boolean.TRUE.equals(setting.getLoginCaptchaEnabled()))
-                && !turnstileConfigured) {
-            throw BusinessException.badRequest("开启注册/登录人机验证前，请先配置 Turnstile 站点密钥和密钥");
+        boolean captchaFlowEnabled = Boolean.TRUE.equals(setting.getRegisterEmailCaptchaEnabled())
+                || Boolean.TRUE.equals(setting.getLoginCaptchaEnabled());
+        if (captchaFlowEnabled && !isCaptchaConfigured(setting)) {
+            throw BusinessException.badRequest(
+                    "开启注册/登录人机验证前，请先选择并配置人机验证服务（Cloudflare Turnstile 或极验 4.0）");
         }
 
         if (setting.emailWhitelistEnabled()
@@ -287,18 +316,56 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     }
 
     @Override
-    public TurnstileConfig getTurnstileConfig() {
+    public CaptchaConfig getCaptchaConfig() {
         SiteSetting setting = getSetting();
-        return new TurnstileConfig(
-                isTurnstileConfigured(setting),
+        return new CaptchaConfig(
+                effectiveCaptchaProvider(setting),
                 setting.getTurnstileSiteKey(),
-                cryptoService.decrypt(setting.getTurnstileSecretKey())
+                cryptoService.decrypt(setting.getTurnstileSecretKey()),
+                setting.getGeetestCaptchaId(),
+                cryptoService.decrypt(setting.getGeetestCaptchaKey())
         );
+    }
+
+    /**
+     * Provider chosen in the console. Rows created before the provider column
+     * existed (null) are inferred as Turnstile when keys are present, which
+     * keeps installations upgraded from older releases working.
+     */
+    private CaptchaProvider selectedCaptchaProvider(SiteSetting setting) {
+        CaptchaProvider stored = CaptchaProvider.fromWire(setting.getCaptchaProvider());
+        if (stored != null) {
+            return stored;
+        }
+        return isTurnstileConfigured(setting) ? CaptchaProvider.TURNSTILE : CaptchaProvider.NONE;
+    }
+
+    /** Provider actually usable right now; NONE when the selection is incomplete. */
+    private CaptchaProvider effectiveCaptchaProvider(SiteSetting setting) {
+        CaptchaProvider selected = selectedCaptchaProvider(setting);
+        return isProviderConfigured(setting, selected) ? selected : CaptchaProvider.NONE;
+    }
+
+    private boolean isProviderConfigured(SiteSetting setting, CaptchaProvider provider) {
+        return switch (provider) {
+            case TURNSTILE -> isTurnstileConfigured(setting);
+            case GEETEST -> isGeeTestConfigured(setting);
+            case NONE -> false;
+        };
+    }
+
+    private boolean isCaptchaConfigured(SiteSetting setting) {
+        return isProviderConfigured(setting, selectedCaptchaProvider(setting));
     }
 
     private boolean isTurnstileConfigured(SiteSetting setting) {
         return StringUtils.hasText(setting.getTurnstileSiteKey())
                 && StringUtils.hasText(setting.getTurnstileSecretKey());
+    }
+
+    private boolean isGeeTestConfigured(SiteSetting setting) {
+        return StringUtils.hasText(setting.getGeetestCaptchaId())
+                && StringUtils.hasText(setting.getGeetestCaptchaKey());
     }
 
     @Override
@@ -335,11 +402,6 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     @Override
     public boolean isLoginCaptchaEnabled() {
         return Boolean.TRUE.equals(getSetting().getLoginCaptchaEnabled());
-    }
-
-    @Override
-    public boolean isTurnstileConfigured() {
-        return isTurnstileConfigured(getSetting());
     }
 
     @Override
@@ -416,8 +478,11 @@ public class SiteSettingServiceImpl implements SiteSettingService {
                 splitCsv(setting.getRegistrationEmailWhitelist()),
                 Boolean.TRUE.equals(setting.getAppleLoginEnabled()),
                 Boolean.TRUE.equals(setting.getGoogleLoginEnabled()),
+                selectedCaptchaProvider(setting),
                 setting.getTurnstileSiteKey(),
                 StringUtils.hasText(setting.getTurnstileSecretKey()),
+                setting.getGeetestCaptchaId(),
+                StringUtils.hasText(setting.getGeetestCaptchaKey()),
                 Boolean.TRUE.equals(setting.getSmtpEnabled()),
                 setting.getSmtpHost(),
                 setting.getSmtpPort(),
@@ -440,9 +505,9 @@ public class SiteSettingServiceImpl implements SiteSettingService {
         setting.setId(SiteSetting.SINGLETON_ID);
         setting.setLogoUrl("/logo.png");
         setting.setSiteName("Cognia");
-        setting.setSiteDescription("Cognia 开源的企业知识库平台");
+        setting.setSiteDescription("Cognia Open");
         setting.setSiteKeywords("Cognia,企业知识库,AI 搜索,知识管理");
-        setting.setRouteSuffix(" - Cognia 开源的企业知识库平台");
+        setting.setRouteSuffix(" - Cognia Open");
         setting.setDefaultLanguage("zhCn");
         setting.setTimezone("Asia/Shanghai");
         setting.setAllowedUploadTypes("pdf,doc,docx,xls,xlsx,ppt,pptx,txt,md,html,csv,jpg,jpeg,png,gif,webp");
@@ -456,6 +521,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
         setting.setRegistrationEmailWhitelist(null);
         setting.setAppleLoginEnabled(false);
         setting.setGoogleLoginEnabled(false);
+        setting.setCaptchaProvider(CaptchaProvider.NONE.name());
         setting.setSmtpEnabled(false);
         setting.setSmtpPort(587);
         setting.setSmtpSsl(false);

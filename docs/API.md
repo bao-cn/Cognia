@@ -47,10 +47,12 @@
 | `204` | 成功但无响应体（删除、状态变更、登出、改密） | — |
 | `400` | 参数校验失败 | `40000` |
 | `401` | 未登录、令牌过期/失效、密码错误、账户禁用/锁定 | `40100`–`40105` |
+| `402` | Token 或钱包余额不足 | `40200`、`40201` |
 | `403` | 已登录但缺少权限 | `40300` |
 | `404` | 资源或接口不存在 | `40400` |
 | `405` | 方法不支持 | `40500` |
 | `409` | 唯一性/状态冲突 | `40900` |
+| `422` | 支付金额或币种不匹配 | `42200` |
 | `429` | 限流 | `42900` |
 | `500` | 服务端异常 | `50000` |
 
@@ -117,7 +119,21 @@ Authorization: Bearer <accessToken>
 ```json
 {
   "email": "tester@cognia.local",
-  "turnstileToken": "0.xxxxx..."
+  "captcha": { "token": "0.xxxxx..." }
+}
+```
+
+使用极验 4.0 时，`captcha` 改为前端 `captchaObj.getValidate()` 返回的四个字段：
+
+```json
+{
+  "email": "tester@cognia.local",
+  "captcha": {
+    "lotNumber": "4dc3cfc2cdff448cad8d13107198d473",
+    "captchaOutput": "……",
+    "passToken": "……",
+    "genTime": "1690000000"
+  }
 }
 ```
 
@@ -143,7 +159,7 @@ Authorization: Bearer <accessToken>
 - 同一邮箱 60 秒内只能发送一次；每天最多 10 次；同一 IP 每小时最多 30 次。
 - 邮箱已注册时返回 `409 / 40900`。
 - 控制台关闭注册时返回 `403 / 40300`；关闭「注册邮箱验证」或「验证码开关」时返回 `400 / 40000`。
-- 开启「验证码开关」（注册发信人机验证）后，`turnstileToken` 必填；缺失返回 `400 / 40000`，校验失败返回 `400 / 40000`，验证服务不可用返回 `500 / 50000`。
+- 开启「验证码开关」（注册发信人机验证）后，必须提交当前启用服务对应的 `captcha`；缺失返回 `400 / 40000`，校验失败返回 `400 / 40000`，验证服务不可用返回 `500 / 50000`。Cloudflare Turnstile 使用 `captcha.token`，极验 4.0 使用 `captcha.lotNumber` / `captchaOutput` / `passToken` / `genTime`；旧客户端仍可提交顶层的 `turnstileToken`（等价于 `captcha.token`）。
 - 开启注册邮箱白名单时，不在白名单内的邮箱返回 `400 / 40000`。
 
 ### 2.2 注册
@@ -203,12 +219,12 @@ Authorization: Bearer <accessToken>
 {
   "account": "admin",
   "password": "Admin@123",
-  "turnstileToken": "0.xxxxx...",
+  "captcha": { "token": "0.xxxxx..." },
   "rememberMe": true
 }
 ```
 
-`account` 支持用户名或邮箱；`rememberMe` 可选，默认 `false`。开启「登录人机验证」后 `turnstileToken` 必填，缺失返回 `400 / 40000`，校验失败返回 `400 / 40000`，验证服务不可用返回 `500 / 50000`。
+`account` 支持用户名或邮箱；`rememberMe` 可选，默认 `false`。开启「登录人机验证」后 `captcha` 必填（极验 4.0 时提交四个验证字段，其余同上），缺失返回 `400 / 40000`，校验失败返回 `400 / 40000`，验证服务不可用返回 `500 / 50000`。
 
 响应 `200`：
 
@@ -472,7 +488,7 @@ Authorization: Bearer <accessToken>
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
-| `GET` | `/settings/public` | 公开 | 站点品牌、注册/登录开关、上传类型等公开配置 |
+| `GET` | `/settings/public` | 公开 | 站点品牌、注册/登录开关、上传类型及全局计费开关等公开配置 |
 | `GET` | `/settings` | `settings:read` | 管理端完整配置（不含 SMTP 明文密码） |
 | `PUT` | `/settings` | `settings:update` | 保存系统设置 |
 | `POST` | `/settings/smtp/test` | `settings:update` | 使用数据库中已保存的 SMTP 配置发送测试邮件 |
@@ -491,10 +507,11 @@ Authorization: Bearer <accessToken>
 ```json
 {
   "siteName": "Cognia",
+  "billingEnabled": true,
   "logoUrl": "/logo.png",
-  "siteDescription": "Cognia 开源的企业知识库平台",
+  "siteDescription": "Cognia Open",
   "keywords": ["Cognia", "企业知识库", "AI 搜索", "知识管理"],
-  "routeSuffix": " - Cognia 开源的企业知识库平台",
+  "routeSuffix": " - Cognia Open",
   "defaultLanguage": "zhCn",
   "timezone": "Asia/Shanghai",
   "allowedUploadTypes": ["pdf", "docx", "md"],
@@ -505,12 +522,15 @@ Authorization: Bearer <accessToken>
   "loginCaptchaEnabled": false,
   "appleLoginEnabled": false,
   "googleLoginEnabled": false,
+  "captchaProvider": "TURNSTILE",
   "turnstileConfigured": true,
   "turnstileSiteKey": "0x4AAAAAAA..."
 }
 ```
 
-前端在每次应用启动/路由首次进入时读取该接口，用于品牌展示、标题后缀、注册页/登录页开关、人机验证、白名单提示、第三方登录按钮和默认语言。
+前端在每次应用启动/路由首次进入时读取该接口，用于品牌展示、标题后缀、注册页/登录页开关、人机验证、白名单提示、第三方登录按钮、默认语言及 Platform + 页面显隐。
+
+`captchaProvider` 是当前**实际生效**的人机验证服务，取 `NONE` / `TURNSTILE` / `GEETEST`；`NONE` 表示未配置或已在控制台关闭。前端仅在该值非 `NONE` 时渲染对应组件：`TURNSTILE` 使用 `turnstileSiteKey`，`GEETEST` 使用 `geetestCaptchaId`。
 
 ### 5.2 管理端设置
 
@@ -522,7 +542,7 @@ Authorization: Bearer <accessToken>
   "logoUrl": "/logo.png",
   "siteDescription": "……",
   "keywords": ["Cognia"],
-  "routeSuffix": " - Cognia 开源的企业知识库平台",
+  "routeSuffix": " - Cognia Open",
   "defaultLanguage": "zhCn",
   "timezone": "Asia/Shanghai",
   "allowedUploadTypes": ["pdf", "docx"],
@@ -534,8 +554,10 @@ Authorization: Bearer <accessToken>
   "registrationEmailWhitelist": [],
   "appleLoginEnabled": false,
   "googleLoginEnabled": false,
+  "captchaProvider": "TURNSTILE",
   "turnstileSiteKey": "0x4AAAAAAA...",
   "turnstileSecretKeyConfigured": true,
+  "geetestCaptchaKeyConfigured": false,
   "smtpEnabled": true,
   "smtpHost": "smtp.example.com",
   "smtpPort": 587,
@@ -550,6 +572,7 @@ Authorization: Bearer <accessToken>
 ```
 
 > SMTP 密码永不返回；`smtpPasswordConfigured` 表示数据库中是否已有加密密码。
+> `captchaProvider` 是控制台当前选择的服务（即使尚未配置完整）；`turnstileSecretKeyConfigured` / `geetestCaptchaKeyConfigured` 表示对应密钥是否已加密保存，`geetestCaptchaId` 在配置极验后返回。
 
 ### 5.3 保存设置
 
@@ -559,9 +582,9 @@ Authorization: Bearer <accessToken>
 {
   "siteName": "Cognia",
   "logoUrl": "/logo.png",
-  "siteDescription": "Cognia 开源的企业知识库平台",
+  "siteDescription": "Cognia Open",
   "keywords": ["Cognia", "企业知识库"],
-  "routeSuffix": " - Cognia 开源的企业知识库平台",
+  "routeSuffix": " - Cognia Open",
   "defaultLanguage": "zhCn",
   "timezone": "Asia/Shanghai",
   "allowedUploadTypes": ["pdf", "docx", "md"],
@@ -573,9 +596,13 @@ Authorization: Bearer <accessToken>
   "registrationEmailWhitelist": ["user@example.com", "@example.com"],
   "appleLoginEnabled": false,
   "googleLoginEnabled": false,
+  "captchaProvider": "TURNSTILE",
   "turnstileSiteKey": "0x4AAAAAAA...",
   "turnstileSecretKey": "0x4AAAAAAA...",
   "clearTurnstileSecretKey": false,
+  "geetestCaptchaId": "647f5ed2ed8acb4be36784e01556bb71",
+  "geetestCaptchaKey": "b09a7aafbfd83f73b35a9b530d0337bf",
+  "clearGeeTestCaptchaKey": false,
   "smtpEnabled": true,
   "smtpHost": "smtp.example.com",
   "smtpPort": 465,
@@ -594,10 +621,10 @@ Authorization: Bearer <accessToken>
 - `smtpPassword` 留空表示保持原密码；`clearSmtpPassword=true` 显式清除。
 - 启用 SMTP 时必须填写主机；`allowedUploadTypes` 至少保留一种。
 - 开启 `registrationEmailVerification` 时必须先启用 SMTP 且填写主机，否则返回 `400`。
-- 开启 `registerEmailCaptchaEnabled` / `loginCaptchaEnabled` 前必须同时配置 Turnstile Site Key 与 Secret Key。
+- 开启 `registerEmailCaptchaEnabled` / `loginCaptchaEnabled` 前，必须先选择并完整配置对应的人机验证服务；`captchaProvider` 取 `NONE` / `TURNSTILE` / `GEETEST`，同一时间只启用一种。
 - 开启 `registrationEmailWhitelistEnabled` 时白名单不能为空；条目支持完整邮箱、`@example.com`、`example.com`（域名含子域名）。
-- 密码与 Turnstile Secret Key 使用 AES-GCM 加密存储；接口只返回 `smtpPasswordConfigured` / `turnstileSecretKeyConfigured`。
-- Turnstile 只有 Site Key 与 Secret Key **同时配置**时可用；「验证码开关」控制发送注册验证码前是否校验，「登录人机验证」控制登录时是否校验；清除密钥时需同时清空 Site Key 并关闭相关开关。
+- 密码、Turnstile Secret Key 与极验 Captcha Key 使用 AES-GCM 加密存储；接口只返回 `smtpPasswordConfigured` / `turnstileSecretKeyConfigured` / `geetestCaptchaKeyConfigured`。
+- Cloudflare Turnstile 需同时配置 Site Key 与 Secret Key，极验 4.0 需同时配置 Captcha ID 与 Captcha Key：每个服务要么两项都填、要么都清空。切换 `captchaProvider` 不会删除另一服务已保存的密钥，可随时切回；「验证码开关」控制发送注册验证码前是否校验，「登录人机验证」控制登录时是否校验；清除密钥时需同时清空对应 ID 并关闭相关开关。
 - 保存后立即生效，无需重启；前端会重新拉取公开设置更新品牌与开关。
 - 语言仅支持 `zhCn` / `enUs`；时区使用 IANA 名称（如 `Asia/Shanghai`），控制台以 Select 下拉方式提供常用 IANA 时区。
 
@@ -864,7 +891,7 @@ Authorization: Bearer <accessToken>
 | `POST` | `/admin/models/providers/{id}/fetch` | `model:update` | 拉取该供应商的 `/models` |
 | `POST` | `/admin/models/providers/fetch` | `model:update` | 使用临时端点与 Key 拉取模型 |
 | `GET` | `/admin/models/configs` | `model:read` | 已配置模型列表 |
-| `POST` | `/admin/models/configs` | `model:update` | 新增/更新模型配置（类型、可见性、工具、思考、推理强度、`extra_body`、`contextWindow` 最大上下文长度） |
+| `POST` | `/admin/models/configs` | `model:update` | 新增/更新模型配置及计费（类型、可见性、工具、思考、推理强度、`extra_body`、上下文与计费字段） |
 | `DELETE` | `/admin/models/configs/{id}` | `model:update` | 删除模型配置 |
 | `GET` | `/admin/models/available` | `model:read` | 管理端可选模型 |
 | `GET` | `/admin/rag/settings` | `rag:read` 或 `settings:read` | 读取 Chat/Embedding/Rerank、切片/召回、上下文压缩、对话标题生成与两层缓存参数 |
@@ -876,6 +903,25 @@ Authorization: Bearer <accessToken>
 | `PUT` | `/admin/prompts/settings` | `rag:update` 或 `settings:update` | 保存系统提示词、RAG/过期/工具规则 |
 | `GET` | `/admin/prompts/defaults` | `rag:read` 或 `settings:read` | 默认提示词 |
 | `POST` | `/admin/prompts/reset` | `rag:update` 或 `settings:update` | 恢复默认提示词 |
+
+模型计费字段可随 `POST /admin/models/configs` 一并保存：
+
+```json
+{
+  "providerId": 1,
+  "modelId": "gpt-4o",
+  "modelType": "CHAT",
+  "billingMode": "TOKEN",
+  "inputCreditsPerMillion": 2500000,
+  "outputCreditsPerMillion": 10000000,
+  "creditsPerRound": 1000
+}
+```
+
+- `billingMode` 支持 `TOKEN`（按实际输入/输出 Token 计费）和 `ROUND`（按一轮对话计费）。
+- `TOKEN` 模式按 `(inputTokens × inputCreditsPerMillion + outputTokens × outputCreditsPerMillion) / 1,000,000` 向上取整；未配置费率的旧模型保持输入、输出各 1,000,000 积分/百万 Token 的默认值。
+- `ROUND` 模式每次用户提问与助手回复扣除一次 `creditsPerRound`；同一轮中工具调用触发的额外模型请求不重复计轮。
+- 模型配置页可从 Models.dev 导入精确匹配的聊天模型价格。其价格单位为 USD/百万 Token，按 `1 USD = 1,000,000 积分` 换算；导入前会列出匹配数量并要求确认，未匹配或存在供应商歧义的模型会跳过。
 
 ### 5.9.8 对话与流式输出
 
@@ -1002,7 +1048,269 @@ Authorization: Bearer <accessToken>
 
 ---
 
-## 7. CORS
+## 7. 订阅与 Token 计费
+
+计费接口统一使用 Bearer access token。管理接口使用 `billing:*` 权限。
+`GET /settings/public` 会返回 `billingEnabled`。关闭后，前端隐藏 Platform + 页面并将其路由重定向到聊天页；聊天仍限于已启用且公开的模型。已开始的聊天在关闭计费期间结算为 0 Token，重新开启后新聊天恢复正常计费。已创建订单仍可完成支付回调。
+
+### 7.1 管理端设置与商品
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/billing/settings` | `billing:read` | 查询全局计费开关、注册赠送额度、默认币种及钱包单位 |
+| `PUT` | `/admin/billing/settings` | `billing:update` | 更新计费设置；`billingEnabled=false` 时用户聊天不限 Token 额度与方案模型权限，关闭 Platform + 入口并禁止新购买/兑换；钱包已有账户、流水或余额兑换码后不能修改钱包币种/精度 |
+| `GET / POST` | `/admin/billing/plans` | `billing:read/update` | 分页查询或创建订阅方案 |
+| `GET / PUT` | `/admin/billing/plans/{id}` | `billing:read/update` | 查询或更新方案 |
+| `PUT` | `/admin/billing/plans/{id}/models` | `billing:update` | 全量替换方案允许的聊天模型 |
+| `POST` | `/admin/billing/plans/{id}/publish` | `billing:update` | 发布方案 |
+| `POST` | `/admin/billing/plans/{id}/disable` | `billing:update` | 下架方案 |
+| `GET / POST` | `/admin/billing/token-packs` | `billing:read/update` | 分页查询或创建 Token 补充包 |
+| `GET / PUT` | `/admin/billing/token-packs/{id}` | `billing:read/update` | 查询或更新补充包 |
+| `POST` | `/admin/billing/token-packs/{id}/disable` | `billing:update` | 下架补充包 |
+| `GET` | `/admin/billing/orders` | `billing:order-read` | 按状态、用户分页查询订单 |
+
+方案模型校验要求：
+
+- 模型必须存在于 `sys_model_config`
+- 模型类型必须为 `CHAT`
+- 模型全局状态必须启用
+- 更新方案不会删除历史订单快照
+
+### 7.2 用户接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/billing/catalog` | 查询已发布订阅方案、补充包和钱包单位配置 |
+| `GET` | `/billing/me` | 查询有效订阅、允许模型、Token 分桶及钱包余额 |
+| `GET` | `/billing/me/ledger` | 查询个人额度流水 |
+| `GET` | `/billing/me/wallet` | 查询钱包余额和统一单位 |
+| `GET` | `/billing/me/wallet/ledger` | 分页查询个人钱包流水 |
+| `GET` | `/billing/me/redemptions` | 分页查询个人兑换结果，不返回兑换码 |
+| `POST` | `/billing/redeem` | 兑换订阅、Token 补充包或钱包余额码，需 `Idempotency-Key` |
+| `GET` | `/billing/me/usage` | 查询个人逐次模型用量，可按模型、状态和日期过滤 |
+| `POST` | `/billing/orders` | 创建待支付订单或执行钱包支付，必须携带 `Idempotency-Key` |
+| `GET` | `/billing/orders/{orderNo}` | 查询本人订单 |
+| `POST` | `/billing/orders/{orderNo}/cancel` | 取消未支付订单 |
+
+创建订单示例：
+
+```http
+POST /billing/orders
+Idempotency-Key: 8bc2f7b7-...
+Content-Type: application/json
+
+{
+  "productType": "SUBSCRIPTION",
+  "productId": "31001",
+  "paymentProvider": "ALIPAY",
+  "returnUrl": "https://app.example.com/billing/return"
+}
+```
+
+补充包订单使用 `productType: "TOKEN_PACK"`。金额、币种、Token 数、有效期和权益快照均由服务端读取商品，不接受客户端传入。
+
+`paymentProvider` 可设置为 `WALLET`。钱包支付会在同一事务内扣款、标记订单已支付并履约；不会创建第三方支付交易。商品币种必须与钱包币种一致，金额需能无损换算成配置的整数单位。余额不足返回 `40201/WALLET_BALANCE_INSUFFICIENT`。
+
+```json
+{
+  "productType": "TOKEN_PACK",
+  "productId": "51001",
+  "paymentProvider": "WALLET"
+}
+```
+
+幂等规则：
+
+- 同一用户和 `Idempotency-Key` 重复下单返回原订单
+- 同一幂等键不能用于不同商品或支付渠道（返回 `40902`）
+- 浏览器 `returnUrl` 不会直接发放权益
+
+### 7.3 支付回调
+
+`POST /billing/webhooks/{provider}` 是公开路由，但必须携带渠道签名。
+
+```http
+POST /billing/webhooks/alipay
+X-Cognia-Signature: <HmacSHA256 hex>
+Content-Type: application/json
+```
+
+签名密钥使用环境变量：
+
+```text
+BILLING_ALIPAY_WEBHOOK_SECRET
+BILLING_WECHAT_WEBHOOK_SECRET
+BILLING_STRIPE_WEBHOOK_SECRET
+```
+
+配置方法：
+
+1. 在项目根目录复制 `.env.example` 为 `.env`，填写对应渠道密钥。
+2. 生产环境可直接设置进进程、容器编排或平台密钥管理，而不写入源码。
+3. Docker Compose 会读取并传递上述变量：
+
+```bash
+openssl rand -hex 32
+# 把生成的值填入对应 .env 变量
+docker compose up -d --build
+```
+
+4. 将相同密钥配置到支付渠道的 Webhook 签名设置中。
+5. 请求头使用十六进制 HMAC-SHA256：
+
+```http
+X-Cognia-Signature: <hex-encoded-hmac-sha256>
+```
+
+签名必须基于支付渠道发来的**原始 JSON 请求体**计算，不能先解析再重新序列化。签名密钥未配置或签名不匹配时，接口拒绝处理且不会发放订阅或 Token。
+
+校验内容为请求原始 JSON 的 HMAC-SHA256。请求体至少包含：
+
+- `eventId` 或 `id`
+- `transactionId` 或 `tradeNo`
+- `orderNo` 或 `outTradeNo`
+- `amountMinor`
+- `currency`
+
+回调处理保证：
+
+- 事件和渠道交易具有幂等保护
+- 支付金额及币种必须与订单快照一致
+- 支付成功后在一个事务中更新订单、写支付交易、创建订阅或补充包额度分桶、追加流水及通知 outbox
+- 重复回调不会重复履约
+- 签名缺失、密钥未配置或签名失败不会发放权益
+
+站务通知由 `sys_billing_notification_outbox` 异步派发；派发使用稳定 `sourceKey`，重试不会重复产生通知。
+
+### 7.4 新用户初始额度
+
+密码注册、OAuth 注册和管理员创建普通用户共用 `UserServiceImpl.createUser`，只初始化一次：
+
+- 创建免费默认方案（首次初始化时）
+- 设置用户的默认方案
+- 按 `sys_billing_setting.registrationTokens` 发放一次性注册 Token
+- 按 `registrationTokenExpireDays` 设置过期时间；未设置时永久有效
+- 管理员角色新建用户不会获得普通注册赠送额度
+
+重复创建路径、重复回调或重试不会为同一用户重复发放注册额度。
+
+### 7.5 聊天预扣与结算
+
+`POST /chat/stream` 在启动模型前执行：
+
+1. 校验模型全局启用状态和当前方案允许列表
+2. 服务端生成唯一 `requestId`
+3. 按输入估算与最大输出额度预扣 Token
+4. 余额不足时以 `402/TOKEN_BALANCE_INSUFFICIENT` 拒绝请求
+
+流式调用结束后服务端按实际输入/输出 Token 和模型倍率结算：
+
+- 成功：扣除实际计算额度，释放未使用预扣
+- 模型失败：无可靠用量时释放预扣
+- 超时：定时任务释放超过阈值的未结算预扣
+- 重复结算：按 `requestId` 幂等，重复执行不重复扣款
+
+最终扣除公式：
+
+```text
+ceil((inputTokens × inputCreditsPerMillion
+      + outputTokens × outputCreditsPerMillion) / 1000000)
+```
+
+未配置倍率时平台使用每百万输入/输出均为 `1,000,000` 的默认 1:1 倘值。
+
+用量记录不包含 Prompt 或回答正文。
+
+### 7.6 周期额度与过期任务
+
+系统注册以下预置计划任务：
+
+| 任务码 | 默认周期 | 功能 |
+| --- | --- | --- |
+| `BILLING_CYCLE_SYNC` | 每 10 分钟 | 发放到期周期额度、标记过期订阅、失效过期 Token 分桶并写通知 |
+| `BILLING_RESERVATION_CLEANUP` | 每 5 分钟 | 释放超过阈值且未结算的聊天预扣 |
+
+订阅周期额度的到期时间等于周期结算时间或订阅结束时间，以较早者为准。补充包和永久有效的注册额度不因订阅到期失效。
+
+### 7.7 管理员用量与账本
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/billing/usage/summary` | `billing:usage-read` | 全站汇总 |
+| `GET` | `/admin/billing/usage/by-model` | `billing:usage-read` | 按模型聚合调用量及 Token |
+| `GET` | `/admin/billing/usage/trend` | `billing:usage-read` | 按小时、日或月查看趋势 |
+| `GET` | `/admin/billing/users/{userId}` | `billing:usage-read` | 用户订阅、分桶和用量汇总 |
+| `GET` | `/admin/billing/users/{userId}/usage` | `billing:usage-read` | 用户逐次模型用量 |
+| `GET` | `/admin/billing/users/{userId}/ledger` | `billing:usage-read` | 用户额度流水 |
+| `POST` | `/admin/billing/users/{userId}/token-grants` | `billing:grant` | 手动发放已配置的 Token 包 |
+| `POST` | `/admin/billing/users/{userId}/adjustments` | `billing:adjust` | 管理员纠正额度，必须填写原因 |
+
+趋势参数：
+
+```text
+/admin/billing/usage/trend?from=2026-11-01&to=2026-11-21&interval=DAY
+```
+
+`interval` 支持 `HOUR`、`DAY`、`MONTH`。汇总和趋势默认读取最近 30 天。
+
+手动发包示例：
+
+```http
+POST /admin/billing/users/2114256826568491009/token-grants
+Idempotency-Key: 2f58cabc-...
+
+{
+  "tokenPackId": "51001",
+  "reason": "活动奖励"
+}
+```
+
+重复请求和重复幂等键不会重复增加余额。
+
+### 7.8 钱包与兑换码
+
+钱包金额与 Token 额度分离。后台通过计费设置配置 `walletCurrency`、`walletFractionalDigits` 和 `walletUnitLabel`；例如 `CNY`、`2`、`分` 表示余额整数 `100` 对应 1 元。钱包账户按用户唯一，余额、流水和兑换批次均使用整数单位。
+
+余额兑换码和钱包支付会分别记录 `REDEMPTION_CREDIT`、`PURCHASE_DEBIT` 流水。钱包扣款、订单已支付状态和商品履约在同一事务提交；失败时全部回滚。兑换码生成时仅保存 SHA-256 摘要，明文只在创建批次的响应中返回一次，列表和兑换历史不包含码值。兑换请求按用户每小时最多 20 次、来源 IP 每小时最多 60 次限流。
+
+用户兑换请求：
+
+```http
+POST /billing/redeem
+Idempotency-Key: 2ef58145-...
+Content-Type: application/json
+
+{ "code": "A1B2C3D4-E5F60718-192A3B4C-5D6E7F80" }
+```
+
+成功响应数据包含兑换记录 `id`、`benefitType`、权益快照 `benefit` 和 `redeemedAt`。同一用户以相同幂等键重放同一码时返回原兑换结果；同一码不能被重复消费。
+
+管理端接口及新增权限：
+
+| 方法 | 路径 | 权限 | 用途 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/billing/redeem-code-batches` | `billing:redeem-read` | 查询批次和兑换数量，不含明文 |
+| `POST` | `/admin/billing/redeem-code-batches` | `billing:redeem-manage` | 创建订阅、Token 包或钱包余额码批次 |
+| `POST` | `/admin/billing/redeem-code-batches/{batchId}/revoke` | `billing:redeem-manage` | 作废批次未兑换的码 |
+| `GET` | `/admin/billing/users/{userId}/wallet` | `billing:wallet-read` | 查询指定用户钱包余额 |
+| `GET` | `/admin/billing/users/{userId}/wallet-ledger` | `billing:wallet-read` | 查询指定用户钱包流水 |
+| `POST` | `/admin/billing/users/{userId}/wallet-adjustments` | `billing:wallet-adjust` | 有理由地增减用户钱包整数单位 |
+
+创建批次请求示例：
+
+```json
+{
+  "benefitType": "WALLET_CREDIT",
+  "quantity": 20,
+  "amountUnits": 5000,
+  "validFrom": "2026-04-01T00:00:00",
+  "expireTime": "2026-12-31T23:59:59"
+}
+```
+
+`SUBSCRIPTION` 和 `TOKEN_PACK` 类型使用 `productId` 替代 `amountUnits`，且商品必须已发布。每批最多创建 1000 个码。钱包调整请求为 `{"deltaUnits": 1000, "reason": "..."}`，同样必须携带 `Idempotency-Key`；扣减后余额不能小于零。新建 RBAC 权限由初始化器同步到管理员角色。
+
+## 8. CORS
 
 后端通过 `app.cors.*` 统一配置，并在 Spring Security 过滤器链前处理预检请求：
 
@@ -1016,7 +1324,7 @@ Access-Control-Request-Method: GET
 
 ---
 
-## 8. 错误码
+## 9. 错误码
 
 | code | HTTP | 说明 |
 | --- | --- | --- |
@@ -1037,7 +1345,7 @@ Access-Control-Request-Method: GET
 
 ---
 
-## 9. 快速流程示例
+## 10. 快速流程示例
 
 ```bash
 BASE=http://localhost:8080/api/v1

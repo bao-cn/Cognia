@@ -25,6 +25,23 @@ const chatStore = useChatStore()
 const route = useRoute()
 const router = useRouter()
 const channels = ref<SidebarChannel[]>([])
+const contentRef = ref<HTMLElement | null>(null)
+const pageScrolled = ref(false)
+
+// ScrollShadow: react to the page scroller and to nested scrollers (e.g. the
+// chat message viewport), so the header shadow appears wherever content moves.
+function handleContentScroll(event: Event): void {
+  const target = event.target
+  if (!(target instanceof HTMLElement))
+    return
+  if (target.scrollHeight <= target.clientHeight + 1)
+    return
+  pageScrolled.value = target.scrollTop > 2
+}
+
+watch(() => route.fullPath, () => {
+  pageScrolled.value = false
+})
 
 const navSecondary = [
   { title: 'Settings', url: '#', icon: IconSettings },
@@ -164,9 +181,9 @@ watch(() => route.fullPath, () => {
     />
 
     <SidebarInset class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <SiteHeader class="z-49 shrink-0 rounded-t-xl bg-background" />
+      <SiteHeader :scrolled="pageScrolled" class="z-49 shrink-0 rounded-t-xl bg-background" />
 
-      <div class="@container/main flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <div ref="contentRef" class="@container/main route-transition-content flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto" @scroll.capture="handleContentScroll">
         <router-view />
       </div>
     </SidebarInset>

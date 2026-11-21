@@ -13,6 +13,9 @@ public interface NotificationService {
 
     void notify(Long userId, String type, String title, String content, Map<String, Object> payload);
 
+    void notify(Long userId, String sourceKey, String type, String title, String content,
+                Map<String, Object> payload);
+
     void notifyAdmins(String type, String title, String content, Map<String, Object> payload);
 
     PageResult<NotificationResponse> page(Long userId, long page, long size, boolean unreadOnly);

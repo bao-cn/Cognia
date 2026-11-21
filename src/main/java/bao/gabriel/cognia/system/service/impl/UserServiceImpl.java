@@ -2,6 +2,7 @@ package bao.gabriel.cognia.system.service.impl;
 
 import bao.gabriel.cognia.common.api.PageResult;
 import bao.gabriel.cognia.common.exception.BusinessException;
+import bao.gabriel.cognia.common.util.DefaultAvatarPicker;
 import bao.gabriel.cognia.common.util.ReservedNames;
 import bao.gabriel.cognia.security.LoginUser;
 import bao.gabriel.cognia.security.TokenService;
@@ -30,6 +31,7 @@ import bao.gabriel.cognia.system.service.PermissionService;
 import bao.gabriel.cognia.system.service.RoleService;
 import bao.gabriel.cognia.system.service.SiteSettingService;
 import bao.gabriel.cognia.system.service.UserService;
+import bao.gabriel.cognia.system.service.BillingService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
@@ -67,6 +69,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     private final ChatConversationMapper chatConversationMapper;
     private final ChatMessageMapper chatMessageMapper;
     private final FavoriteMapper favoriteMapper;
+    private final BillingService billingService;
 
     @Override
     public User findByAccount(String account) {
@@ -158,11 +161,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         user.setNickname(StringUtils.hasText(request.nickname()) ? request.nickname().trim() : username);
         user.setEmail(email);
         user.setPhone(request.phone());
+        user.setAvatar(DefaultAvatarPicker.randomPath());
         user.setStatus(request.status() == null ? 1 : request.status());
         user.setRemark(null);
         save(user);
 
         replaceRoles(user.getId(), roleIds);
+        if (!containsRole(roleIds, ADMIN_ROLE_CODE)) {
+            billingService.initializeNewUser(user.getId());
+        }
         log.info("User created: {} ({})", user.getUsername(), user.getId());
         return toResponse(user, true);
     }

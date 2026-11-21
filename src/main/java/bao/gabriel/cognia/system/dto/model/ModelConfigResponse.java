@@ -19,6 +19,10 @@ public record ModelConfigResponse(
         Integer dimension,
         Integer contextWindow,
         Integer maxOutputTokens,
+        String billingMode,
+        Long inputCreditsPerMillion,
+        Long outputCreditsPerMillion,
+        Long creditsPerRound,
         String updatedAt
 ) {
 }

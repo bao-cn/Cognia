@@ -31,7 +31,7 @@ const isMenuCollapsed = ref(false)
 </script>
 
 <template>
-  <SidebarGroup class="group-data-[collapsible=icon]:hidden">
+  <SidebarGroup v-if="items.length" class="group-data-[collapsible=icon]:hidden">
     <SidebarGroupLabel class="group/label flex h-auto min-h-6 w-full gap-1 p-0">
       <span class="shrink-0">频道</span>
 

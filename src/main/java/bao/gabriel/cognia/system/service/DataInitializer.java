@@ -1,6 +1,7 @@
 package bao.gabriel.cognia.system.service;
 
 import bao.gabriel.cognia.config.properties.InitProperties;
+import bao.gabriel.cognia.common.util.DefaultAvatarPicker;
 import bao.gabriel.cognia.system.entity.Permission;
 import bao.gabriel.cognia.system.entity.Role;
 import bao.gabriel.cognia.system.entity.RolePermission;
@@ -79,13 +80,23 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("trace:write", "清理开发链路", "API", "/api/v1/admin/traces", "DELETE", 74),
             new PermissionSeed("feedback:read", "查看质量反馈", "API", "/api/v1/admin/feedback", "GET", 75),
             new PermissionSeed("feedback:update", "处理质量反馈", "API", "/api/v1/admin/feedback", "PUT", 76),
-            new PermissionSeed("chat:read", "查看对话历史", "API", "/api/v1/chat/conversations", "GET", 80),
-            new PermissionSeed("chat:use", "使用对话与 LLM 聊天", "API", "/api/v1/chat/stream", "POST", 81),
-            new PermissionSeed("team:create", "创建团队", "API", "/api/v1/teams", "POST", 82),
-            new PermissionSeed("channel:read", "查看频道", "API", "/api/v1/channels", "GET", 83),
-            new PermissionSeed("channel:create", "创建频道", "API", "/api/v1/channels", "POST", 84),
-            new PermissionSeed("document:read", "查看频道文档", "API", "/api/v1/channels/{id}/documents", "GET", 85),
-            new PermissionSeed("document:upload", "上传频道文件", "API", "/api/v1/channels/{id}/documents", "POST", 86)
+            new PermissionSeed("billing:read", "查看计费设置", "API", "/api/v1/admin/billing", "GET", 77),
+            new PermissionSeed("billing:update", "修改计费设置", "API", "/api/v1/admin/billing", "PUT", 78),
+            new PermissionSeed("billing:order-read", "查看计费订单", "API", "/api/v1/admin/billing/orders", "GET", 79),
+            new PermissionSeed("billing:usage-read", "查看计费用量", "API", "/api/v1/admin/billing/usage", "GET", 80),
+            new PermissionSeed("billing:grant", "手动发放 Token", "API", "/api/v1/admin/billing/users", "POST", 81),
+            new PermissionSeed("billing:adjust", "手动调整额度", "API", "/api/v1/admin/billing/users", "POST", 82),
+            new PermissionSeed("chat:read", "查看对话历史", "API", "/api/v1/chat/conversations", "GET", 83),
+            new PermissionSeed("chat:use", "使用对话与 LLM 聊天", "API", "/api/v1/chat/stream", "POST", 84),
+            new PermissionSeed("team:create", "创建团队", "API", "/api/v1/teams", "POST", 85),
+            new PermissionSeed("channel:read", "查看频道", "API", "/api/v1/channels", "GET", 86),
+            new PermissionSeed("channel:create", "创建频道", "API", "/api/v1/channels", "POST", 87),
+            new PermissionSeed("document:read", "查看频道文档", "API", "/api/v1/channels/{id}/documents", "GET", 88),
+            new PermissionSeed("document:upload", "上传频道文件", "API", "/api/v1/channels/{id}/documents", "POST", 89),
+            new PermissionSeed("billing:wallet-read", "查看钱包余额与流水", "API", "/api/v1/admin/billing/users", "GET", 90),
+            new PermissionSeed("billing:wallet-adjust", "调整用户钱包余额", "API", "/api/v1/admin/billing/users", "POST", 91),
+            new PermissionSeed("billing:redeem-read", "查看兑换码批次", "API", "/api/v1/admin/billing/redeem-code-batches", "GET", 92),
+            new PermissionSeed("billing:redeem-manage", "创建或作废兑换码", "API", "/api/v1/admin/billing/redeem-code-batches", "POST", 93)
     );
 
     private final InitProperties initProperties;
@@ -202,6 +213,7 @@ public class DataInitializer implements ApplicationRunner {
             admin.setPassword(passwordEncoder.encode(initProperties.getAdminPassword()));
             admin.setNickname("系统管理员");
             admin.setEmail(email);
+            admin.setAvatar(DefaultAvatarPicker.randomPath());
             admin.setStatus(1);
             admin.setRemark("系统初始化创建");
             userMapper.insert(admin);

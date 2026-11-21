@@ -84,6 +84,17 @@ jwt:
   remember-me-expiration: ${JWT_REMEMBER_ME_EXPIRATION:30d}
 
 app:
+  billing:
+    # Payment-provider HMAC-SHA256 webhook secrets.
+    # Usage:
+    # 1. Set BILLING_<PROVIDER>_WEBHOOK_SECRET in the environment or .env file.
+    # 2. Configure the provider to send X-Cognia-Signature: <hex HMAC>.
+    # 3. Sign the exact raw JSON request body, not a re-serialized/minified copy.
+    # Supported provider names resolved by the backend: ALIPAY, WECHAT, STRIPE.
+    webhook-secrets:
+      alipay: ${BILLING_ALIPAY_WEBHOOK_SECRET:}
+      wechat: ${BILLING_WECHAT_WEBHOOK_SECRET:}
+      stripe: ${BILLING_STRIPE_WEBHOOK_SECRET:}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173}
     allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
@@ -98,7 +109,8 @@ app:
     max-attempts: 5
     daily-limit: 10
   settings:
-    # Encrypts SMTP passwords and Turnstile secrets stored in the database.
+    # Encrypts SMTP passwords and human-verification secrets (Turnstile / GeeTest)
+    # stored in the database.
     # Override in production.
     secret: ${SETTINGS_SECRET:c7f1d9a3b5e7482f9a0c4d6e8b1f3a5c7e9d0b2f4a6c8e1d3b5f7a9c0e2d4b6f}
   mail:

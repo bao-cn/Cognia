@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory, createWebHistory, type RouteLocationRaw, type RouteRecordRaw } from 'vue-router'
+import { nextTick } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { useSiteStore } from '@/stores/site'
 import { isElectronClient } from '@/lib/client-env'
@@ -16,6 +17,14 @@ const routes: Array<RouteRecordRaw> = [
         component: () => import('@/pages/Favorites.vue'),
         meta: {
           title: '我的收藏',
+        },
+      },
+      {
+        name: 'Subscribe',
+        path: 'subscribe',
+        component: () => import('@/pages/Subscribe.vue'),
+        meta: {
+          title: 'Platform +',
         },
       },
       {
@@ -302,6 +311,15 @@ const routes: Array<RouteRecordRaw> = [
         },
       },
       {
+        name: 'ConsoleBilling',
+        path: 'billing',
+        component: () => import('@/pages/console/Billing.vue'),
+        meta: {
+          title: '订阅与计费',
+          permissions: ['billing:read', 'billing:order-read', 'billing:usage-read'],
+        },
+      },
+      {
         name: 'ConsoleToolConfig',
         path: 'system/tool',
         component: () => import('@/pages/console/ToolConfig.vue'),
@@ -450,6 +468,75 @@ const router = createRouter({
   },
 })
 
+interface PendingRouteTransition {
+  id: number
+  resolveUpdate: () => void
+  transition: ViewTransition
+}
+
+let pendingRouteTransition: PendingRouteTransition | null = null
+let routeTransitionId = 0
+
+function finishRouteTransition(pending: PendingRouteTransition): void {
+  if (pendingRouteTransition === pending)
+    pendingRouteTransition = null
+  pending.resolveUpdate()
+}
+
+router.beforeResolve((to, from) => {
+  if (!from.matched.length
+    || to.path === from.path
+    || !document.startViewTransition
+    || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return
+  }
+
+  if (pendingRouteTransition) {
+    finishRouteTransition(pendingRouteTransition)
+    pendingRouteTransition.transition.skipTransition()
+  }
+
+  const scope = to.matched[0]?.name === from.matched[0]?.name ? 'content' : 'route'
+  const root = document.documentElement
+  const id = ++routeTransitionId
+  root.dataset.routeTransitionScope = scope
+
+  let resolveUpdate!: () => void
+  const updateComplete = new Promise<void>((resolve) => {
+    resolveUpdate = resolve
+  })
+
+  try {
+    const transition = document.startViewTransition(() => updateComplete)
+    const pending = { id, resolveUpdate, transition }
+    pendingRouteTransition = pending
+    transition.finished
+      .catch(() => {})
+      .finally(() => {
+        if (routeTransitionId === id) {
+          delete root.dataset.routeTransitionScope
+        }
+      })
+  } catch {
+    delete root.dataset.routeTransitionScope
+    resolveUpdate()
+  }
+})
+
+router.afterEach(async (_to, _from, failure) => {
+  const pending = pendingRouteTransition
+  if (!pending)
+    return
+  if (!failure)
+    await nextTick()
+  finishRouteTransition(pending)
+})
+
+router.onError(() => {
+  if (pendingRouteTransition)
+    finishRouteTransition(pendingRouteTransition)
+})
+
 function safeRedirect(value: unknown, fallback = '/chat'): string {
   if (typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')) {
     return value
@@ -459,9 +546,7 @@ function safeRedirect(value: unknown, fallback = '/chat'): string {
 
 router.beforeEach(async (to): Promise<boolean | RouteLocationRaw> => {
   const siteStore = useSiteStore()
-  if (!siteStore.loaded) {
-    await siteStore.load()
-  }
+  await siteStore.load(to.name === 'Subscribe')
 
   const suffix = siteStore.routeSuffix ?? ''
   document.title = to.meta.title
@@ -478,6 +563,10 @@ router.beforeEach(async (to): Promise<boolean | RouteLocationRaw> => {
       return safeRedirect(to.query.redirect)
     }
     return true
+  }
+
+  if (to.name === 'Subscribe' && !siteStore.billingEnabled) {
+    return { name: 'Chat' }
   }
 
   if (!userStore.isLoggedIn) {

@@ -23,6 +23,13 @@ public enum ResultCode {
     NOT_FOUND(40400, "资源不存在", HttpStatus.NOT_FOUND),
     METHOD_NOT_ALLOWED(40500, "请求方法不支持", HttpStatus.METHOD_NOT_ALLOWED),
     CONFLICT(40900, "资源冲突", HttpStatus.CONFLICT),
+    TOKEN_BALANCE_INSUFFICIENT(40200, "可用额度不足", HttpStatus.PAYMENT_REQUIRED),
+    WALLET_BALANCE_INSUFFICIENT(40201, "钱包余额不足", HttpStatus.PAYMENT_REQUIRED),
+    MODEL_NOT_ENTITLED(40301, "当前方案不允许使用该模型", HttpStatus.FORBIDDEN),
+    ORDER_STATE_CONFLICT(40901, "订单状态不允许执行当前操作", HttpStatus.CONFLICT),
+    IDEMPOTENCY_KEY_CONFLICT(40902, "幂等键对应不同请求", HttpStatus.CONFLICT),
+    BILLING_PRODUCT_NOT_FOUND(40401, "计费商品不存在或已下架", HttpStatus.NOT_FOUND),
+    PAYMENT_AMOUNT_MISMATCH(42200, "支付金额或币种与订单不一致", HttpStatus.UNPROCESSABLE_ENTITY),
     TOO_MANY_REQUESTS(42900, "请求过于频繁，请稍后重试", HttpStatus.TOO_MANY_REQUESTS),
     INTERNAL_ERROR(50000, "服务器内部错误", HttpStatus.INTERNAL_SERVER_ERROR);
 

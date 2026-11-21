@@ -90,6 +90,7 @@ public class ChatServiceImpl implements ChatService {
     private final ContextWindowManager contextWindowManager;
     private final OpenAiCompatibleClient client;
     private final MinioStorageService storageService;
+    private final bao.gabriel.cognia.system.service.BillingService billingService;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     /**
@@ -100,14 +101,19 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public SseEmitter stream(ChatRequest request, Long userId) {
+        return stream(request, userId, java.util.UUID.randomUUID().toString());
+    }
+
+    @Override
+    public SseEmitter stream(ChatRequest request, Long userId, String requestId) {
         SseEmitter emitter = new SseEmitter(0L);
         emitter.onTimeout(emitter::complete);
         emitter.onError(error -> log.debug("Chat SSE failed: {}", error.getMessage()));
-        executor.submit(() -> run(request, userId, emitter));
+        executor.submit(() -> run(request, userId, requestId, emitter));
         return emitter;
     }
 
-    private void run(ChatRequest request, Long userId, SseEmitter emitter) {
+    private void run(ChatRequest request, Long userId, String requestId, SseEmitter emitter) {
         ReentrantLock stampedeLock = null;
         TraceRecorder trace = null;
         long qaStart = System.nanoTime();
@@ -387,6 +393,9 @@ public class ChatServiceImpl implements ChatService {
                     trace.stage("llm.round" + round, llmStart, "SUCCESS");
                 }
                 reasoning.append(outcome.reasoning());
+                if (outcome.promptTokens() != null) {
+                    metricInputTokens = outcome.promptTokens();
+                }
                 if (outcome.promptCacheHitTokens() != null) {
                     metricPromptCacheHitTokens += outcome.promptCacheHitTokens();
                 }
@@ -531,6 +540,19 @@ public class ChatServiceImpl implements ChatService {
             }
             emitter.completeWithError(ex);
         } finally {
+            try {
+                if (metricModel == null) {
+                    billingService.releaseChatReservation(userId, requestId);
+                } else {
+                    billingService.settleChatTokens(userId, requestId,
+                            metricModel.id(), metricModel.providerId(), metricModel.modelId(),
+                            metricInputTokens, metricOutputTokens,
+                            (System.nanoTime() - qaStart) / 1_000_000,
+                            metricStatus, metricConversationId);
+                }
+            } catch (Exception billingEx) {
+                log.warn("Unable to settle chat token reservation {}: {}", requestId, billingEx.getMessage());
+            }
             metricEventService.recordQa(userId, metricChannelId, metricConversationId,
                     metricModel == null ? null : metricModel.id(),
                     metricModel == null ? null : metricModel.modelId(),

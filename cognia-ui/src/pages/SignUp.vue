@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from "vue"
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue"
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 import { toast } from "vue-sonner"
 import { cn } from "cn"
 import { authApi, userApi } from "@/api"
+import type { CaptchaSolution } from '@/types/api'
+import { toCaptchaSubmission } from '@/lib/captcha'
 import { oauthApi, type PublicOAuthProvider } from "@/api/oauth"
 import { useUserStore } from "@/stores/user"
 import { useSiteStore } from "@/stores/site"
@@ -26,7 +28,7 @@ import {
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import TurnstileWidget from '@/components/TurnstileWidget.vue'
+import CaptchaWidget from '@/components/CaptchaWidget.vue'
 import QrCode from '@/components/QrCode.vue'
 
 const props = defineProps<{
@@ -55,18 +57,18 @@ const twoFactorSetup = ref<{ secret: string; otpauthUri: string } | null>(null)
 const twoFactorCode = ref('')
 const countdown = ref(0)
 const devCode = ref('')
-const turnstileToken = ref('')
-const turnstileError = ref('')
-const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
+const captchaSolution = ref<CaptchaSolution | null>(null)
+const captchaError = ref('')
+const captchaRef = ref<InstanceType<typeof CaptchaWidget> | null>(null)
 const suggestions = ref<string[]>([])
 const oauthProviders = ref<PublicOAuthProvider[]>([])
 const oauthRegistration = ref<{ token: string; email: string; provider: string; suggestions: string[] } | null>(null)
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
-const turnstileRequired = computed(() => siteStore.emailVerificationRequired
+const captchaProvider = computed(() => siteStore.captchaProvider)
+const captchaRequired = computed(() => siteStore.emailVerificationRequired
   && siteStore.registerEmailCaptchaEnabled
-  && siteStore.turnstileConfigured
-  && Boolean(siteStore.turnstileSiteKey))
+  && siteStore.captchaConfigured)
 
 const emailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
 const passwordState = computed(() => {
@@ -111,18 +113,25 @@ onUnmounted(() => {
   sessionStorage.removeItem('cognia:oauth-registration')
 })
 
-function handleTurnstileVerified(token: string): void {
-  turnstileToken.value = token
-  turnstileError.value = ''
+// Leaving the code step invalidates any challenge solved for the previous email.
+watch(step, value => {
+  if (value !== 2) {
+    captchaSolution.value = null
+  }
+})
+
+function handleCaptchaVerified(solution: CaptchaSolution): void {
+  captchaSolution.value = solution
+  captchaError.value = ''
 }
 
-function handleTurnstileExpired(): void {
-  turnstileToken.value = ''
+function handleCaptchaExpired(): void {
+  captchaSolution.value = null
 }
 
-function handleTurnstileError(message: string): void {
-  turnstileToken.value = ''
-  turnstileError.value = message
+function handleCaptchaError(message: string): void {
+  captchaSolution.value = null
+  captchaError.value = message
 }
 
 async function nextFromEmail(): Promise<void> {
@@ -152,7 +161,7 @@ async function nextFromEmail(): Promise<void> {
 
 async function sendCode(): Promise<void> {
   if (sendingCode.value || countdown.value > 0) return
-  if (turnstileRequired.value && !turnstileToken.value) {
+  if (captchaRequired.value && !captchaSolution.value) {
     toast.warning('请先完成人机验证')
     return
   }
@@ -160,7 +169,7 @@ async function sendCode(): Promise<void> {
   try {
     const result = await userStore.sendRegisterCode(
       form.email.trim(),
-      turnstileRequired.value ? turnstileToken.value : undefined,
+      captchaRequired.value ? toCaptchaSubmission(captchaSolution.value) : undefined,
     )
     startCountdown(result.resendAfterSeconds || 60)
     toast.success(result.message || '验证码已发送，请查收邮箱')
@@ -172,8 +181,8 @@ async function sendCode(): Promise<void> {
     toast.error(error instanceof Error ? error.message : '验证码发送失败')
   } finally {
     sendingCode.value = false
-    turnstileToken.value = ''
-    turnstileRef.value?.reset()
+    captchaSolution.value = null
+    captchaRef.value?.reset()
   }
 }
 
@@ -423,15 +432,17 @@ onMounted(async () => {
               <template v-if="siteStore.emailVerificationRequired">
                 <Field>
                   <FieldLabel for="code">邮箱验证码</FieldLabel>
-                  <div v-if="turnstileRequired" class="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3">
-                    <TurnstileWidget
-                      ref="turnstileRef"
-                      :site-key="siteStore.turnstileSiteKey"
-                      @verified="handleTurnstileVerified"
-                      @expired="handleTurnstileExpired"
-                      @error="handleTurnstileError"
+                  <div v-if="captchaRequired" class="flex w-full flex-col gap-2">
+                    <CaptchaWidget
+                      ref="captchaRef"
+                      :provider="captchaProvider"
+                      :turnstile-site-key="siteStore.turnstileSiteKey"
+                      :geetest-captcha-id="siteStore.geetestCaptchaId"
+                      @verified="handleCaptchaVerified"
+                      @expired="handleCaptchaExpired"
+                      @error="handleCaptchaError"
                     />
-                    <p v-if="turnstileError" class="text-xs text-destructive">{{ turnstileError }}</p>
+                    <p v-if="captchaError" class="text-xs text-destructive">{{ captchaError }}</p>
                   </div>
                   <div class="flex gap-2">
                     <Input
@@ -448,7 +459,7 @@ onMounted(async () => {
                       type="button"
                       variant="outline"
                       class="w-32 shrink-0"
-                      :disabled="sendingCode || countdown > 0 || (turnstileRequired && !turnstileToken)"
+                      :disabled="sendingCode || countdown > 0 || (captchaRequired && !captchaSolution)"
                       @click="sendCode"
                     >
                       <Spinner v-if="sendingCode" class="mr-2" />

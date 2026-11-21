@@ -122,7 +122,7 @@
             <div class="grid gap-4 p-4 md:grid-cols-2">
               <div class="grid gap-2">
                 <Label for="route-suffix">路由默认后缀文本</Label>
-                <Input id="route-suffix" v-model="form.routeSuffix" placeholder=" - Cognia 开源的企业知识库平台" />
+                <Input id="route-suffix" v-model="form.routeSuffix" placeholder=" - Cognia Open" />
                 <p class="text-xs text-muted-foreground">
                   浏览器标题预览：<span class="font-medium text-foreground">用户管理{{ form.routeSuffix }}</span>
                 </p>
@@ -214,24 +214,24 @@
               />
               <SettingSwitchRow
                 title="验证码开关"
-                description="控制发送注册邮箱验证码前是否要求 Cloudflare Turnstile 人机验证，防止邮件轰炸；需先配置 Turnstile 密钥。"
+                description="控制发送注册邮箱验证码前是否要求人机验证，防止邮件轰炸；需先配置所选人机验证服务。"
                 :model-value="form.registerEmailCaptchaEnabled"
-                :disabled="!turnstileReady"
+                :disabled="!captchaReady && !form.registerEmailCaptchaEnabled"
                 @update:model-value="value => (form.registerEmailCaptchaEnabled = value)"
               />
               <SettingSwitchRow
                 title="登录人机验证"
-                description="开启后登录必须完成 Cloudflare Turnstile 验证；需先配置 Turnstile 密钥。"
+                description="开启后登录必须完成人机验证；需先配置所选人机验证服务。"
                 :model-value="form.loginCaptchaEnabled"
-                :disabled="!turnstileReady"
+                :disabled="!captchaReady && !form.loginCaptchaEnabled"
                 @update:model-value="value => (form.loginCaptchaEnabled = value)"
               />
             </div>
             <p v-if="!smtpUsable" class="border-t px-4 py-3 text-xs text-amber-600">
               发信服务未启用或未填写 SMTP 主机，注册邮箱验证暂不可开启。
             </p>
-            <p v-else-if="!turnstileReady" class="border-t px-4 py-3 text-xs text-amber-600">
-              配置 Turnstile 站点密钥和密钥后，才能开启注册发信验证或登录人机验证。
+            <p v-else-if="!captchaReady" class="border-t px-4 py-3 text-xs text-amber-600">
+              配置所选人机验证服务后，才能开启注册发信验证或登录人机验证。
             </p>
           </section>
 
@@ -275,53 +275,123 @@
           <section class="rounded-xl border bg-card">
             <header class="flex flex-col gap-1 border-b px-4 py-3">
               <div class="flex items-center justify-between gap-2">
-                <h2 class="text-sm font-semibold">人机验证（Cloudflare Turnstile）</h2>
-                <Badge :variant="turnstileReady ? 'default' : 'secondary'">
-                  {{ turnstileReady ? '已配置' : '未配置' }}
+                <h2 class="text-sm font-semibold">人机验证</h2>
+                <Badge :variant="captchaReady ? 'default' : 'secondary'">
+                  {{ captchaReady ? `已启用 · ${captchaProviderLabel}` : '未启用' }}
                 </Badge>
               </div>
               <p class="text-xs text-muted-foreground">
-                配置 Cloudflare Turnstile 能力后，可在「注册策略」中开启发送验证码前的人机验证或登录人机验证。
+                在 Cloudflare Turnstile 与极验 4.0 中选择一种启用；同一时间只会使用所选服务。配置后可在「注册策略」中开启发送验证码前的人机验证或登录人机验证。
               </p>
             </header>
-            <div class="grid gap-4 p-4 md:grid-cols-2">
-              <div class="grid gap-2">
-                <Label for="turnstile-site-key">站点密钥 Site Key</Label>
-                <Input
-                  id="turnstile-site-key"
-                  v-model="form.turnstileSiteKey"
-                  class="font-mono"
-                  placeholder="0x4AAAAAAA..."
-                />
+            <div class="flex flex-col gap-4 p-4">
+              <div class="grid max-w-sm gap-2">
+                <Label for="captcha-provider">验证服务</Label>
+                <Select v-model="form.captchaProvider">
+                  <SelectTrigger id="captcha-provider" class="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">关闭</SelectItem>
+                    <SelectItem value="TURNSTILE">Cloudflare Turnstile</SelectItem>
+                    <SelectItem value="GEETEST">极验 4.0（GeeTest v4）</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p class="text-xs text-muted-foreground">
+                  切换服务不会删除另一服务已保存的密钥，可随时切回。
+                </p>
               </div>
-              <div class="grid gap-2">
-                <Label for="turnstile-secret-key">密钥 Secret Key</Label>
-                <Input
-                  id="turnstile-secret-key"
-                  v-model="form.turnstileSecretKey"
-                  type="password"
-                  autocomplete="new-password"
-                  :disabled="form.clearTurnstileSecretKey"
-                  :placeholder="turnstileSecretConfigured ? '已配置，留空保持不变' : '请输入 Cloudflare Secret Key'"
-                />
+
+              <div
+                v-if="form.captchaProvider === 'TURNSTILE'"
+                class="grid gap-4 rounded-lg border bg-muted/20 p-4 md:grid-cols-2"
+              >
+                <div class="grid gap-2">
+                  <Label for="turnstile-site-key">站点密钥 Site Key</Label>
+                  <Input
+                    id="turnstile-site-key"
+                    v-model="form.turnstileSiteKey"
+                    class="font-mono"
+                    placeholder="0x4AAAAAAA..."
+                  />
+                </div>
+                <div class="grid gap-2">
+                  <Label for="turnstile-secret-key">密钥 Secret Key</Label>
+                  <Input
+                    id="turnstile-secret-key"
+                    v-model="form.turnstileSecretKey"
+                    type="password"
+                    autocomplete="new-password"
+                    :disabled="form.clearTurnstileSecretKey"
+                    :placeholder="turnstileSecretConfigured ? '已配置，留空保持不变' : '请输入 Cloudflare Secret Key'"
+                  />
+                </div>
+                <div v-if="turnstileSecretConfigured" class="flex items-center gap-2 md:col-span-2">
+                  <Checkbox
+                    id="clear-turnstile-secret"
+                    :model-value="form.clearTurnstileSecretKey"
+                    @update:model-value="value => handleClearTurnstileSecret(value === true)"
+                  />
+                  <Label for="clear-turnstile-secret" class="font-normal">清除已保存的 Turnstile 密钥</Label>
+                </div>
+                <p class="text-xs text-muted-foreground md:col-span-2">
+                  在
+                  <a
+                    href="https://dash.cloudflare.com/?to=/:account/turnstile"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-primary underline-offset-4 hover:underline"
+                  >Cloudflare Turnstile</a>
+                  控制台创建 Widget 后获取密钥；密钥加密存储，清除后相关人机验证需重新配置。
+                </p>
               </div>
-              <div v-if="turnstileSecretConfigured" class="flex items-center gap-2 md:col-span-2">
-                <Checkbox
-                  id="clear-turnstile-secret"
-                  :model-value="form.clearTurnstileSecretKey"
-                  @update:model-value="value => handleClearTurnstileSecret(value === true)"
-                />
-                <Label for="clear-turnstile-secret" class="font-normal">清除已保存的 Turnstile 密钥</Label>
+
+              <div
+                v-else-if="form.captchaProvider === 'GEETEST'"
+                class="grid gap-4 rounded-lg border bg-muted/20 p-4 md:grid-cols-2"
+              >
+                <div class="grid gap-2">
+                  <Label for="geetest-captcha-id">验证 ID Captcha ID</Label>
+                  <Input
+                    id="geetest-captcha-id"
+                    v-model="form.geetestCaptchaId"
+                    class="font-mono"
+                    placeholder="647f5ed2ed8acb4be36784e01556bb71"
+                  />
+                </div>
+                <div class="grid gap-2">
+                  <Label for="geetest-captcha-key">验证密钥 Captcha Key</Label>
+                  <Input
+                    id="geetest-captcha-key"
+                    v-model="form.geetestCaptchaKey"
+                    type="password"
+                    autocomplete="new-password"
+                    :disabled="form.clearGeeTestCaptchaKey"
+                    :placeholder="geetestKeyConfigured ? '已配置，留空保持不变' : '请输入极验验证密钥'"
+                  />
+                </div>
+                <div v-if="geetestKeyConfigured" class="flex items-center gap-2 md:col-span-2">
+                  <Checkbox
+                    id="clear-geetest-key"
+                    :model-value="form.clearGeeTestCaptchaKey"
+                    @update:model-value="value => handleClearGeeTestKey(value === true)"
+                  />
+                  <Label for="clear-geetest-key" class="font-normal">清除已保存的极验验证密钥</Label>
+                </div>
+                <p class="text-xs text-muted-foreground md:col-span-2">
+                  在
+                  <a
+                    href="https://console.geetest.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-primary underline-offset-4 hover:underline"
+                  >极验验证控制台</a>
+                  创建「行为验证 4.0」应用后获取验证 ID 与验证密钥；密钥加密存储。
+                </p>
               </div>
-              <p class="text-xs text-muted-foreground md:col-span-2">
-                在
-                <a
-                  href="https://dash.cloudflare.com/?to=/:account/turnstile"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-primary underline-offset-4 hover:underline"
-                >Cloudflare Turnstile</a>
-                控制台创建 Widget 后获取密钥；密钥加密存储，清除后相关人机验证需重新配置。
+
+              <p v-else class="text-xs text-muted-foreground">
+                当前未启用人机验证，注册与登录流程不会要求人机验证。
               </p>
             </div>
           </section>
@@ -821,6 +891,7 @@ import { toast } from 'vue-sonner'
 import { legalApi, settingsApi } from '@/api'
 import type {
   AdminSiteSettings,
+  CaptchaProvider,
   DownloadAsset,
   LanguageCode,
   LegalDocType,
@@ -892,6 +963,7 @@ const settingsError = ref('')
 const updatedAt = ref('')
 const passwordConfigured = ref(false)
 const turnstileSecretConfigured = ref(false)
+const geetestKeyConfigured = ref(false)
 const testRecipient = ref(userStore.profile?.email ?? '')
 const testing = ref(false)
 const mailTemplates = ref<MailTemplate[]>([])
@@ -927,9 +999,13 @@ interface SiteSettingsForm {
   registrationEmailWhitelist: string[]
   appleLoginEnabled: boolean
   googleLoginEnabled: boolean
+  captchaProvider: CaptchaProvider
   turnstileSiteKey: string
   turnstileSecretKey: string
   clearTurnstileSecretKey: boolean
+  geetestCaptchaId: string
+  geetestCaptchaKey: string
+  clearGeeTestCaptchaKey: boolean
   smtpEnabled: boolean
   smtpHost: string
   smtpPort: number
@@ -963,9 +1039,13 @@ const form = reactive<SiteSettingsForm>({
   registrationEmailWhitelist: [],
   appleLoginEnabled: false,
   googleLoginEnabled: false,
+  captchaProvider: 'NONE',
   turnstileSiteKey: '',
   turnstileSecretKey: '',
   clearTurnstileSecretKey: false,
+  geetestCaptchaId: '',
+  geetestCaptchaKey: '',
+  clearGeeTestCaptchaKey: false,
   smtpEnabled: false,
   smtpHost: '',
   smtpPort: 587,
@@ -1153,9 +1233,13 @@ function applySettings(settings: AdminSiteSettings): void {
   form.registrationEmailWhitelist = [...(settings.registrationEmailWhitelist ?? [])]
   form.appleLoginEnabled = settings.appleLoginEnabled
   form.googleLoginEnabled = settings.googleLoginEnabled
+  form.captchaProvider = settings.captchaProvider ?? 'NONE'
   form.turnstileSiteKey = settings.turnstileSiteKey ?? ''
   form.turnstileSecretKey = ''
   form.clearTurnstileSecretKey = false
+  form.geetestCaptchaId = settings.geetestCaptchaId ?? ''
+  form.geetestCaptchaKey = ''
+  form.clearGeeTestCaptchaKey = false
   form.smtpEnabled = settings.smtpEnabled
   form.smtpHost = settings.smtpHost ?? ''
   form.smtpPort = settings.smtpPort ?? 587
@@ -1172,6 +1256,7 @@ function applySettings(settings: AdminSiteSettings): void {
   form.recycleRetentionDays = settings.recycleRetentionDays ?? 30
   passwordConfigured.value = settings.smtpPasswordConfigured
   turnstileSecretConfigured.value = settings.turnstileSecretKeyConfigured
+  geetestKeyConfigured.value = settings.geetestCaptchaKeyConfigured
   updatedAt.value = settings.updatedAt ?? ''
   originalSnapshot.value = JSON.stringify(buildPayload())
 }
@@ -1194,9 +1279,13 @@ function buildPayload(): UpdateSiteSettingsPayload {
     registrationEmailWhitelist: form.registrationEmailWhitelist,
     appleLoginEnabled: form.appleLoginEnabled,
     googleLoginEnabled: form.googleLoginEnabled,
+    captchaProvider: form.captchaProvider,
     turnstileSiteKey: form.turnstileSiteKey.trim(),
     turnstileSecretKey: form.turnstileSecretKey || undefined,
     clearTurnstileSecretKey: form.clearTurnstileSecretKey,
+    geetestCaptchaId: form.geetestCaptchaId.trim(),
+    geetestCaptchaKey: form.geetestCaptchaKey || undefined,
+    clearGeeTestCaptchaKey: form.clearGeeTestCaptchaKey,
     smtpEnabled: form.smtpEnabled,
     smtpHost: form.smtpHost.trim(),
     smtpPort: form.smtpPort,
@@ -1221,6 +1310,21 @@ const smtpUsable = computed(() => form.smtpEnabled && Boolean(form.smtpHost.trim
 const turnstileReady = computed(() => Boolean(form.turnstileSiteKey.trim())
   && (Boolean(form.turnstileSecretKey.trim()) || (turnstileSecretConfigured.value && !form.clearTurnstileSecretKey)))
 
+const geetestReady = computed(() => Boolean(form.geetestCaptchaId.trim())
+  && (Boolean(form.geetestCaptchaKey.trim()) || (geetestKeyConfigured.value && !form.clearGeeTestCaptchaKey)))
+
+const captchaReady = computed(() => {
+  if (form.captchaProvider === 'TURNSTILE') return turnstileReady.value
+  if (form.captchaProvider === 'GEETEST') return geetestReady.value
+  return false
+})
+
+const captchaProviderLabel = computed(() => {
+  if (form.captchaProvider === 'TURNSTILE') return 'Cloudflare Turnstile'
+  if (form.captchaProvider === 'GEETEST') return '极验 4.0'
+  return '未启用'
+})
+
 const whitelistText = computed<string>({
   get: () => form.registrationEmailWhitelist.join('\n'),
   set: (value: string) => {
@@ -1238,7 +1342,7 @@ watch(smtpUsable, usable => {
   }
 })
 
-watch(turnstileReady, ready => {
+watch(captchaReady, ready => {
   if (!ready) {
     form.registerEmailCaptchaEnabled = false
     form.loginCaptchaEnabled = false
@@ -1254,6 +1358,14 @@ function handleSmtpToggle(value: boolean): void {
 
 function handleClearTurnstileSecret(value: boolean): void {
   form.clearTurnstileSecretKey = value
+  if (value) {
+    form.registerEmailCaptchaEnabled = false
+    form.loginCaptchaEnabled = false
+  }
+}
+
+function handleClearGeeTestKey(value: boolean): void {
+  form.clearGeeTestCaptchaKey = value
   if (value) {
     form.registerEmailCaptchaEnabled = false
     form.loginCaptchaEnabled = false
@@ -1276,12 +1388,17 @@ function validate(): string | null {
   if (hasTurnstileSiteKey !== hasTurnstileSecret) {
     return 'Turnstile 站点密钥和密钥需要同时配置；如需停用，请同时清空站点密钥并清除密钥'
   }
-  const turnstileConfigured = hasTurnstileSiteKey && hasTurnstileSecret
+  const hasGeeTestId = Boolean(form.geetestCaptchaId.trim())
+  const hasGeeTestKey = Boolean(form.geetestCaptchaKey.trim())
+    || (geetestKeyConfigured.value && !form.clearGeeTestCaptchaKey)
+  if (hasGeeTestId !== hasGeeTestKey) {
+    return '极验验证 ID 和密钥需要同时配置；如需停用，请同时清空验证 ID 并清除密钥'
+  }
   if (form.registrationEmailVerification && !smtpUsable.value) {
     return '开启注册邮箱验证前，请先启用并配置发信服务'
   }
-  if ((form.registerEmailCaptchaEnabled || form.loginCaptchaEnabled) && !turnstileConfigured) {
-    return '开启注册发信人机验证或登录人机验证前，请先配置 Turnstile 密钥'
+  if ((form.registerEmailCaptchaEnabled || form.loginCaptchaEnabled) && !captchaReady.value) {
+    return '开启注册/登录人机验证前，请先选择并配置人机验证服务'
   }
   if (form.registrationEmailWhitelistEnabled && form.registrationEmailWhitelist.length === 0) {
     return '启用注册邮箱白名单时，至少配置一个邮箱或域名'

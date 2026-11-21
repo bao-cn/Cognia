@@ -1,9 +1,9 @@
 package bao.gabriel.cognia.system.service;
 
 import bao.gabriel.cognia.system.dto.settings.AdminSettingsResponse;
+import bao.gabriel.cognia.system.dto.settings.CaptchaConfig;
 import bao.gabriel.cognia.system.dto.settings.PublicSettingsResponse;
 import bao.gabriel.cognia.system.dto.settings.SmtpConfig;
-import bao.gabriel.cognia.system.dto.settings.TurnstileConfig;
 import bao.gabriel.cognia.system.dto.settings.UpdateSettingsRequest;
 import bao.gabriel.cognia.system.entity.SiteSetting;
 
@@ -25,7 +25,7 @@ public interface SiteSettingService {
 
     SmtpConfig getSmtpConfig();
 
-    TurnstileConfig getTurnstileConfig();
+    CaptchaConfig getCaptchaConfig();
 
     boolean isRegistrationEnabled();
 
@@ -40,8 +40,6 @@ public interface SiteSettingService {
     boolean isSmtpEnabled();
 
     boolean isEmailCodeLoginEnabled();
-
-    boolean isTurnstileConfigured();
 
     boolean isRegistrationEmailAllowed(String email);
 

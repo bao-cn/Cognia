@@ -3,11 +3,13 @@ import { settingsApi } from '@/api'
 import type { LanguageCode, PublicSiteSettings } from '@/types/api'
 import config from '@/config'
 import { useConfigStore } from '@/stores/config'
+import { getDefaultBrandIcon, resolveBrandLogo, setFavicon } from '@/lib/branding'
 
 const DEFAULT_SETTINGS: PublicSiteSettings = {
+  billingEnabled: true,
   siteName: 'Cognia',
-  logoUrl: '/logo.png',
-  siteDescription: 'Cognia 开源的企业知识库平台',
+  logoUrl: getDefaultBrandIcon(),
+  siteDescription: 'Cognia Open',
   keywords: ['Cognia', '企业知识库', 'AI 搜索', '知识管理'],
   routeSuffix: config.TITLE_SUFFIX,
   defaultLanguage: 'zhCn',
@@ -22,8 +24,10 @@ const DEFAULT_SETTINGS: PublicSiteSettings = {
   emailCodeLoginEnabled: false,
   appleLoginEnabled: false,
   googleLoginEnabled: false,
+  captchaProvider: 'NONE',
   turnstileConfigured: false,
   turnstileSiteKey: '',
+  geetestCaptchaId: '',
   teamCreationLimit: 5,
   teamJoinLimit: 10,
 }
@@ -38,8 +42,9 @@ export const useSiteStore = defineStore('site', {
   }),
 
   getters: {
+    billingEnabled: state => state.config.billingEnabled !== false,
     siteName: state => state.config.siteName || 'Cognia',
-    logo: state => state.config.logoUrl || '/logo.png',
+    logo: state => resolveBrandLogo(state.config.logoUrl),
     description: state => state.config.siteDescription || '',
     keywords: state => state.config.keywords ?? [],
     routeSuffix: state => state.config.routeSuffix ?? config.TITLE_SUFFIX,
@@ -55,8 +60,11 @@ export const useSiteStore = defineStore('site', {
     emailCodeLoginEnabled: state => Boolean(state.config.emailCodeLoginEnabled),
     appleLoginEnabled: state => Boolean(state.config.appleLoginEnabled),
     googleLoginEnabled: state => Boolean(state.config.googleLoginEnabled),
+    captchaProvider: state => state.config.captchaProvider ?? 'NONE',
+    captchaConfigured: state => (state.config.captchaProvider ?? 'NONE') !== 'NONE',
     turnstileConfigured: state => Boolean(state.config.turnstileConfigured),
     turnstileSiteKey: state => state.config.turnstileSiteKey ?? '',
+    geetestCaptchaId: state => state.config.geetestCaptchaId ?? '',
     allowedUploadTypes: state => state.config.allowedUploadTypes ?? [],
   },
 
@@ -92,10 +100,7 @@ export const useSiteStore = defineStore('site', {
     applyBranding(): void {
       this.setMeta('description', this.description)
       this.setMeta('keywords', this.keywords.join(','))
-      const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
-      if (icon) {
-        icon.href = this.logo
-      }
+      setFavicon(this.logo)
     },
 
     applySiteDefaultLanguage(): void {
