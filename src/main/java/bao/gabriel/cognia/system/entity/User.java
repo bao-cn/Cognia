@@ -54,6 +54,11 @@ public class User extends BaseEntity {
     private String readme;
 
     /**
+     * Whether the contribution panel is visible to other users.
+     */
+    private Boolean contributionsPublic;
+
+    /**
      * 1 = enabled, 0 = disabled.
      */
     private Integer status;
