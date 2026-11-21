@@ -7,7 +7,7 @@
           团队是知识的归属单位。
         </p>
       </div>
-      <Button class="rounded-full" @click="handleCreateClick">
+      <Button v-if="canCreateTeam" class="rounded-full" @click="handleCreateClick">
         <IconPlus class="mr-1.5 size-4" />
         创建团队
       </Button>
@@ -129,6 +129,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { IconChevronRight, IconMail, IconPlus, IconUsers } from '@tabler/icons-vue'
 import { teamApi } from '@/api'
+import { useUserStore } from '@/stores/user'
 import type { TeamInvitation, TeamLimits, TeamSummary } from '@/types/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -140,6 +141,8 @@ import { Textarea } from '@/components/ui/textarea'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
+const canCreateTeam = computed(() => userStore.hasPermission('team:create'))
 
 const loading = ref(true)
 const mine = ref<TeamSummary[]>([])

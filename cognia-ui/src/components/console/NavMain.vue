@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import type { LucideIcon } from "@lucide/vue"
 import { ChevronRight } from "@lucide/vue"
-import { RouterLink } from "vue-router"
+import { RouterLink, useRoute } from "vue-router"
 import {
   Collapsible,
   CollapsibleContent,
@@ -17,6 +17,17 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
+
+const route = useRoute()
+
+function isActive(url: string) {
+  if (!url || url.startsWith("http")) return false
+  return route.path === url || route.path.startsWith(url + "/")
+}
+
+function groupActive(item: { url: string; items?: { url: string }[] }) {
+  return isActive(item.url) || (item.items ?? []).some((sub) => isActive(sub.url))
+}
 
 defineProps<{
   items: {
@@ -41,12 +52,12 @@ defineProps<{
         <Collapsible
           v-if="item.items?.length"
           as-child
-          :default-open="item.isActive"
+          :default-open="groupActive(item)"
           class="group/collapsible"
         >
           <SidebarMenuItem>
             <CollapsibleTrigger as-child>
-              <SidebarMenuButton :tooltip="item.title">
+              <SidebarMenuButton :tooltip="item.title" :is-active="groupActive(item)">
                 <component :is="item.icon" v-if="item.icon" />
                 <span>{{ item.title }}</span>
                 <ChevronRight
@@ -61,7 +72,7 @@ defineProps<{
                   v-for="subItem in item.items"
                   :key="subItem.title"
                 >
-                  <SidebarMenuSubButton as-child>
+                  <SidebarMenuSubButton as-child :is-active="isActive(subItem.url)">
                     <RouterLink
                       v-if="!subItem.url.startsWith('http')"
                       :to="subItem.url"
@@ -88,7 +99,7 @@ defineProps<{
 
         <!-- 没有子项：直接进行路由跳转 -->
         <SidebarMenuItem v-else>
-          <SidebarMenuButton as-child :tooltip="item.title">
+          <SidebarMenuButton as-child :tooltip="item.title" :is-active="isActive(item.url)">
             <RouterLink :to="item.url">
               <component :is="item.icon" v-if="item.icon" />
               <span>{{ item.title }}</span>

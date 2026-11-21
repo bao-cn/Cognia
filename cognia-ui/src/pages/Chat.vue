@@ -226,7 +226,7 @@
             <MessageScrollerButton :style="{ bottom: trayVisible ? `${16 + trayHeight}px` : undefined, transition: 'bottom 240ms cubic-bezier(0.22, 1, 0.36, 1)' }" />
           </MessageScroller>
         </div>
-        <div class="shrink-0 p-8 pt-0">
+        <div class="shrink-0 px-8 pt-0">
           <div v-if="truncatedNotice"
             class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <span>{{ truncatedNotice }}</span>
@@ -238,6 +238,9 @@
             class="mx-auto mb-2 flex w-full max-w-3xl flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
             <span>该对话已归档，恢复后才能继续对话。</span>
             <Button variant="outline" size="sm" class="h-7" @click="restoreArchived">恢复对话</Button>
+          </div>
+          <div v-if="!canUseChat" class="mx-auto mb-2 w-full max-w-3xl rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            当前角色没有发起对话的权限，只能查看历史对话。
           </div>
           <div v-if="editingIndex !== null"
             class="mx-auto mb-2 flex w-full max-w-3xl items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
@@ -260,7 +263,7 @@
                 v-if="trayVisible"
                 ref="trayRef"
                 data-composer-tray
-                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 composer-tray-surface rounded-t-2xl px-3 pb-7 pt-3 shadow-[0_-10px_30px_-16px_rgba(0,0,0,0.28)]">
+                class="absolute inset-x-0 bottom-full z-0 -mb-3.5 composer-tray-surface rounded-t-2xl px-3 pb-7 pt-3">
                 <div class="flex max-h-[32vh] flex-col gap-2 overflow-y-auto">
                   <div v-if="temporary || (webSearchEnabled && capabilities.webSearchAvailable)" class="flex flex-wrap items-center gap-2">
                     <Badge v-if="temporary" variant="outline" class="gap-1"><SparklesIcon class="size-3" />临时对话 · 关闭后不保存</Badge>
@@ -331,7 +334,7 @@
               </div>
             </div>
             <InputGroup class="relative z-10 rounded-3xl bg-background dark:bg-background">
-              <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived" placeholder="Ask the agent..." aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
+              <InputGroupTextarea ref="textareaRef" v-model="text" :disabled="archived || !canUseChat" :placeholder="canUseChat ? 'Ask the agent...' : '当前角色没有发起对话的权限'" aria-label="Message" class="max-h-40 min-h-14 overflow-y-auto"
                 @input="onComposerInput" @keydown="onKeydown" @blur="onComposerBlur" @paste="onComposerPaste" />
               <InputGroupAddon align="block-end" class="pt-1">
                 <InputGroupButton type="button" size="icon-sm" variant="outline" class="rounded-full"
@@ -389,8 +392,8 @@
                     <InputGroupButton size="sm" variant="ghost"
                       :aria-label="`Model: ${currentModel.name}${currentModel.thinking ? `, effort: ${currentEffort.name}` : ''}`"
                       class="ml-auto max-w-[min(46vw,22rem)] rounded-full">
-                      <span class="truncate">{{ currentModel.name }}</span>
-                      <span v-if="currentModel.thinking" class="shrink-0 text-muted-foreground">{{ currentEffort.name }}</span>
+                      <span class="truncate text-foreground">{{ currentModel.name }}</span>
+                      <span v-if="currentModel.thinking" class="shrink-0 text-foreground/50">{{ currentEffort.name }}</span>
                       <ChevronDownIcon class="shrink-0" />
                     </InputGroupButton>
                   </DropdownMenuTrigger>
@@ -442,7 +445,7 @@
             <TooltipProvider>
               <Tooltip v-if="outlineRounds.length">
                 <TooltipTrigger as-child>
-                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
+                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
                     <ActivityIcon class="size-3.5" />
                     <span class="text-foreground/80">{{ roundCount }} 轮 · {{ stepCount }} 步</span>
                     <span v-if="lastTps" class="text-foreground/70">· {{ lastTps }} tok/s</span>
@@ -464,7 +467,7 @@
 
               <Tooltip v-if="usageInfo">
                 <TooltipTrigger as-child>
-                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
+                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
                     <DatabaseIcon class="size-3.5" />
                     <span class="text-foreground/80">{{ formatCompact(tokenTotal) }} tok</span>
                     <span class="text-foreground/70">· 缓存命中 {{ tokenCachePercent }}%</span>
@@ -486,10 +489,10 @@
 
               <Tooltip v-if="contextInfo">
                 <TooltipTrigger as-child>
-                  <Button type="button" variant="ghost" size="sm" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
+                  <Button variant="ghost" size="xs" class="h-7 rounded-full px-2.5 font-normal text-muted-foreground hover:bg-muted/60 dark:hover:bg-muted/40 hover:text-foreground">
                     <div class="relative size-4">
                       <svg viewBox="0 0 20 20" class="size-4 -rotate-90">
-                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5" class="text-muted/50" />
+                        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5" class="text-foreground/40" />
                         <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5"
                           stroke-linecap="round" class="text-primary transition-[stroke-dashoffset] duration-300"
                           :stroke-dasharray="ringLength" :stroke-dashoffset="contextRingOffset" />
@@ -666,7 +669,8 @@ const router = useRouter()
 const chatStore = useChatStore()
 const debugStore = useDebugStore()
 const userStore = useUserStore()
-const canDebug = computed(() => userStore.hasPermission('trace:read') || userStore.isAdmin)
+const canDebug = computed(() => userStore.hasPermission('trace:read'))
+const canUseChat = computed(() => userStore.hasPermission('chat:use'))
 
 function setActiveConversation(id: string | null, title: string) {
   chatStore.$patch({
@@ -747,7 +751,8 @@ const text = computed({
     draft.value = value
   },
 })
-const canSend = computed(() => (text.value.trim().length > 0 || chatAttachments.value.length > 0)
+const canSend = computed(() => canUseChat.value
+  && (text.value.trim().length > 0 || chatAttachments.value.length > 0)
   && !busy.value && !archived.value && !!currentModel.value)
 
 const chatAttachments = ref<ChatAttachmentPayload[]>([])
@@ -881,6 +886,10 @@ async function onSubmit(options: { regenerate?: boolean } = {}) {
   cacheInfo.value = null
   contextInfo.value = null
   usageInfo.value = null
+  if (!canUseChat.value) {
+    toast.error('当前角色没有发起对话的权限')
+    return
+  }
   if (!canSend.value || !currentModel.value)
     return
   const pendingAttachments = [...chatAttachments.value]

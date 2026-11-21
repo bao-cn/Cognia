@@ -109,7 +109,7 @@
             <h2 class="text-lg font-semibold">团队频道</h2>
             <p class="mt-1 text-xs text-muted-foreground">该组织的全部频道</p>
           </div>
-          <Button v-if="team.canCreateChannel" class="rounded-full" @click="openCreate">
+          <Button v-if="team.canCreateChannel && userStore.hasPermission('channel:create')" class="rounded-full" @click="openCreate">
             <IconHash class="mr-1.5 size-4" />
             新建频道
           </Button>
@@ -252,7 +252,7 @@
               </div>
               <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/30 p-3">
                 <div><p class="text-sm font-medium text-destructive">删除团队</p><p class="text-xs text-muted-foreground">删除团队、成员、频道、邀请与团队文件，且无法恢复。</p></div>
-                <Button variant="destructive" size="sm" class="rounded-full" @click="deleteOpen = true">删除团队</Button>
+                <Button variant="destructive" size="sm" class="rounded-full" @click="deleteCode = ''; deleteOpen = true">删除团队</Button>
               </div>
             </div>
           </section>
@@ -348,6 +348,11 @@
       <Dialog v-model:open="deleteOpen">
         <DialogContent class="sm:max-w-sm">
           <DialogHeader><DialogTitle>删除团队</DialogTitle><DialogDescription>确定删除「{{ team.name }}」？团队、成员、频道、邀请和团队文件都会被删除，且无法恢复。</DialogDescription></DialogHeader>
+          <div v-if="userStore.profile?.twoFactorEnabled" class="grid gap-2 py-2">
+            <Label for="team-delete-code">两步验证码</Label>
+            <Input id="team-delete-code" v-model="deleteCode" maxlength="6" inputmode="numeric" placeholder="000000" />
+            <p class="text-xs text-muted-foreground">输入验证器中的 6 位验证码以确认解散团队。</p>
+          </div>
           <DialogFooter><Button variant="outline" class="rounded-full" @click="deleteOpen = false">取消</Button><Button variant="destructive" class="rounded-full" :disabled="deletingTeam" @click="confirmDelete"><Spinner v-if="deletingTeam" class="mr-2" />删除团队</Button></DialogFooter>
         </DialogContent>
       </Dialog>
@@ -456,6 +461,7 @@ const transferTarget = ref('')
 const transferOpen = ref(false)
 const transferring = ref(false)
 const deleteOpen = ref(false)
+const deleteCode = ref('')
 const deletingTeam = ref(false)
 
 const visibleTabs = computed(() => {
@@ -764,8 +770,11 @@ async function confirmDelete(): Promise<void> {
   try {
     let twoFactorCode: string | undefined
     if (userStore.profile?.twoFactorEnabled) {
-      twoFactorCode = window.prompt('请输入两步验证码以解散团队') || undefined
-      if (!twoFactorCode) return
+      twoFactorCode = deleteCode.value.trim()
+      if (!twoFactorCode) {
+        toast.error('请输入两步验证码')
+        return
+      }
     }
     await teamApi.deleteTeam(teamId.value, twoFactorCode)
     toast.success('团队已删除')
