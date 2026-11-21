@@ -49,6 +49,14 @@ export interface LoginPayload {
 export interface LoginOptions {
   hasPassword: boolean
   twoFactorEnabled: boolean
+  emailCodeLoginEnabled: boolean
+}
+
+export interface LoginEmailCodePayload {
+  account: string
+  code: string
+  rememberMe?: boolean
+  turnstileToken?: string
 }
 
 export interface LoginTwoFactorPayload {
@@ -168,6 +176,7 @@ export interface PublicSiteSettings {
   registerEmailCaptchaEnabled: boolean
   loginCaptchaEnabled: boolean
   twoFactorEnabled: boolean
+  emailCodeLoginEnabled: boolean
   appleLoginEnabled: boolean
   googleLoginEnabled: boolean
   turnstileConfigured: boolean
@@ -190,6 +199,7 @@ export interface AdminSiteSettings {
   registerEmailCaptchaEnabled: boolean
   loginCaptchaEnabled: boolean
   twoFactorEnabled: boolean
+  emailCodeLoginEnabled: boolean
   registrationEmailWhitelistEnabled: boolean
   registrationEmailWhitelist: string[]
   appleLoginEnabled: boolean
@@ -226,6 +236,7 @@ export interface UpdateSiteSettingsPayload {
   registerEmailCaptchaEnabled?: boolean
   loginCaptchaEnabled?: boolean
   twoFactorEnabled?: boolean
+  emailCodeLoginEnabled?: boolean
   registrationEmailWhitelistEnabled?: boolean
   registrationEmailWhitelist?: string[]
   appleLoginEnabled?: boolean
@@ -699,6 +710,17 @@ export interface ChannelFolder {
   depth: number
 }
 
+export interface DocumentChunkItem {
+  id: number
+  chunkId?: string
+  chunkIndex: number
+  text: string
+  pageNumber?: number
+  title?: string
+  embeddingModel?: string
+  embeddingStatus?: string
+}
+
 export interface ChannelDocument {
   id: string
   name: string
@@ -742,6 +764,13 @@ export interface ChannelProcessingRecord {
   updatedAt?: string
   batchId?: string
   reembedding: boolean
+}
+
+export interface EmbeddingDimensionCheck {
+  currentDimension: number
+  modelDimension?: number
+  compatible: boolean
+  message: string
 }
 
 export interface ChannelEmbeddingStatus {
@@ -1296,4 +1325,85 @@ export interface FeedbackDetail {
   feedback: FeedbackRecord
   messages: FeedbackMessage[]
   traceJson?: string
+}
+
+export interface ContributionDaily { date: string; count: number }
+export interface ContributionTeam { id: number; name: string; slug?: string | null; count: number }
+export interface ContributionRadar { create: number; delete: number; update: number; ticket: number }
+export interface ContributionActivity {
+  id: number
+  eventType: string
+  channelId?: number | null
+  channelName?: string | null
+  teamId?: number | null
+  teamName?: string | null
+  amount: number
+  createTime: string
+}
+export interface UserContribution {
+  publicVisible: boolean
+  canEdit: boolean
+  year: number
+  total: number
+  channelCount: number
+  daily: ContributionDaily[]
+  teams: ContributionTeam[]
+  topChannels: string[]
+  radar: ContributionRadar
+  activities: ContributionActivity[]
+  hasMore: boolean
+  nextBefore?: number | null
+}
+
+export interface IssueUser {
+  id?: number | null
+  username: string
+  nickname: string
+  avatar?: string | null
+}
+
+export interface IssueLabel {
+  id: number
+  name: string
+  color: string
+}
+
+export interface IssueComment {
+  id: number
+  author: IssueUser
+  body: string
+  quoteCommentId?: number | null
+  quoteAuthor?: IssueUser | null
+  quoteBody?: string | null
+  createTime: string
+}
+
+export interface IssueSummary {
+  id: number
+  number: number
+  title: string
+  status: 'OPEN' | 'CLOSED'
+  author: IssueUser
+  assignee?: IssueUser | null
+  labels: IssueLabel[]
+  commentCount: number
+  createTime: string
+  updateTime: string
+}
+
+export interface IssueDetail extends IssueSummary {
+  body: string
+  canManage: boolean
+  canClose: boolean
+  comments: IssueComment[]
+}
+
+export interface CreateIssuePayload {
+  title: string
+  body: string
+}
+
+export interface CreateIssueCommentPayload {
+  body: string
+  quoteCommentId?: number | null
 }
