@@ -2,6 +2,7 @@ package bao.gabriel.cognia.system.service.impl;
 
 import bao.gabriel.cognia.common.ai.OpenAiCompatibleClient;
 import bao.gabriel.cognia.common.exception.BusinessException;
+import bao.gabriel.cognia.rag.service.VectorDimensionService;
 import bao.gabriel.cognia.security.SecurityCryptoService;
 import bao.gabriel.cognia.system.dto.model.ModelConfigResponse;
 import bao.gabriel.cognia.system.dto.model.ModelProviderResponse;
@@ -47,6 +48,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     private final SecurityCryptoService cryptoService;
     private final SiteSettingService siteSettingService;
     private final OpenAiCompatibleClient client;
+    private final VectorDimensionService vectorDimensionService;
 
     @Override
     public List<ModelProviderResponse> listProviders() {
@@ -273,6 +275,12 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         }
         if (request.dimension() != null) {
             model.setDimension(request.dimension());
+        }
+        if (ModelConfig.TYPE_EMBEDDING.equals(model.getModelType())) {
+            if (model.getDimension() == null || model.getDimension() < 1) {
+                throw BusinessException.badRequest("向量模型必须配置输出维度");
+            }
+            vectorDimensionService.assertDimension(model.getDimension());
         }
         if (request.contextWindow() != null) {
             model.setContextWindow(request.contextWindow());

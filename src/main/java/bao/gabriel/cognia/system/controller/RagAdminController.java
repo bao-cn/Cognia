@@ -1,8 +1,10 @@
 package bao.gabriel.cognia.system.controller;
 
 import bao.gabriel.cognia.common.api.ApiResponse;
+import bao.gabriel.cognia.rag.ingestion.EmbeddingModelSwitchService;
 import bao.gabriel.cognia.rag.service.RagCacheService;
 import bao.gabriel.cognia.security.SecurityUtils;
+import bao.gabriel.cognia.system.dto.rag.EmbeddingDimensionCheckResponse;
 import bao.gabriel.cognia.system.dto.rag.RagSettingResponse;
 import bao.gabriel.cognia.system.dto.rag.UpdateRagSettingRequest;
 import bao.gabriel.cognia.system.service.RagSettingService;
@@ -26,6 +28,7 @@ public class RagAdminController {
 
     private final RagSettingService ragSettingService;
     private final RagCacheService ragCacheService;
+    private final EmbeddingModelSwitchService embeddingModelSwitchService;
 
     @GetMapping("/settings")
     @PreAuthorize("hasAnyAuthority('rag:read', 'settings:read')")
@@ -37,6 +40,12 @@ public class RagAdminController {
     @PreAuthorize("hasAnyAuthority('rag:update', 'settings:update')")
     public ApiResponse<RagSettingResponse> update(@Valid @RequestBody UpdateRagSettingRequest request) {
         return ApiResponse.success(ragSettingService.updateSettings(request, SecurityUtils.getUserId()));
+    }
+
+    @GetMapping("/embedding-dimension-check")
+    @PreAuthorize("hasAnyAuthority('rag:read', 'settings:read')")
+    public ApiResponse<EmbeddingDimensionCheckResponse> embeddingDimensionCheck(@RequestParam Long modelId) {
+        return ApiResponse.success(embeddingModelSwitchService.checkSwitch(modelId));
     }
 
     @GetMapping("/cache/stats")

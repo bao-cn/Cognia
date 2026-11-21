@@ -64,7 +64,7 @@
                 </SelectContent>
               </Select>
               <p class="text-xs text-muted-foreground">
-                切换维度后，旧切片向量会被清空并在重新上传时重建。
+                切换前会校验模型输出维度；只有与当前知识库一致的维度才允许切换。
               </p>
             </div>
           </div>
@@ -234,6 +234,22 @@
         </section>
       </fieldset>
     </form>
+
+    <Dialog v-model:open="dimensionOpen">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>向量维度不兼容</DialogTitle>
+          <DialogDescription>{{ dimensionMessage }}</DialogDescription>
+        </DialogHeader>
+        <div class="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+          当前知识库维度：{{ dimensionCheck?.currentDimension }}；目标模型维度：{{ dimensionCheck?.modelDimension ?? '未配置' }}。
+          为保证已有切片和检索索引可用，系统不允许切换到不同维度的模型。
+        </div>
+        <DialogFooter>
+          <Button type="button" @click="dimensionOpen = false">知道了</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -248,6 +264,7 @@ import { modelApi, ragApi } from '@/api'
 import { useUserStore } from '@/stores/user'
 import type { ModelConfig, RagSettings, UpdateRagSettingsPayload } from '@/types/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -269,6 +286,9 @@ function goToolConfig() {
 }
 
 const loading = ref(true)
+const dimensionOpen = ref(false)
+const dimensionMessage = ref('')
+const dimensionCheck = ref<{ currentDimension: number; modelDimension?: number } | null>(null)
 const saving = ref(false)
 const error = ref('')
 const settings = reactive<RagSettings>({
@@ -380,13 +400,34 @@ async function save() {
     toast.error('top_n 不能大于 top_k')
     return
   }
+  const selectedModelId = Number(form.embeddingModelId)
+  if (selectedModelId) {
+    try {
+      const check = await ragApi.embeddingDimensionCheck(selectedModelId)
+      if (!check.compatible) {
+        dimensionCheck.value = check
+        dimensionMessage.value = check.message
+        dimensionOpen.value = true
+        return
+      }
+    } catch (err: any) {
+      toast.error(err?.message || '无法校验向量模型维度')
+      return
+    }
+  }
   saving.value = true
   try {
     const updated = await ragApi.update(buildPayload())
     apply(updated)
     toast.success('检索参数已保存')
   } catch (err: any) {
-    toast.error(err?.message || '保存失败')
+    const message = err?.message || '保存失败'
+    if (message.includes('维度')) {
+      dimensionMessage.value = message
+      dimensionOpen.value = true
+    } else {
+      toast.error(message)
+    }
   } finally {
     saving.value = false
   }

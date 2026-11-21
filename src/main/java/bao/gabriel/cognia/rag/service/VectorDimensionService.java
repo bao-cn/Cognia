@@ -1,5 +1,6 @@
 package bao.gabriel.cognia.rag.service;
 
+import bao.gabriel.cognia.common.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -43,7 +44,7 @@ public class VectorDimensionService {
         }
         int current = currentDimension();
         if (dimension != current) {
-            throw new IllegalStateException("向量模型维度为 " + dimension + "，当前知识库为 " + current
+            throw BusinessException.badRequest("向量模型维度为 " + dimension + "，当前知识库为 " + current
                     + " 维。请选择相同维度的模型；已有向量不会被清空。");
         }
     }
