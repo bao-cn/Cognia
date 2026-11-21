@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 public interface BillingService {
+    boolean isBillingEnabled();
     BillingSetting getSettings();
     BillingSetting updateSettings(BillingSettingsRequest request);
 
@@ -30,6 +31,14 @@ public interface BillingService {
     Map<String, Object> catalog();
     Map<String, Object> me(Long userId);
     PageResult<TokenLedger> ledger(Long userId, long page, long size);
+    Map<String, Object> wallet(Long userId);
+    PageResult<WalletLedger> walletLedger(Long userId, long page, long size);
+    Map<String, Object> adjustWallet(Long userId, String idempotencyKey, WalletAdjustmentRequest request);
+    Map<String, Object> redeemCode(Long userId, String idempotencyKey, RedeemCodeRequest request, String clientIp);
+    PageResult<Map<String, Object>> pageRedemptions(Long userId, long page, long size);
+    PageResult<Map<String, Object>> pageRedeemCodeBatches(long page, long size);
+    Map<String, Object> createRedeemCodeBatch(CreateRedeemCodeBatchRequest request);
+    void revokeRedeemCodeBatch(Long batchId);
     PageResult<TokenUsage> usage(Long userId, long page, long size, Long modelId, String status, String from, String to);
 
     BillingOrder createOrder(Long userId, String idempotencyKey, CreateOrderRequest request);

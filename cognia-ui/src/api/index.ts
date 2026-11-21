@@ -31,6 +31,8 @@ export type {
   BillingMe,
   BillingOrder,
   BillingPlan,
+  BillingRedemption,
+  BillingRedeemCodeBatch,
   BillingSettings,
   BillingTokenPack,
   BillingUsageByModel,
@@ -38,6 +40,8 @@ export type {
   BillingTokenLedger,
   BillingTokenUsage,
   BillingUserDetails,
+  BillingWallet,
+  BillingWalletLedger,
   SaveBillingPlan,
   SaveBillingTokenPack,
 } from './billing'

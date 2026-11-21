@@ -24,7 +24,7 @@ const routes: Array<RouteRecordRaw> = [
         path: 'subscribe',
         component: () => import('@/pages/Subscribe.vue'),
         meta: {
-          title: '订阅方案',
+          title: 'Platform +',
         },
       },
       {
@@ -546,9 +546,7 @@ function safeRedirect(value: unknown, fallback = '/chat'): string {
 
 router.beforeEach(async (to): Promise<boolean | RouteLocationRaw> => {
   const siteStore = useSiteStore()
-  if (!siteStore.loaded) {
-    await siteStore.load()
-  }
+  await siteStore.load(to.name === 'Subscribe')
 
   const suffix = siteStore.routeSuffix ?? ''
   document.title = to.meta.title
@@ -565,6 +563,10 @@ router.beforeEach(async (to): Promise<boolean | RouteLocationRaw> => {
       return safeRedirect(to.query.redirect)
     }
     return true
+  }
+
+  if (to.name === 'Subscribe' && !siteStore.billingEnabled) {
+    return { name: 'Chat' }
   }
 
   if (!userStore.isLoggedIn) {

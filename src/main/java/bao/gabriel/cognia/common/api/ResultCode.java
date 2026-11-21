@@ -24,6 +24,7 @@ public enum ResultCode {
     METHOD_NOT_ALLOWED(40500, "请求方法不支持", HttpStatus.METHOD_NOT_ALLOWED),
     CONFLICT(40900, "资源冲突", HttpStatus.CONFLICT),
     TOKEN_BALANCE_INSUFFICIENT(40200, "可用额度不足", HttpStatus.PAYMENT_REQUIRED),
+    WALLET_BALANCE_INSUFFICIENT(40201, "钱包余额不足", HttpStatus.PAYMENT_REQUIRED),
     MODEL_NOT_ENTITLED(40301, "当前方案不允许使用该模型", HttpStatus.FORBIDDEN),
     ORDER_STATE_CONFLICT(40901, "订单状态不允许执行当前操作", HttpStatus.CONFLICT),
     IDEMPOTENCY_KEY_CONFLICT(40902, "幂等键对应不同请求", HttpStatus.CONFLICT),

@@ -47,15 +47,62 @@ export interface BillingOrder {
 }
 
 export interface BillingSettings {
+  billingEnabled: boolean
   defaultPlanId?: number | string
   registrationTokens: number
   registrationTokenExpireDays?: number
   currency: string
+  walletCurrency: string
+  walletFractionalDigits: number
+  walletUnitLabel: string
+}
+
+export interface BillingWallet {
+  balanceUnits: number
+  currency: string
+  fractionalDigits: number
+  unitLabel: string
+}
+
+export interface BillingWalletLedger {
+  id: string | number
+  eventType: string
+  deltaUnits: number
+  balanceAfterUnits: number
+  currency: string
+  fractionalDigits: number
+  unitLabel: string
+  sourceType?: string
+  sourceId?: string | number
+  requestId?: string
+  reason?: string
+  createdAt: string
+}
+
+export interface BillingRedeemCodeBatch {
+  id: string | number
+  batchNo: string
+  benefitType: string
+  productId?: string | number
+  quantity: number
+  redeemedCount: number
+  validFrom?: string
+  expireTime?: string
+  status: string
+  createTime: string
+}
+
+export interface BillingRedemption {
+  id: string | number
+  benefitType: string
+  benefit: Record<string, unknown>
+  redeemedAt: string
 }
 
 export interface BillingMe {
   defaultPlan?: { id: string | number, name: string }
   activeSubscription?: { id: string | number, planId: string | number }
+  wallet?: BillingWallet
   balance?: {
     availableTokens: number
     heldTokens: number
@@ -150,11 +197,46 @@ export const billingApi = {
   me(): Promise<BillingMe> {
     return http.get('/billing/me')
   },
+  wallet(): Promise<BillingWallet> {
+    return http.get('/billing/me/wallet')
+  },
+  walletLedger(page = 1, size = 20): Promise<PageResult<BillingWalletLedger>> {
+    return http.get('/billing/me/wallet/ledger', { params: { page, size } })
+  },
+  redeemCode(code: string, idempotencyKey: string): Promise<Record<string, unknown>> {
+    return http.post('/billing/redeem', { code }, { headers: { 'Idempotency-Key': idempotencyKey } })
+  },
+  redemptions(page = 1, size = 20): Promise<PageResult<BillingRedemption>> {
+    return http.get('/billing/me/redemptions', { params: { page, size } })
+  },
+  createOrder(productType: string, productId: string | number, idempotencyKey: string): Promise<BillingOrder> {
+    return http.post('/billing/orders', {
+      productType,
+      productId: String(productId),
+      paymentProvider: 'WALLET',
+    }, { headers: { 'Idempotency-Key': idempotencyKey } })
+  },
   adminSettings(): Promise<BillingSettings> {
     return http.get('/admin/billing/settings')
   },
   updateAdminSettings(payload: BillingSettings): Promise<BillingSettings> {
     return http.put('/admin/billing/settings', payload)
+  },
+  redeemCodeBatches(page = 1, size = 50): Promise<PageResult<BillingRedeemCodeBatch>> {
+    return http.get('/admin/billing/redeem-code-batches', { params: { page, size } })
+  },
+  createRedeemCodeBatch(payload: {
+    benefitType: string
+    productId?: string
+    quantity: number
+    amountUnits?: number
+    validFrom?: string
+    expireTime?: string
+  }): Promise<{ id: string, batchNo: string, benefitType: string, quantity: number, codes: string[] }> {
+    return http.post('/admin/billing/redeem-code-batches', payload)
+  },
+  revokeRedeemCodeBatch(batchId: string | number): Promise<void> {
+    return http.post(`/admin/billing/redeem-code-batches/${batchId}/revoke`)
   },
   plans(page = 1, size = 100): Promise<PageResult<BillingPlan>> {
     return http.get('/admin/billing/plans', { params: { page, size } })
@@ -212,6 +294,17 @@ export const billingApi = {
   },
   userLedger(userId: string, page = 1, size = 20): Promise<PageResult<BillingTokenLedger>> {
     return http.get(`/admin/billing/users/${userId}/ledger`, { params: { page, size } })
+  },
+  adminWallet(userId: string): Promise<BillingWallet> {
+    return http.get(`/admin/billing/users/${userId}/wallet`)
+  },
+  adminWalletLedger(userId: string, page = 1, size = 20): Promise<PageResult<BillingWalletLedger>> {
+    return http.get(`/admin/billing/users/${userId}/wallet-ledger`, { params: { page, size } })
+  },
+  adjustWallet(userId: string, deltaUnits: number, reason: string, idempotencyKey: string): Promise<Record<string, unknown>> {
+    return http.post(`/admin/billing/users/${userId}/wallet-adjustments`, { deltaUnits, reason }, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    })
   },
   grantTokens(userId: string, tokenPackId: string, reason: string, idempotencyKey: string): Promise<Record<string, unknown>> {
     return http.post(`/admin/billing/users/${userId}/token-grants`, { tokenPackId, reason }, {

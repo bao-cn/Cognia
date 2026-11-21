@@ -3,12 +3,16 @@ package bao.gabriel.cognia.system.controller;
 import bao.gabriel.cognia.common.api.ApiResponse;
 import bao.gabriel.cognia.common.api.PageResult;
 import bao.gabriel.cognia.security.SecurityUtils;
+import bao.gabriel.cognia.common.util.WebUtils;
 import bao.gabriel.cognia.system.dto.billing.CreateOrderRequest;
+import bao.gabriel.cognia.system.dto.billing.RedeemCodeRequest;
 import bao.gabriel.cognia.system.entity.BillingOrder;
 import bao.gabriel.cognia.system.entity.TokenLedger;
 import bao.gabriel.cognia.system.entity.TokenUsage;
+import bao.gabriel.cognia.system.entity.WalletLedger;
 import bao.gabriel.cognia.system.service.BillingService;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -34,6 +38,37 @@ public class BillingController {
     public ApiResponse<PageResult<TokenLedger>> ledger(@RequestParam(defaultValue="1") long page,
                                                         @RequestParam(defaultValue="20") long size) {
         return ApiResponse.success(billingService.ledger(SecurityUtils.getUserId(), page, size));
+    }
+
+    @GetMapping("/me/wallet")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<Map<String, Object>> wallet() {
+        return ApiResponse.success(billingService.wallet(SecurityUtils.getUserId()));
+    }
+
+    @GetMapping("/me/wallet/ledger")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<PageResult<WalletLedger>> walletLedger(@RequestParam(defaultValue="1") long page,
+                                                                @RequestParam(defaultValue="20") long size) {
+        return ApiResponse.success(billingService.walletLedger(SecurityUtils.getUserId(), page, size));
+    }
+
+    @PostMapping("/redeem")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<Map<String, Object>> redeem(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody RedeemCodeRequest request,
+            HttpServletRequest httpRequest) {
+        return ApiResponse.success(billingService.redeemCode(SecurityUtils.getUserId(), idempotencyKey,
+                request, WebUtils.getClientIp(httpRequest)));
+    }
+
+    @GetMapping("/me/redemptions")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<PageResult<Map<String, Object>>> redemptions(
+            @RequestParam(defaultValue="1") long page,
+            @RequestParam(defaultValue="20") long size) {
+        return ApiResponse.success(billingService.pageRedemptions(SecurityUtils.getUserId(), page, size));
     }
 
     @GetMapping("/me/usage")

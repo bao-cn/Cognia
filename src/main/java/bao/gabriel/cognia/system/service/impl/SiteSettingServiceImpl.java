@@ -10,6 +10,7 @@ import bao.gabriel.cognia.system.dto.settings.SmtpConfig;
 import bao.gabriel.cognia.system.dto.settings.UpdateSettingsRequest;
 import bao.gabriel.cognia.system.entity.SiteSetting;
 import bao.gabriel.cognia.system.mapper.SiteSettingMapper;
+import bao.gabriel.cognia.system.mapper.BillingSettingMapper;
 import bao.gabriel.cognia.system.service.SiteSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +48,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     private static final Pattern DOMAIN_PATTERN = Pattern.compile("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$");
 
     private final SiteSettingMapper settingMapper;
+    private final BillingSettingMapper billingSettingMapper;
     private final SecurityCryptoService cryptoService;
 
     private volatile SiteSetting cachedSetting;
@@ -70,6 +72,7 @@ public class SiteSettingServiceImpl implements SiteSettingService {
     @Override
     public PublicSettingsResponse getPublicSettings() {
         SiteSetting setting = getSetting();
+        var billingSetting = billingSettingMapper.selectById(1L);
         return new PublicSettingsResponse(
                 setting.getSiteName(),
                 setting.getLogoUrl(),
@@ -93,7 +96,8 @@ public class SiteSettingServiceImpl implements SiteSettingService {
                 setting.getTurnstileSiteKey(),
                 setting.getGeetestCaptchaId(),
                 setting.teamCreationLimit(),
-                setting.teamJoinLimit()
+                setting.teamJoinLimit(),
+                billingSetting == null || !Boolean.FALSE.equals(billingSetting.getBillingEnabled())
         );
     }
 

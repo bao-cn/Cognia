@@ -28,6 +28,7 @@ public record PublicSettingsResponse(
         String turnstileSiteKey,
         String geetestCaptchaId,
         int teamCreationLimit,
-        int teamJoinLimit
+        int teamJoinLimit,
+        boolean billingEnabled
 ) {
 }

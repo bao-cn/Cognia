@@ -5,6 +5,7 @@ import { billingApi, modelApi } from '@/api'
 import type {
   BillingOrder,
   BillingPlan,
+  BillingRedeemCodeBatch,
   BillingSettings,
   BillingTokenPack,
   BillingUsageByModel,
@@ -12,11 +13,14 @@ import type {
   BillingTokenLedger,
   BillingTokenUsage,
   BillingUserDetails,
+  BillingWallet,
+  BillingWalletLedger,
   SaveBillingPlan,
   SaveBillingTokenPack,
 } from '@/api/billing'
 import type { ModelConfig } from '@/types/api'
 import { useUserStore } from '@/stores/user'
+import { useSiteStore } from '@/stores/site'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,22 +36,30 @@ import {
   IconRefresh,
   IconSettings,
   IconShoppingCart,
+  IconTicket,
 } from '@tabler/icons-vue'
 
-type TabKey = 'settings' | 'plans' | 'packs' | 'orders' | 'usage' | 'user'
+type TabKey = 'settings' | 'plans' | 'packs' | 'codes' | 'orders' | 'usage' | 'user'
 
 const userStore = useUserStore()
+const siteStore = useSiteStore()
 const canRead = computed(() => userStore.hasPermission('billing:read'))
 const canUpdate = computed(() => userStore.hasPermission('billing:update'))
 const canReadOrders = computed(() => userStore.hasPermission('billing:order-read'))
 const canReadUsage = computed(() => userStore.hasPermission('billing:usage-read'))
 const canGrant = computed(() => userStore.hasPermission('billing:grant'))
 const canAdjust = computed(() => userStore.hasPermission('billing:adjust'))
+const canReadWallet = computed(() => userStore.hasPermission('billing:wallet-read'))
+const canAdjustWallet = computed(() => userStore.hasPermission('billing:wallet-adjust'))
+const canReadRedeemCodes = computed(() => userStore.hasPermission('billing:redeem-read'))
+const canManageRedeemCodes = computed(() => userStore.hasPermission('billing:redeem-manage'))
 
 const tabs = computed(() => [
   ...(canRead.value ? [{ key: 'settings' as const, label: '计费设置', icon: IconSettings }] : []),
   ...(canRead.value ? [{ key: 'plans' as const, label: '订阅方案', icon: IconCreditCard }] : []),
   ...(canRead.value ? [{ key: 'packs' as const, label: 'Token 补充包', icon: IconPackage }] : []),
+  ...((canReadRedeemCodes.value || canManageRedeemCodes.value)
+    ? [{ key: 'codes' as const, label: '兑换码', icon: IconTicket }] : []),
   ...(canReadOrders.value ? [{ key: 'orders' as const, label: '订单', icon: IconShoppingCart }] : []),
   ...(canReadUsage.value ? [{ key: 'usage' as const, label: '用量统计', icon: IconChartBar }] : []),
   ...(canReadUsage.value ? [{ key: 'user' as const, label: '用户权益', icon: IconGift }] : []),
@@ -58,10 +70,14 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const settings = reactive<BillingSettings>({
+  billingEnabled: true,
   defaultPlanId: '',
   registrationTokens: 0,
   registrationTokenExpireDays: undefined,
   currency: 'CNY',
+  walletCurrency: 'CNY',
+  walletFractionalDigits: 2,
+  walletUnitLabel: '分',
 })
 const plans = ref<BillingPlan[]>([])
 const packs = ref<BillingTokenPack[]>([])
@@ -74,7 +90,11 @@ const userIdQuery = ref('')
 const userDetails = ref<BillingUserDetails | null>(null)
 const userUsage = ref<BillingTokenUsage[]>([])
 const userLedger = ref<BillingTokenLedger[]>([])
+const userWallet = ref<BillingWallet | null>(null)
+const userWalletLedger = ref<BillingWalletLedger[]>([])
 const userLoading = ref(false)
+const redeemBatches = ref<BillingRedeemCodeBatch[]>([])
+const createdRedeemBatch = ref<{ batchNo: string, codes: string[] } | null>(null)
 
 const planFormOpen = ref(false)
 const editingPlanId = ref<string | null>(null)
@@ -111,8 +131,18 @@ const to = ref(today())
 const interval = ref('DAY')
 const grantForm = reactive({ userId: '', tokenPackId: '', reason: '' })
 const adjustmentForm = reactive({ userId: '', deltaTokens: 0, reason: '' })
+const walletAdjustmentForm = reactive({ userId: '', deltaUnits: 0, reason: '' })
+const redeemBatchForm = reactive({
+  benefitType: 'SUBSCRIPTION',
+  productId: '',
+  quantity: 1,
+  amountUnits: 100,
+  validFrom: '',
+  expireTime: '',
+})
 
 const activePlans = computed(() => plans.value.filter(plan => plan.status === 'PUBLISHED'))
+const activePacks = computed(() => packs.value.filter(pack => pack.status === 'PUBLISHED'))
 const chatModels = computed(() => models.value.filter(model => model.modelType === 'CHAT' && model.enabled))
 
 function today(): string {
@@ -132,6 +162,16 @@ function messageOf(cause: unknown): string {
 function formatPrice(priceMinor: number, currency: string): string {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'CNY' })
     .format(priceMinor / 100)
+}
+
+function formatWalletBalance(wallet: BillingWallet): string {
+  const amount = wallet.balanceUnits / (10 ** wallet.fractionalDigits)
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: wallet.currency,
+    minimumFractionDigits: wallet.fractionalDigits,
+    maximumFractionDigits: wallet.fractionalDigits,
+  }).format(amount)
 }
 
 function resetPlanForm(): void {
@@ -220,6 +260,11 @@ async function loadUsage(): Promise<void> {
   usageTrend.value = trend
 }
 
+async function loadRedeemBatches(): Promise<void> {
+  const result = await billingApi.redeemCodeBatches()
+  redeemBatches.value = result.records
+}
+
 async function load(): Promise<void> {
   loading.value = true
   error.value = ''
@@ -227,6 +272,7 @@ async function load(): Promise<void> {
     if (canRead.value) await loadSettingsAndProducts()
     if (canReadOrders.value) await loadOrders()
     if (canReadUsage.value) await loadUsage()
+    if (canReadRedeemCodes.value) await loadRedeemBatches()
   } catch (cause) {
     error.value = messageOf(cause)
     toast.error(error.value)
@@ -243,6 +289,7 @@ async function saveSettings(): Promise<void> {
       ...settings,
       defaultPlanId: settings.defaultPlanId || undefined,
     }))
+    siteStore.config.billingEnabled = settings.billingEnabled
     toast.success('计费设置已保存')
   } catch (cause) {
     toast.error(messageOf(cause))
@@ -351,6 +398,93 @@ async function adjustTokens(): Promise<void> {
   }
 }
 
+async function adjustWallet(): Promise<void> {
+  if (!walletAdjustmentForm.userId.trim() || !walletAdjustmentForm.reason.trim()
+    || !walletAdjustmentForm.deltaUnits) {
+    toast.error('请填写用户 ID、调整金额和原因')
+    return
+  }
+  saving.value = true
+  try {
+    await billingApi.adjustWallet(
+      walletAdjustmentForm.userId,
+      walletAdjustmentForm.deltaUnits,
+      walletAdjustmentForm.reason,
+      crypto.randomUUID(),
+    )
+    toast.success('钱包余额已调整')
+    walletAdjustmentForm.reason = ''
+    await lookupUserBilling()
+  } catch (cause) {
+    toast.error(messageOf(cause))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function createRedeemBatch(): Promise<void> {
+  const walletCredit = redeemBatchForm.benefitType === 'WALLET_CREDIT'
+  if ((!walletCredit && !redeemBatchForm.productId) || !Number.isInteger(redeemBatchForm.quantity)
+    || redeemBatchForm.quantity < 1 || redeemBatchForm.quantity > 1000
+    || (walletCredit && redeemBatchForm.amountUnits < 1)) {
+    toast.error('请检查权益、数量和金额')
+    return
+  }
+  saving.value = true
+  try {
+    const result = await billingApi.createRedeemCodeBatch({
+      benefitType: redeemBatchForm.benefitType,
+      productId: walletCredit ? undefined : redeemBatchForm.productId,
+      quantity: redeemBatchForm.quantity,
+      amountUnits: walletCredit ? redeemBatchForm.amountUnits : undefined,
+      validFrom: redeemBatchForm.validFrom || undefined,
+      expireTime: redeemBatchForm.expireTime || undefined,
+    })
+    createdRedeemBatch.value = { batchNo: result.batchNo, codes: result.codes }
+    toast.success(`已创建兑换码批次 ${result.batchNo}`)
+    if (canReadRedeemCodes.value) await loadRedeemBatches()
+  } catch (cause) {
+    toast.error(messageOf(cause))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function revokeRedeemBatch(batch: BillingRedeemCodeBatch): Promise<void> {
+  if (!window.confirm(`确定作废批次 ${batch.batchNo} 中尚未兑换的码吗？`)) return
+  saving.value = true
+  try {
+    await billingApi.revokeRedeemCodeBatch(batch.id)
+    toast.success('批次已作废')
+    if (canReadRedeemCodes.value) await loadRedeemBatches()
+  } catch (cause) {
+    toast.error(messageOf(cause))
+  } finally {
+    saving.value = false
+  }
+}
+
+function downloadCreatedCodes(): void {
+  if (!createdRedeemBatch.value) return
+  const blob = new Blob([createdRedeemBatch.value.codes.join('\n')], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${createdRedeemBatch.value.batchNo}.txt`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+async function copyCreatedCodes(): Promise<void> {
+  if (!createdRedeemBatch.value) return
+  try {
+    await navigator.clipboard.writeText(createdRedeemBatch.value.codes.join('\n'))
+    toast.success('兑换码已复制')
+  } catch (cause) {
+    toast.error(messageOf(cause))
+  }
+}
+
 async function refreshOrders(): Promise<void> {
   try { await loadOrders() } catch (cause) { toast.error(messageOf(cause)) }
 }
@@ -375,6 +509,18 @@ async function lookupUserBilling(): Promise<void> {
     userDetails.value = details
     userUsage.value = usage.records
     userLedger.value = ledger.records
+    walletAdjustmentForm.userId = userId
+    if (canReadWallet.value) {
+      const [wallet, walletLedger] = await Promise.all([
+        billingApi.adminWallet(userId),
+        billingApi.adminWalletLedger(userId, 1, 50),
+      ])
+      userWallet.value = wallet
+      userWalletLedger.value = walletLedger.records
+    } else {
+      userWallet.value = null
+      userWalletLedger.value = []
+    }
   } catch (cause) {
     toast.error(messageOf(cause))
   } finally {
@@ -393,8 +539,11 @@ onMounted(() => {
   <div class="flex flex-col gap-4 p-4 md:p-6">
     <header class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 class="text-xl font-semibold">订阅与计费</h1>
-        <p class="mt-1 text-sm text-muted-foreground">管理订阅方案、Token 补充包、订单与用量。</p>
+        <div class="flex items-center gap-2">
+          <h1 class="text-xl font-semibold">订阅与计费</h1>
+          <Badge variant="secondary" class="px-1.5 text-[10px] font-semibold tracking-wider">BETA</Badge>
+        </div>
+        <p class="mt-1 text-sm text-muted-foreground">管理方案、钱包单位、兑换码、订单与用量。</p>
       </div>
       <Button variant="outline" size="sm" :disabled="loading" @click="load">
         <IconRefresh class="mr-1 size-4" />刷新
@@ -425,6 +574,15 @@ onMounted(() => {
           <p class="text-sm text-muted-foreground">注册时应用默认方案并一次性发放初始 Token。</p>
         </div>
         <fieldset :disabled="!canUpdate" class="grid gap-4 border-0 p-0 sm:grid-cols-2">
+          <label class="flex items-start gap-3 rounded-lg border p-3 sm:col-span-2">
+            <input v-model="settings.billingEnabled" type="checkbox" class="mt-1 size-4 accent-primary" />
+            <span>
+              <span class="block text-sm font-medium">启用计费功能</span>
+              <span class="mt-1 block text-xs text-muted-foreground">
+                关闭后隐藏 Platform + 页面，并允许用户不受 Token 额度和方案模型权限限制使用已启用的模型。
+              </span>
+            </span>
+          </label>
           <div class="grid gap-2 sm:col-span-2">
             <Label for="default-plan">默认方案</Label>
             <select id="default-plan" v-model="settings.defaultPlanId" class="h-9 rounded-md border bg-background px-3 text-sm">
@@ -446,6 +604,21 @@ onMounted(() => {
             <Label for="billing-currency">默认币种</Label>
             <Input id="billing-currency" v-model="settings.currency" maxlength="16" />
           </div>
+          <div class="grid gap-2">
+            <Label for="wallet-currency">钱包币种</Label>
+            <Input id="wallet-currency" v-model="settings.walletCurrency" maxlength="3" />
+          </div>
+          <div class="grid gap-2">
+            <Label for="wallet-fractional-digits">钱包小数位数</Label>
+            <Input id="wallet-fractional-digits" v-model.number="settings.walletFractionalDigits" type="number" min="0" max="9" />
+          </div>
+          <div class="grid gap-2">
+            <Label for="wallet-unit-label">最小单位名称</Label>
+            <Input id="wallet-unit-label" v-model="settings.walletUnitLabel" maxlength="16" />
+          </div>
+          <p class="text-xs text-muted-foreground sm:col-span-2">
+            钱包余额、流水或余额兑换码生成后，不能直接修改钱包币种与精度。
+          </p>
           <div class="flex items-end sm:col-span-2">
             <Button :disabled="saving || !canUpdate" @click="saveSettings">
               <IconDeviceFloppy class="mr-1 size-4" />保存设置
@@ -596,6 +769,90 @@ onMounted(() => {
         </div>
       </section>
 
+      <section v-if="activeTab === 'codes' && (canReadRedeemCodes || canManageRedeemCodes)" class="flex flex-col gap-4">
+        <header>
+          <h2 class="font-semibold">兑换码批次</h2>
+          <p class="text-sm text-muted-foreground">兑换码明文仅在创建响应中显示一次，请立即下载并安全保管。</p>
+        </header>
+
+        <form v-if="canManageRedeemCodes" class="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-3" @submit.prevent="createRedeemBatch">
+          <div class="grid gap-1.5">
+            <Label>权益类型</Label>
+            <select v-model="redeemBatchForm.benefitType" class="h-9 rounded-md border bg-background px-3 text-sm">
+              <option value="SUBSCRIPTION">订阅方案</option>
+              <option value="TOKEN_PACK">Token 补充包</option>
+              <option value="WALLET_CREDIT">钱包余额</option>
+            </select>
+          </div>
+          <div v-if="redeemBatchForm.benefitType !== 'WALLET_CREDIT'" class="grid gap-1.5">
+            <Label>{{ redeemBatchForm.benefitType === 'SUBSCRIPTION' ? '订阅方案' : 'Token 补充包' }}</Label>
+            <select v-model="redeemBatchForm.productId" class="h-9 rounded-md border bg-background px-3 text-sm">
+              <option value="">选择已发布商品</option>
+              <template v-if="redeemBatchForm.benefitType === 'SUBSCRIPTION'">
+                <option v-for="plan in activePlans" :key="String(plan.id)" :value="String(plan.id)">{{ plan.name }}</option>
+              </template>
+              <template v-else>
+                <option v-for="pack in activePacks" :key="String(pack.id)" :value="String(pack.id)">{{ pack.name }}</option>
+              </template>
+            </select>
+          </div>
+          <div v-else class="grid gap-1.5">
+            <Label>金额（{{ settings.walletUnitLabel || '钱包单位' }}）</Label>
+            <Input v-model.number="redeemBatchForm.amountUnits" type="number" min="1" />
+          </div>
+          <div class="grid gap-1.5">
+            <Label>数量（最多 1000）</Label>
+            <Input v-model.number="redeemBatchForm.quantity" type="number" min="1" max="1000" />
+          </div>
+          <div class="grid gap-1.5">
+            <Label>生效时间</Label>
+            <Input v-model="redeemBatchForm.validFrom" type="datetime-local" />
+          </div>
+          <div class="grid gap-1.5">
+            <Label>失效时间</Label>
+            <Input v-model="redeemBatchForm.expireTime" type="datetime-local" />
+          </div>
+          <div class="sm:col-span-2 lg:col-span-3">
+            <Button type="submit" :disabled="saving"><Spinner v-if="saving" class="mr-1 size-4" />创建批次</Button>
+          </div>
+        </form>
+
+        <section v-if="createdRedeemBatch" class="grid gap-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="font-semibold">新建批次：{{ createdRedeemBatch.batchNo }}</h3>
+              <p class="text-sm text-muted-foreground">关闭或离开此页面后无法再次查询明文。</p>
+            </div>
+            <div class="flex gap-2">
+              <Button size="sm" variant="outline" @click="copyCreatedCodes">复制</Button>
+              <Button size="sm" @click="downloadCreatedCodes">下载 TXT</Button>
+            </div>
+          </div>
+          <textarea :value="createdRedeemBatch.codes.join('\n')" readonly rows="6" class="w-full rounded-md border bg-background p-3 font-mono text-xs" />
+        </section>
+
+        <div v-if="canReadRedeemCodes" class="overflow-x-auto rounded-xl border">
+          <table class="w-full min-w-[720px] text-left text-sm">
+            <thead class="bg-muted/50 text-xs text-muted-foreground">
+              <tr><th class="p-3">批次号</th><th class="p-3">权益</th><th class="p-3">已兑换</th><th class="p-3">失效时间</th><th class="p-3">状态</th><th class="p-3">操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="batch in redeemBatches" :key="String(batch.id)" class="border-t">
+                <td class="p-3">{{ batch.batchNo }}</td>
+                <td class="p-3">{{ batch.benefitType }}<span v-if="batch.productId"> · {{ batch.productId }}</span></td>
+                <td class="p-3">{{ batch.redeemedCount }} / {{ batch.quantity }}</td>
+                <td class="p-3">{{ batch.expireTime || '永久' }}</td>
+                <td class="p-3"><Badge :variant="batch.status === 'ACTIVE' ? 'default' : 'secondary'">{{ batch.status }}</Badge></td>
+                <td class="p-3">
+                  <Button v-if="canManageRedeemCodes && batch.status === 'ACTIVE'" size="sm" variant="outline" :disabled="saving" @click="revokeRedeemBatch(batch)">作废未兑换码</Button>
+                </td>
+              </tr>
+              <tr v-if="!redeemBatches.length"><td colspan="6" class="p-8 text-center text-muted-foreground">暂无兑换码批次</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section v-if="activeTab === 'orders' && canReadOrders" class="flex flex-col gap-4">
         <header class="flex flex-wrap items-end justify-between gap-3">
           <div><h2 class="font-semibold">订单</h2><p class="text-sm text-muted-foreground">查看用户订单与支付状态。</p></div>
@@ -725,6 +982,40 @@ onMounted(() => {
               </table>
             </section>
           </div>
+
+          <section v-if="canReadWallet && userWallet" class="grid gap-4 rounded-xl border bg-card p-4 xl:grid-cols-[1fr_2fr]">
+            <div class="grid content-start gap-2">
+              <h3 class="font-semibold">用户钱包</h3>
+              <p class="text-2xl font-semibold">{{ formatWalletBalance(userWallet) }}</p>
+              <p class="text-xs text-muted-foreground">
+                {{ userWallet.balanceUnits.toLocaleString() }} {{ userWallet.unitLabel }}
+              </p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[560px] text-left text-sm">
+                <thead class="text-xs text-muted-foreground"><tr><th class="p-2">时间</th><th class="p-2">类型</th><th class="p-2">变更</th><th class="p-2">变更后余额</th><th class="p-2">原因</th></tr></thead>
+                <tbody>
+                  <tr v-for="entry in userWalletLedger" :key="String(entry.id)" class="border-t">
+                    <td class="p-2">{{ entry.createdAt }}</td><td class="p-2">{{ entry.eventType }}</td>
+                    <td class="p-2">{{ entry.deltaUnits.toLocaleString() }} {{ entry.unitLabel }}</td>
+                    <td class="p-2">{{ entry.balanceAfterUnits.toLocaleString() }} {{ entry.unitLabel }}</td>
+                    <td class="p-2">{{ entry.reason || '—' }}</td>
+                  </tr>
+                  <tr v-if="!userWalletLedger.length"><td colspan="5" class="p-5 text-center text-muted-foreground">暂无钱包流水</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section v-if="canAdjustWallet" class="grid gap-3 rounded-xl border bg-card p-4">
+            <h3 class="font-semibold">钱包余额调整</h3>
+            <div class="grid gap-3 sm:grid-cols-3">
+              <div class="grid gap-1.5"><Label>用户 ID</Label><Input v-model="walletAdjustmentForm.userId" /></div>
+              <div class="grid gap-1.5"><Label>调整整数单位（可正可负）</Label><Input v-model.number="walletAdjustmentForm.deltaUnits" type="number" /></div>
+              <div class="grid gap-1.5"><Label>原因</Label><Input v-model="walletAdjustmentForm.reason" /></div>
+            </div>
+            <Button class="w-fit" variant="outline" :disabled="saving" @click="adjustWallet">提交调整</Button>
+          </section>
 
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <article v-for="metric in [

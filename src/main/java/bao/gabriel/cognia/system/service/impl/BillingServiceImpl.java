@@ -18,8 +18,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -44,7 +49,21 @@ public class BillingServiceImpl implements BillingService {
     private final PaymentWebhookEventMapper webhookEventMapper;
     private final BillingNotificationOutboxMapper outboxMapper;
     private final ModelBillingRateMapper billingRateMapper;
+    private final WalletAccountMapper walletAccountMapper;
+    private final WalletLedgerMapper walletLedgerMapper;
+    private final RedeemCodeBatchMapper redeemCodeBatchMapper;
+    private final RedeemCodeMapper redeemCodeMapper;
+    private final BillingRedemptionMapper billingRedemptionMapper;
+    private final StringRedisTemplate redis;
     private final NotificationService notificationService;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int REDEEM_USER_HOURLY_LIMIT = 20;
+    private static final int REDEEM_IP_HOURLY_LIMIT = 60;
+
+    @Override
+    public boolean isBillingEnabled() {
+        return !Boolean.FALSE.equals(getSettings().getBillingEnabled());
+    }
 
     @Override
     public BillingSetting getSettings() {
@@ -52,8 +71,12 @@ public class BillingServiceImpl implements BillingService {
         if (setting == null) {
             setting = new BillingSetting();
             setting.setId(1L);
+            setting.setBillingEnabled(true);
             setting.setRegistrationTokens(0L);
             setting.setCurrency("CNY");
+            setting.setWalletCurrency("CNY");
+            setting.setWalletFractionalDigits(2);
+            setting.setWalletUnitLabel("分");
             settingMapper.insert(setting);
         }
         return setting;
@@ -62,7 +85,10 @@ public class BillingServiceImpl implements BillingService {
     @Override
     @Transactional
     public BillingSetting updateSettings(BillingSettingsRequest request) {
-        BillingSetting setting = getSettings();
+        getSettings();
+        BillingSetting setting = settingMapper.selectForUpdate(1L);
+        if (setting == null) throw new IllegalStateException("计费设置锁定失败");
+        if (request.billingEnabled() != null) setting.setBillingEnabled(request.billingEnabled());
         if (request.defaultPlanId() != null && !request.defaultPlanId().isBlank()) {
             Long planId = Long.valueOf(request.defaultPlanId());
             BillingPlan plan = planMapper.selectById(planId);
@@ -72,6 +98,35 @@ public class BillingServiceImpl implements BillingService {
         setting.setRegistrationTokens(request.registrationTokens());
         setting.setRegistrationTokenExpireDays(request.registrationTokenExpireDays());
         setting.setCurrency(request.currency() == null || request.currency().isBlank() ? "CNY" : request.currency());
+        String walletCurrency = request.walletCurrency() == null || request.walletCurrency().isBlank()
+                ? (setting.getWalletCurrency() == null ? "CNY" : setting.getWalletCurrency())
+                : request.walletCurrency().trim().toUpperCase(Locale.ROOT);
+        int walletFractionalDigits = request.walletFractionalDigits() == null
+                ? (setting.getWalletFractionalDigits() == null ? 2 : setting.getWalletFractionalDigits())
+                : request.walletFractionalDigits();
+        String walletUnitLabel = request.walletUnitLabel() == null || request.walletUnitLabel().isBlank()
+                ? (setting.getWalletUnitLabel() == null ? "分" : setting.getWalletUnitLabel().trim())
+                : request.walletUnitLabel().trim();
+        if (walletFractionalDigits < 0 || walletFractionalDigits > 9)
+            throw BusinessException.badRequest("钱包小数位数必须在 0 到 9 之间");
+        try {
+            if (Currency.getInstance(walletCurrency).getDefaultFractionDigits() < 0)
+                throw BusinessException.badRequest("钱包币种必须为有效的 ISO 4217 代码");
+        } catch (IllegalArgumentException ex) {
+            throw BusinessException.badRequest("钱包币种必须为有效的 ISO 4217 代码");
+        }
+        boolean walletUnitChanged = !Objects.equals(setting.getWalletCurrency(), walletCurrency)
+                || !Objects.equals(setting.getWalletFractionalDigits(), walletFractionalDigits)
+                || !Objects.equals(setting.getWalletUnitLabel(), walletUnitLabel);
+        if (walletUnitChanged && (walletAccountMapper.selectCount(null) > 0
+                || walletLedgerMapper.selectCount(null) > 0
+                || redeemCodeBatchMapper.selectCount(new LambdaQueryWrapper<RedeemCodeBatch>()
+                .eq(RedeemCodeBatch::getBenefitType, "WALLET_CREDIT")) > 0)) {
+            throw BusinessException.badRequest("钱包已产生账户、流水或余额兑换码，不能修改币种与单位");
+        }
+        setting.setWalletCurrency(walletCurrency);
+        setting.setWalletFractionalDigits(walletFractionalDigits);
+        setting.setWalletUnitLabel(walletUnitLabel);
         setting.setUpdateTime(LocalDateTime.now());
         settingMapper.updateById(setting);
         return setting;
@@ -252,6 +307,7 @@ public class BillingServiceImpl implements BillingService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("plans", plans);
         result.put("tokenPacks", packs);
+        result.put("walletUnit", walletUnitConfig(getSettings()));
         return result;
     }
 
@@ -281,15 +337,29 @@ public class BillingServiceImpl implements BillingService {
         result.put("activeSubscription", subscription == null ? null : subscription);
         result.put("balance", Map.of("availableTokens", available, "heldTokens", held,
                 "subscriptionTokens", subscriptionTokens, "topUpTokens", topUpTokens));
+        result.put("wallet", wallet(userId));
         result.put("lots", lots);
 
         Long planId = subscription == null ? setting.getDefaultPlanId() : subscription.getPlanId();
         if (planId != null) {
-            List<BillingPlanModel> links = planModelMapper.selectList(new LambdaQueryWrapper<BillingPlanModel>()
-                    .eq(BillingPlanModel::getPlanId, planId));
+            List<Long> allowedModelIds = null;
+            if (subscription != null && StringUtils.hasText(subscription.getProductSnapshot())) {
+                Map<String, Object> snapshot = JSON.parseObject(subscription.getProductSnapshot());
+                Object rawModelIds = snapshot.get("modelIds");
+                if (rawModelIds instanceof Collection<?> modelIds) {
+                    allowedModelIds = modelIds.stream().map(id -> valueLong(id, null))
+                            .filter(Objects::nonNull).toList();
+                }
+            }
+            List<Long> modelIds = allowedModelIds;
+            List<Long> resolvedModelIds = modelIds == null
+                    ? planModelMapper.selectList(new LambdaQueryWrapper<BillingPlanModel>()
+                            .eq(BillingPlanModel::getPlanId, planId)).stream()
+                            .map(BillingPlanModel::getModelConfigId).toList()
+                    : modelIds;
             List<Map<String, Object>> allowed = new ArrayList<>();
-            for (BillingPlanModel link : links) {
-                ModelConfig model = modelConfigMapper.selectById(link.getModelConfigId());
+            for (Long modelId : resolvedModelIds) {
+                ModelConfig model = modelConfigMapper.selectById(modelId);
                 if (model != null && model.enabled()) {
                     allowed.add(Map.of("id", String.valueOf(model.getId()), "name",
                             model.getDisplayName() == null ? model.getModelId() : model.getDisplayName()));
@@ -311,6 +381,264 @@ public class BillingServiceImpl implements BillingService {
     }
 
     @Override
+    public Map<String, Object> wallet(Long userId) {
+        WalletAccount account = walletAccountMapper.selectById(userId);
+        BillingSetting setting = getSettings();
+        Map<String, Object> result = walletUnitConfig(setting);
+        result.put("balanceUnits", account == null || account.getBalanceUnits() == null
+                ? 0L : account.getBalanceUnits());
+        return result;
+    }
+
+    @Override
+    public PageResult<WalletLedger> walletLedger(Long userId, long page, long size) {
+        Page<WalletLedger> result = walletLedgerMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<WalletLedger>().eq(WalletLedger::getUserId, userId)
+                        .orderByDesc(WalletLedger::getCreatedAt).orderByDesc(WalletLedger::getId));
+        return PageResult.of(result.getRecords(), result.getTotal(), page, size);
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> adjustWallet(Long userId, String idempotencyKey,
+                                            WalletAdjustmentRequest request) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 128)
+            throw BusinessException.badRequest("Idempotency-Key 必须为 1 到 128 个字符");
+        if (request.deltaUnits() == 0) throw BusinessException.badRequest("钱包调整金额不能为 0");
+        String requestId = walletRequestId("ADMIN_ADJUST", userId, idempotencyKey);
+        WalletLedger existing = walletLedgerMapper.selectOne(new LambdaQueryWrapper<WalletLedger>()
+                .eq(WalletLedger::getRequestId, requestId));
+        if (existing != null) return walletAdjustmentResponse(existing);
+        WalletLedger entry = applyWalletDelta(userId, request.deltaUnits(), "ADMIN_ADJUST",
+                "ADMIN_ADJUST", null, requestId, request.reason().trim());
+        return walletAdjustmentResponse(entry);
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> redeemCode(Long userId, String idempotencyKey,
+                                          RedeemCodeRequest request, String clientIp) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 128)
+            throw BusinessException.badRequest("Idempotency-Key 必须为 1 到 128 个字符");
+        checkRedeemRateLimit(userId, clientIp);
+        String normalizedCode = normalizeRedeemCode(request.code());
+        String codeHash = sha256(normalizedCode);
+        BillingRedemption existing = billingRedemptionMapper.selectOne(new LambdaQueryWrapper<BillingRedemption>()
+                .eq(BillingRedemption::getUserId, userId)
+                .eq(BillingRedemption::getIdempotencyKey, idempotencyKey));
+        if (existing != null) {
+            RedeemCode priorCode = redeemCodeMapper.selectById(existing.getCodeId());
+            if (priorCode == null || !MessageDigest.isEqual(
+                    priorCode.getCodeHash().getBytes(StandardCharsets.UTF_8),
+                    codeHash.getBytes(StandardCharsets.UTF_8))) {
+                throw BusinessException.badRequest("该 Idempotency-Key 已用于其他兑换码");
+            }
+            return redemptionResponse(existing);
+        }
+        if (!isBillingEnabled()) throw BusinessException.badRequest("计费功能已关闭");
+
+        RedeemCode candidate = redeemCodeMapper.selectOne(new LambdaQueryWrapper<RedeemCode>()
+                .eq(RedeemCode::getCodeHash, codeHash));
+        if (candidate == null) throw BusinessException.badRequest("兑换码无效或已过期");
+        RedeemCodeBatch batch = redeemCodeBatchMapper.selectOne(new LambdaQueryWrapper<RedeemCodeBatch>()
+                .eq(RedeemCodeBatch::getId, candidate.getBatchId()).last("FOR UPDATE"));
+        RedeemCode code = redeemCodeMapper.selectForUpdateByHash(codeHash);
+        LocalDateTime now = LocalDateTime.now();
+        BillingRedemption concurrentRedemption = billingRedemptionMapper.selectOne(
+                new LambdaQueryWrapper<BillingRedemption>().eq(BillingRedemption::getUserId, userId)
+                        .eq(BillingRedemption::getIdempotencyKey, idempotencyKey));
+        if (concurrentRedemption != null) {
+            if (code != null && Objects.equals(concurrentRedemption.getCodeId(), code.getId())) {
+                return redemptionResponse(concurrentRedemption);
+            }
+            throw new BusinessException(ResultCode.IDEMPOTENCY_KEY_CONFLICT);
+        }
+        if (batch == null || code == null || !"ACTIVE".equals(batch.getStatus())
+                || !"AVAILABLE".equals(code.getStatus())
+                || (batch.getValidFrom() != null && now.isBefore(batch.getValidFrom()))
+                || (batch.getExpireTime() != null && !now.isBefore(batch.getExpireTime()))) {
+            throw BusinessException.badRequest("兑换码无效或已过期");
+        }
+
+        BillingRedemption redemption = new BillingRedemption();
+        redemption.setUserId(userId);
+        redemption.setCodeId(code.getId());
+        redemption.setIdempotencyKey(idempotencyKey);
+        redemption.setBenefitType(batch.getBenefitType());
+        redemption.setBenefitSnapshot(batch.getBenefitSnapshot());
+        redemption.setRedeemedAt(now);
+        billingRedemptionMapper.insert(redemption);
+
+        Map<String, Object> benefit = JSON.parseObject(batch.getBenefitSnapshot());
+        String reference = "redemption:" + redemption.getId();
+        if ("SUBSCRIPTION".equals(batch.getBenefitType())) {
+            activateSubscription(userId, batch.getProductId(), benefit, reference,
+                    "BILLING_SUBSCRIPTION_REDEEMED", "订阅兑换成功", reference);
+        } else if ("TOKEN_PACK".equals(batch.getBenefitType())) {
+            grantTokenPack(userId, batch.getProductId(), benefit, reference,
+                    "TOKEN_PACK_REDEMPTION", "BILLING_TOKEN_PACK_REDEEMED", reference);
+        } else if ("WALLET_CREDIT".equals(batch.getBenefitType())) {
+            long amountUnits = valueLong(benefit.get("amountUnits"), 0L);
+            if (amountUnits <= 0) throw BusinessException.badRequest("余额兑换码权益配置无效");
+            applyWalletDelta(userId, amountUnits, "REDEMPTION_CREDIT", "REDEMPTION",
+                    redemption.getId(), reference, "兑换码余额到账");
+            addOutbox(reference, userId, "BILLING_WALLET_CREDIT_REDEEMED", "钱包余额已到账",
+                    "兑换码已充值至钱包。", Map.of("redemptionId", String.valueOf(redemption.getId()),
+                            "amountUnits", amountUnits));
+        } else {
+            throw BusinessException.badRequest("不支持的兑换码权益类型");
+        }
+
+        code.setStatus("REDEEMED");
+        code.setRedeemedBy(userId);
+        code.setRedeemedAt(now);
+        redeemCodeMapper.updateById(code);
+        return redemptionResponse(redemption);
+    }
+
+    @Override
+    public PageResult<Map<String, Object>> pageRedeemCodeBatches(long page, long size) {
+        Page<RedeemCodeBatch> result = redeemCodeBatchMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<RedeemCodeBatch>().orderByDesc(RedeemCodeBatch::getCreateTime)
+                        .orderByDesc(RedeemCodeBatch::getId));
+        List<Map<String, Object>> records = new ArrayList<>();
+        for (RedeemCodeBatch batch : result.getRecords()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", String.valueOf(batch.getId()));
+            item.put("batchNo", batch.getBatchNo());
+            item.put("benefitType", batch.getBenefitType());
+            item.put("productId", batch.getProductId() == null ? null : String.valueOf(batch.getProductId()));
+            item.put("quantity", batch.getQuantity());
+            item.put("redeemedCount", redeemCodeMapper.selectCount(new LambdaQueryWrapper<RedeemCode>()
+                    .eq(RedeemCode::getBatchId, batch.getId()).eq(RedeemCode::getStatus, "REDEEMED")));
+            item.put("validFrom", batch.getValidFrom());
+            item.put("expireTime", batch.getExpireTime());
+            item.put("status", batch.getStatus());
+            item.put("createTime", batch.getCreateTime());
+            records.add(item);
+        }
+        return PageResult.of(records, result.getTotal(), page, size);
+    }
+
+    @Override
+    public PageResult<Map<String, Object>> pageRedemptions(Long userId, long page, long size) {
+        Page<BillingRedemption> result = billingRedemptionMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<BillingRedemption>().eq(BillingRedemption::getUserId, userId)
+                        .orderByDesc(BillingRedemption::getRedeemedAt).orderByDesc(BillingRedemption::getId));
+        List<Map<String, Object>> records = result.getRecords().stream().map(redemption -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", String.valueOf(redemption.getId()));
+            item.put("benefitType", redemption.getBenefitType());
+            item.put("benefit", JSON.parseObject(redemption.getBenefitSnapshot()));
+            item.put("redeemedAt", redemption.getRedeemedAt());
+            return item;
+        }).toList();
+        return PageResult.of(records, result.getTotal(), page, size);
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> createRedeemCodeBatch(CreateRedeemCodeBatchRequest request) {
+        if (request.quantity() < 1 || request.quantity() > 1000)
+            throw BusinessException.badRequest("兑换码数量必须在 1 到 1000 之间");
+        LocalDateTime now = LocalDateTime.now();
+        if (request.validFrom() != null && request.expireTime() != null
+                && !request.expireTime().isAfter(request.validFrom())) {
+            throw BusinessException.badRequest("兑换码到期时间必须晚于生效时间");
+        }
+        Long productId = null;
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        String benefitType = request.benefitType().trim().toUpperCase(Locale.ROOT);
+        if ("SUBSCRIPTION".equals(benefitType)) {
+            productId = parseProductId(request.productId());
+            BillingPlan plan = planMapper.selectById(productId);
+            if (plan == null || !"PUBLISHED".equals(plan.getStatus()))
+                throw new BusinessException(ResultCode.BILLING_PRODUCT_NOT_FOUND);
+            snapshot.put("name", plan.getName());
+            snapshot.put("planId", plan.getId());
+            snapshot.put("durationDays", plan.getDurationDays());
+            snapshot.put("quotaTokens", plan.getQuotaTokens());
+            snapshot.put("quotaCycleDays", plan.getQuotaCycleDays());
+            snapshot.put("priceMinor", plan.getPriceMinor());
+            snapshot.put("currency", plan.getCurrency());
+            snapshot.put("version", plan.getVersion());
+            snapshot.put("modelIds", planModelIds(plan.getId()));
+        } else if ("TOKEN_PACK".equals(benefitType)) {
+            productId = parseProductId(request.productId());
+            TokenPack pack = packMapper.selectById(productId);
+            if (pack == null || !"PUBLISHED".equals(pack.getStatus()))
+                throw new BusinessException(ResultCode.BILLING_PRODUCT_NOT_FOUND);
+            snapshot.put("name", pack.getName());
+            snapshot.put("tokenPackId", pack.getId());
+            snapshot.put("tokens", pack.getTokens());
+            snapshot.put("expireDays", pack.getExpireDays());
+            snapshot.put("priceMinor", pack.getPriceMinor());
+            snapshot.put("currency", pack.getCurrency());
+        } else if ("WALLET_CREDIT".equals(benefitType)) {
+            if (request.amountUnits() == null || request.amountUnits() <= 0)
+                throw BusinessException.badRequest("余额兑换码金额必须大于 0");
+            if (BigInteger.valueOf(request.amountUnits()).multiply(BigInteger.valueOf(request.quantity()))
+                    .compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
+                throw BusinessException.badRequest("该批次余额兑换码总金额超出支持范围");
+            }
+            snapshot.put("amountUnits", request.amountUnits());
+            BillingSetting setting = settingMapper.selectForUpdate(1L);
+            if (setting == null) throw new IllegalStateException("计费设置锁定失败");
+            snapshot.putAll(walletUnitConfig(setting));
+        } else {
+            throw BusinessException.badRequest("不支持的兑换码权益类型");
+        }
+
+        RedeemCodeBatch batch = new RedeemCodeBatch();
+        batch.setBatchNo("RC" + UUID.randomUUID().toString().replace("-", "").substring(0, 24).toUpperCase(Locale.ROOT));
+        batch.setBenefitType(benefitType);
+        batch.setProductId(productId);
+        batch.setBenefitSnapshot(JSON.toJSONString(snapshot));
+        batch.setQuantity(request.quantity());
+        batch.setCreatedBy(SecurityUtils.getUserId());
+        batch.setValidFrom(request.validFrom());
+        batch.setExpireTime(request.expireTime());
+        batch.setStatus("ACTIVE");
+        batch.setCreateTime(now);
+        batch.setUpdateTime(now);
+        redeemCodeBatchMapper.insert(batch);
+
+        List<String> plaintextCodes = new ArrayList<>(request.quantity());
+        for (int i = 0; i < request.quantity(); i++) {
+            String plaintext = generateRedeemCode();
+            RedeemCode code = new RedeemCode();
+            code.setBatchId(batch.getId());
+            code.setCodeHash(sha256(normalizeRedeemCode(plaintext)));
+            code.setStatus("AVAILABLE");
+            code.setCreateTime(now);
+            redeemCodeMapper.insert(code);
+            plaintextCodes.add(plaintext);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", String.valueOf(batch.getId()));
+        result.put("batchNo", batch.getBatchNo());
+        result.put("benefitType", benefitType);
+        result.put("quantity", request.quantity());
+        result.put("codes", plaintextCodes);
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public void revokeRedeemCodeBatch(Long batchId) {
+        RedeemCodeBatch batch = redeemCodeBatchMapper.selectOne(new LambdaQueryWrapper<RedeemCodeBatch>()
+                .eq(RedeemCodeBatch::getId, batchId).last("FOR UPDATE"));
+        if (batch == null) throw BusinessException.notFound("兑换码批次不存在");
+        if (!"ACTIVE".equals(batch.getStatus())) return;
+        batch.setStatus("REVOKED");
+        batch.setUpdateTime(LocalDateTime.now());
+        redeemCodeBatchMapper.updateById(batch);
+        redeemCodeMapper.update(null, new LambdaUpdateWrapper<RedeemCode>()
+                .eq(RedeemCode::getBatchId, batchId).eq(RedeemCode::getStatus, "AVAILABLE")
+                .set(RedeemCode::getStatus, "REVOKED"));
+    }
+
+    @Override
     public PageResult<TokenUsage> usage(Long userId, long page, long size, Long modelId, String status,
                                         String from, String to) {
         LambdaQueryWrapper<TokenUsage> query = new LambdaQueryWrapper<TokenUsage>()
@@ -327,31 +655,40 @@ public class BillingServiceImpl implements BillingService {
     @Override
     @Transactional
     public BillingOrder createOrder(Long userId, String idempotencyKey, CreateOrderRequest request) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw BusinessException.badRequest("缺少 Idempotency-Key");
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 128) {
+            throw BusinessException.badRequest("Idempotency-Key 必须为 1 到 128 个字符");
         }
+        if (!StringUtils.hasText(request.productType()) || !StringUtils.hasText(request.paymentProvider()))
+            throw BusinessException.badRequest("商品类型和支付方式不能为空");
+        String productType = request.productType().trim().toUpperCase(Locale.ROOT);
+        String paymentProvider = request.paymentProvider().trim().toUpperCase(Locale.ROOT);
+        Long productId = parseProductId(request.productId());
         BillingOrder existing = orderMapper.selectOne(new LambdaQueryWrapper<BillingOrder>()
                 .eq(BillingOrder::getUserId, userId).eq(BillingOrder::getIdempotencyKey, idempotencyKey));
-        if (existing != null) return existing;
-
-        Long productId;
-        try { productId = Long.valueOf(request.productId()); } catch (NumberFormatException ex) {
-            throw new BusinessException(ResultCode.BILLING_PRODUCT_NOT_FOUND);
+        if (existing != null) {
+            if (!existing.getProductType().equalsIgnoreCase(productType)
+                    || !Objects.equals(existing.getProductId(), productId)
+                    || existing.getPaymentProvider() == null
+                    || !existing.getPaymentProvider().equalsIgnoreCase(paymentProvider)) {
+                throw new BusinessException(ResultCode.IDEMPOTENCY_KEY_CONFLICT);
+            }
+            return existing;
         }
+        if (!isBillingEnabled()) throw BusinessException.badRequest("计费功能已关闭");
         Map<String, Object> snapshot = new LinkedHashMap<>();
         BillingOrder order = new BillingOrder();
         order.setUserId(userId);
-        order.setProductType(request.productType());
+        order.setProductType(productType);
         order.setProductId(productId);
         order.setIdempotencyKey(idempotencyKey);
-        order.setPaymentProvider(request.paymentProvider());
+        order.setPaymentProvider(paymentProvider);
         order.setStatus("PENDING_PAYMENT");
         order.setExpireTime(LocalDateTime.now().plusHours(24));
         order.setCreateTime(LocalDateTime.now());
         order.setUpdateTime(LocalDateTime.now());
         order.setOrderNo("CB" + System.currentTimeMillis());
 
-        if ("SUBSCRIPTION".equalsIgnoreCase(request.productType())) {
+        if ("SUBSCRIPTION".equals(productType)) {
             BillingPlan plan = planMapper.selectById(productId);
             if (plan == null || !"PUBLISHED".equals(plan.getStatus()))
                 throw new BusinessException(ResultCode.BILLING_PRODUCT_NOT_FOUND);
@@ -360,8 +697,11 @@ public class BillingServiceImpl implements BillingService {
             snapshot.put("name", plan.getName());
             snapshot.put("durationDays", plan.getDurationDays());
             snapshot.put("quotaTokens", plan.getQuotaTokens());
+            snapshot.put("quotaCycleDays", plan.getQuotaCycleDays());
+            snapshot.put("planId", plan.getId());
+            snapshot.put("modelIds", planModelIds(plan.getId()));
             snapshot.put("version", plan.getVersion());
-        } else if ("TOKEN_PACK".equalsIgnoreCase(request.productType())) {
+        } else if ("TOKEN_PACK".equals(productType)) {
             TokenPack pack = packMapper.selectById(productId);
             if (pack == null || !"PUBLISHED".equals(pack.getStatus()))
                 throw new BusinessException(ResultCode.BILLING_PRODUCT_NOT_FOUND);
@@ -370,11 +710,15 @@ public class BillingServiceImpl implements BillingService {
             snapshot.put("name", pack.getName());
             snapshot.put("tokens", pack.getTokens());
             snapshot.put("expireDays", pack.getExpireDays());
+            snapshot.put("tokenPackId", pack.getId());
         } else {
             throw BusinessException.badRequest("不支持的商品类型");
         }
         order.setProductSnapshot(JSON.toJSONString(snapshot));
         orderMapper.insert(order);
+        if ("WALLET".equals(paymentProvider)) {
+            payOrderFromWallet(order);
+        }
         return order;
     }
 
@@ -692,6 +1036,19 @@ public class BillingServiceImpl implements BillingService {
         TokenReservation existing = reservationMapper.selectOne(new LambdaQueryWrapper<TokenReservation>()
                 .eq(TokenReservation::getRequestId, requestId));
         if (existing != null) return;
+        if (!isBillingEnabled()) {
+            TokenReservation reservation = new TokenReservation();
+            reservation.setRequestId(requestId);
+            reservation.setUserId(userId);
+            reservation.setReservedTokens(0L);
+            reservation.setSettledTokens(0L);
+            reservation.setStatus("BYPASSED");
+            reservation.setLotSnapshot("[]");
+            reservation.setCreateTime(LocalDateTime.now());
+            reservation.setUpdateTime(LocalDateTime.now());
+            reservationMapper.insert(reservation);
+            return;
+        }
         ModelBillingRate rate = billingRate(modelId);
         long needed = "ROUND".equals(rate.getBillingMode())
                 ? Math.max(0L, rate.getCreditsPerRound() == null ? 0L : rate.getCreditsPerRound())
@@ -739,7 +1096,9 @@ public class BillingServiceImpl implements BillingService {
                 .eq(TokenReservation::getRequestId, requestId));
         if (reservation != null && "SETTLED".equals(reservation.getStatus())) return;
         long charged;
-        if ("FAILED".equals(status) && inputTokens == 0 && outputTokens == 0) {
+        if (!isBillingEnabled() || (reservation != null && "BYPASSED".equals(reservation.getStatus()))) {
+            charged = 0;
+        } else if ("FAILED".equals(status) && inputTokens == 0 && outputTokens == 0) {
             charged = 0;
         } else {
             ModelBillingRate rate = billingRate(modelId);
@@ -852,6 +1211,8 @@ public class BillingServiceImpl implements BillingService {
     public boolean processPaymentWebhook(String provider, String eventId, String transactionId,
                                          String orderNo, long amountMinor, String currency,
                                          String payloadHash, String rawPayload) {
+        if ("WALLET".equalsIgnoreCase(provider))
+            throw BusinessException.badRequest("内部钱包订单不支持支付回调");
         PaymentWebhookEvent event = webhookEventMapper.selectOne(new LambdaQueryWrapper<PaymentWebhookEvent>()
                 .eq(PaymentWebhookEvent::getProvider, provider)
                 .eq(PaymentWebhookEvent::getProviderEventId, eventId));
@@ -859,6 +1220,8 @@ public class BillingServiceImpl implements BillingService {
         BillingOrder order = orderMapper.selectOne(new LambdaQueryWrapper<BillingOrder>()
                 .eq(BillingOrder::getOrderNo, orderNo));
         if (order == null) throw BusinessException.notFound("支付订单不存在");
+        if (order.getPaymentProvider() == null || !order.getPaymentProvider().equalsIgnoreCase(provider))
+            throw new BusinessException(ResultCode.PAYMENT_AMOUNT_MISMATCH);
         if (!order.getAmountMinor().equals(amountMinor) || !order.getCurrency().equalsIgnoreCase(currency))
             throw new BusinessException(ResultCode.PAYMENT_AMOUNT_MISMATCH);
 
@@ -888,44 +1251,265 @@ public class BillingServiceImpl implements BillingService {
         order.setPaidTime(LocalDateTime.now());
         order.setUpdateTime(LocalDateTime.now());
         orderMapper.updateById(order);
+        fulfillOrder(order);
+        return true;
+    }
 
+    private void payOrderFromWallet(BillingOrder order) {
+        BillingSetting setting = settingMapper.selectForUpdate(1L);
+        if (setting == null) throw new IllegalStateException("计费设置锁定失败");
+        long amountUnits = walletUnitsFromMinor(order.getAmountMinor(), order.getCurrency(), setting);
+        if (amountUnits > 0) {
+            applyWalletDelta(order.getUserId(), -amountUnits, "PURCHASE_DEBIT", "ORDER", order.getId(),
+                    "order:" + order.getOrderNo(), "购买 " + order.getOrderNo());
+        }
+        order.setPaymentProvider("WALLET");
+        order.setStatus("PAID");
+        order.setPaidTime(LocalDateTime.now());
+        order.setUpdateTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+        fulfillOrder(order);
+    }
+
+    private void fulfillOrder(BillingOrder order) {
         Map<String, Object> snapshot = JSON.parseObject(order.getProductSnapshot());
         if ("SUBSCRIPTION".equalsIgnoreCase(order.getProductType())) {
-            BillingPlan plan = planMapper.selectById(order.getProductId());
-            if (plan == null) throw new BusinessException(ResultCode.BILLING_PRODUCT_NOT_FOUND);
-            LocalDateTime start = LocalDateTime.now();
-            LocalDateTime end = start.plusDays(plan.getDurationDays());
-            UserSubscription subscription = new UserSubscription();
-            subscription.setUserId(order.getUserId());
-            subscription.setPlanId(plan.getId());
-            subscription.setStatus("ACTIVE");
-            subscription.setStartTime(start);
-            subscription.setEndTime(end);
-            subscription.setNextQuotaTime(start.plusDays(plan.getQuotaCycleDays()));
-            subscription.setProductSnapshot(order.getProductSnapshot());
-            subscription.setCreateTime(LocalDateTime.now());
-            subscription.setUpdateTime(LocalDateTime.now());
-            subscriptionMapper.insert(subscription);
-            if (plan.getQuotaTokens() != null && plan.getQuotaTokens() > 0) {
-                grantLot(order.getUserId(), "SUBSCRIPTION", plan.getId(), plan.getQuotaTokens(),
-                        subscription.getNextQuotaTime(), "SUBSCRIPTION_GRANT");
-            }
-            addOutbox("subscription:" + order.getOrderNo(), order.getUserId(),
-                    "BILLING_SUBSCRIPTION_ACTIVATED", "订阅已开通",
-                    "方案「" + plan.getName() + "」已开通。", Map.of("orderNo", order.getOrderNo(),
-                            "planId", String.valueOf(plan.getId()), "endTime", end.toString()));
-        } else {
-            TokenPack pack = packMapper.selectById(order.getProductId());
-            if (pack == null) throw new BusinessException(ResultCode.BILLING_PRODUCT_NOT_FOUND);
-            LocalDateTime expire = pack.getExpireDays() == null ? null
-                    : LocalDateTime.now().plusDays(pack.getExpireDays());
-            grantLot(order.getUserId(), "TOKEN_PACK", pack.getId(), pack.getTokens(), expire, "TOKEN_PACK_PURCHASE");
-            addOutbox("pack:" + order.getOrderNo(), order.getUserId(),
-                    "BILLING_TOKEN_PACK_PURCHASED", "Token 补充包购买成功",
-                    "已增加 " + pack.getTokens() + " Token。", Map.of("orderNo", order.getOrderNo(),
-                            "tokens", pack.getTokens()));
+            activateSubscription(order.getUserId(), order.getProductId(), snapshot,
+                    "subscription:" + order.getOrderNo(), "BILLING_SUBSCRIPTION_ACTIVATED",
+                    "订阅已开通", order.getOrderNo());
+            return;
         }
-        return true;
+        if ("TOKEN_PACK".equalsIgnoreCase(order.getProductType())) {
+            grantTokenPack(order.getUserId(), order.getProductId(), snapshot,
+                    "pack:" + order.getOrderNo(), "TOKEN_PACK_PURCHASE",
+                    "BILLING_TOKEN_PACK_PURCHASED", order.getOrderNo());
+            return;
+        }
+        throw BusinessException.badRequest("不支持的订单商品类型");
+    }
+
+    private void activateSubscription(Long userId, Long fallbackPlanId, Map<String, Object> snapshot,
+                                      String outboxKey, String notificationType, String notificationTitle,
+                                      String reference) {
+        Map<String, Object> effectiveSnapshot = new LinkedHashMap<>(snapshot);
+        BillingPlan fallbackPlan = fallbackPlanId == null ? null : planMapper.selectById(fallbackPlanId);
+        if (!effectiveSnapshot.containsKey("name") && fallbackPlan != null)
+            effectiveSnapshot.put("name", fallbackPlan.getName());
+        if (!effectiveSnapshot.containsKey("durationDays") && fallbackPlan != null)
+            effectiveSnapshot.put("durationDays", fallbackPlan.getDurationDays());
+        if (!effectiveSnapshot.containsKey("quotaTokens") && fallbackPlan != null)
+            effectiveSnapshot.put("quotaTokens", fallbackPlan.getQuotaTokens());
+        if (!effectiveSnapshot.containsKey("quotaCycleDays") && fallbackPlan != null)
+            effectiveSnapshot.put("quotaCycleDays", fallbackPlan.getQuotaCycleDays());
+        if (!effectiveSnapshot.containsKey("version") && fallbackPlan != null)
+            effectiveSnapshot.put("version", fallbackPlan.getVersion());
+        if (!effectiveSnapshot.containsKey("modelIds") && fallbackPlan != null)
+            effectiveSnapshot.put("modelIds", planModelIds(fallbackPlan.getId()));
+
+        Long planId = valueLong(effectiveSnapshot.get("planId"), fallbackPlanId);
+        long durationDays = valueLong(effectiveSnapshot.get("durationDays"), 0L);
+        long quotaTokens = valueLong(effectiveSnapshot.get("quotaTokens"), 0L);
+        long quotaCycleDays = valueLong(effectiveSnapshot.get("quotaCycleDays"), 0L);
+        String name = String.valueOf(effectiveSnapshot.getOrDefault("name", "订阅方案"));
+        LocalDateTime start = LocalDateTime.now();
+        LocalDateTime end = start.plusDays(durationDays);
+        UserSubscription subscription = new UserSubscription();
+        subscription.setUserId(userId);
+        subscription.setPlanId(planId);
+        subscription.setStatus("ACTIVE");
+        subscription.setStartTime(start);
+        subscription.setEndTime(end);
+        subscription.setNextQuotaTime(quotaCycleDays > 0 ? start.plusDays(quotaCycleDays) : null);
+        subscription.setProductSnapshot(JSON.toJSONString(effectiveSnapshot));
+        subscription.setCreateTime(start);
+        subscription.setUpdateTime(start);
+        subscriptionMapper.insert(subscription);
+        if (quotaTokens > 0) {
+            grantLot(userId, "SUBSCRIPTION", planId, quotaTokens, subscription.getNextQuotaTime(),
+                    "SUBSCRIPTION_GRANT");
+        }
+        addOutbox(outboxKey, userId, notificationType, notificationTitle,
+                "方案「" + name + "」已开通。", Map.of("reference", reference,
+                        "planId", String.valueOf(planId), "endTime", end.toString()));
+    }
+
+    private void grantTokenPack(Long userId, Long fallbackPackId, Map<String, Object> snapshot,
+                                String outboxKey, String eventType, String notificationType, String reference) {
+        Long packId = valueLong(snapshot.get("tokenPackId"), fallbackPackId);
+        long tokens = valueLong(snapshot.get("tokens"), 0L);
+        long expireDays = valueLong(snapshot.get("expireDays"), 0L);
+        LocalDateTime expire = expireDays > 0 ? LocalDateTime.now().plusDays(expireDays) : null;
+        grantLot(userId, "TOKEN_PACK", packId, tokens, expire, eventType);
+        addOutbox(outboxKey, userId, notificationType, "Token 补充包购买成功",
+                "已增加 " + tokens + " Token。", Map.of("reference", reference, "tokens", tokens));
+    }
+
+    private Map<String, Object> walletUnitConfig(BillingSetting setting) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("currency", setting.getWalletCurrency() == null ? "CNY" : setting.getWalletCurrency());
+        result.put("fractionalDigits", setting.getWalletFractionalDigits() == null
+                ? 2 : setting.getWalletFractionalDigits());
+        result.put("unitLabel", setting.getWalletUnitLabel() == null ? "分" : setting.getWalletUnitLabel());
+        return result;
+    }
+
+    private long walletUnitsFromMinor(Long amountMinor, String currency, BillingSetting setting) {
+        if (amountMinor == null || amountMinor < 0) throw BusinessException.badRequest("商品金额不能小于 0");
+        String walletCurrency = setting.getWalletCurrency() == null ? "CNY" : setting.getWalletCurrency();
+        if (currency == null || !walletCurrency.equalsIgnoreCase(currency)) {
+            throw BusinessException.badRequest("商品币种与钱包币种不同，不能使用钱包支付");
+        }
+        int currencyDigits;
+        try {
+            currencyDigits = Currency.getInstance(currency).getDefaultFractionDigits();
+        } catch (IllegalArgumentException ex) {
+            throw BusinessException.badRequest("商品币种必须为有效的 ISO 4217 代码");
+        }
+        int walletDigits = setting.getWalletFractionalDigits() == null ? 2 : setting.getWalletFractionalDigits();
+        if (currencyDigits < 0) throw BusinessException.badRequest("商品币种不支持金额换算");
+        BigInteger amount = BigInteger.valueOf(amountMinor);
+        int difference = walletDigits - currencyDigits;
+        if (difference > 0) {
+            amount = amount.multiply(BigInteger.TEN.pow(difference));
+        } else if (difference < 0) {
+            BigInteger divisor = BigInteger.TEN.pow(-difference);
+            BigInteger[] quotient = amount.divideAndRemainder(divisor);
+            if (quotient[1].signum() != 0) {
+                throw BusinessException.badRequest("商品金额不能无损换算为钱包单位");
+            }
+            amount = quotient[0];
+        }
+        try {
+            return amount.longValueExact();
+        } catch (ArithmeticException ex) {
+            throw BusinessException.badRequest("商品金额超出钱包支持范围");
+        }
+    }
+
+    private WalletLedger applyWalletDelta(Long userId, long deltaUnits, String eventType,
+                                          String sourceType, Long sourceId, String requestId, String reason) {
+        WalletLedger existing = walletLedgerMapper.selectOne(new LambdaQueryWrapper<WalletLedger>()
+                .eq(WalletLedger::getRequestId, requestId));
+        if (existing != null) return existing;
+        BillingSetting setting = settingMapper.selectForUpdate(1L);
+        if (setting == null) throw new IllegalStateException("计费设置锁定失败");
+        LocalDateTime now = LocalDateTime.now();
+        walletAccountMapper.insertIfAbsent(userId, now);
+        WalletAccount account = walletAccountMapper.selectForUpdate(userId);
+        if (account == null) throw new IllegalStateException("钱包账户锁定失败");
+        existing = walletLedgerMapper.selectOne(new LambdaQueryWrapper<WalletLedger>()
+                .eq(WalletLedger::getRequestId, requestId));
+        if (existing != null) return existing;
+        long balance = account.getBalanceUnits() == null ? 0L : account.getBalanceUnits();
+        BigInteger next = BigInteger.valueOf(balance).add(BigInteger.valueOf(deltaUnits));
+        if (next.signum() < 0) throw new BusinessException(ResultCode.WALLET_BALANCE_INSUFFICIENT);
+        long newBalance;
+        try {
+            newBalance = next.longValueExact();
+        } catch (ArithmeticException ex) {
+            throw BusinessException.badRequest("钱包余额超出支持范围");
+        }
+        account.setBalanceUnits(newBalance);
+        account.setUpdateTime(now);
+        walletAccountMapper.updateById(account);
+
+        WalletLedger ledger = new WalletLedger();
+        ledger.setUserId(userId);
+        ledger.setEventType(eventType);
+        ledger.setDeltaUnits(deltaUnits);
+        ledger.setBalanceAfterUnits(newBalance);
+        ledger.setCurrency(setting.getWalletCurrency());
+        ledger.setFractionalDigits(setting.getWalletFractionalDigits());
+        ledger.setUnitLabel(setting.getWalletUnitLabel());
+        ledger.setSourceType(sourceType);
+        ledger.setSourceId(sourceId);
+        ledger.setRequestId(requestId);
+        ledger.setReason(reason);
+        ledger.setCreatedAt(now);
+        walletLedgerMapper.insert(ledger);
+        return ledger;
+    }
+
+    private Map<String, Object> walletAdjustmentResponse(WalletLedger ledger) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("deltaUnits", ledger.getDeltaUnits());
+        result.put("balanceAfterUnits", ledger.getBalanceAfterUnits());
+        result.put("ledgerId", String.valueOf(ledger.getId()));
+        result.put("reason", ledger.getReason());
+        return result;
+    }
+
+    private Map<String, Object> redemptionResponse(BillingRedemption redemption) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", String.valueOf(redemption.getId()));
+        result.put("benefitType", redemption.getBenefitType());
+        result.put("benefit", JSON.parseObject(redemption.getBenefitSnapshot()));
+        result.put("redeemedAt", redemption.getRedeemedAt());
+        return result;
+    }
+
+    private String normalizeRedeemCode(String value) {
+        String normalized = value == null ? "" : value.replace("-", "").replace(" ", "")
+                .trim().toUpperCase(Locale.ROOT);
+        if (!normalized.matches("[0-9A-F]{32}")) {
+            throw BusinessException.badRequest("兑换码无效或已过期");
+        }
+        return normalized;
+    }
+
+    private String generateRedeemCode() {
+        byte[] bytes = new byte[16];
+        SECURE_RANDOM.nextBytes(bytes);
+        String hex = HexFormat.of().withUpperCase().formatHex(bytes);
+        return hex.substring(0, 8) + "-" + hex.substring(8, 16) + "-"
+                + hex.substring(16, 24) + "-" + hex.substring(24, 32);
+    }
+
+    private String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    private String walletRequestId(String operation, Long userId, String idempotencyKey) {
+        return operation + ":" + sha256(userId + ":" + idempotencyKey);
+    }
+
+    private void checkRedeemRateLimit(Long userId, String clientIp) {
+        incrementRateLimit("billing:redeem:rate:user:" + userId, REDEEM_USER_HOURLY_LIMIT);
+        if (StringUtils.hasText(clientIp)) {
+            incrementRateLimit("billing:redeem:rate:ip:" + sha256(clientIp), REDEEM_IP_HOURLY_LIMIT);
+        }
+    }
+
+    private void incrementRateLimit(String key, int limit) {
+        Long count = redis.opsForValue().increment(key);
+        if (count == null) throw new IllegalStateException("兑换请求频率限制计数失败");
+        if (count == 1) {
+            Boolean expirySet = redis.expire(key, Duration.ofHours(1));
+            if (!Boolean.TRUE.equals(expirySet)) throw new IllegalStateException("兑换请求频率限制过期时间设置失败");
+        }
+        if (count > limit) throw new BusinessException(ResultCode.TOO_MANY_REQUESTS);
+    }
+
+    private Long parseProductId(String value) {
+        try {
+            return Long.valueOf(value);
+        } catch (Exception ex) {
+            throw new BusinessException(ResultCode.BILLING_PRODUCT_NOT_FOUND);
+        }
+    }
+
+    private Long valueLong(Object value, Long fallback) {
+        if (value == null) return fallback;
+        try {
+            return value instanceof Number number ? number.longValue() : Long.valueOf(String.valueOf(value));
+        } catch (NumberFormatException ex) {
+            throw BusinessException.badRequest("计费商品快照格式不正确");
+        }
     }
 
     private void grantLot(Long userId, String sourceType, Long sourceId, long tokens,

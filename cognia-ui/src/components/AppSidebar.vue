@@ -61,8 +61,7 @@ defineProps({
         <SidebarMenuItem class="flex items-center gap-2">
           <SidebarMenuButton as-child class="data-[slot=sidebar-menu-button]:p-1.5! hover:bg-sidebar active:bg-sidebar">
             <router-link to="/">
-              <img :src="logo" alt="Cognia Logo" class="h-8! w-8! rounded-xl" />
-              <span class="text-base font-semibold">{{ title }}</span>
+              <span class="truncate text-xl font-semibold tracking-tight">{{ title }}</span>
             </router-link>
           </SidebarMenuButton>
           <div class="flex-1"></div>
@@ -73,7 +72,7 @@ defineProps({
     <SidebarContent class="overflow-hidden">
       <NavMain v-if="!isAdmin" @new-chat="emit('newChat')" @temporary-chat="emit('temporaryChat')"/>
       <ConsoleNavMain v-if="isAdmin" :items="data?.navMain" />
-      <NavChannel v-if="!isAdmin" :items="data?.channels" />
+      <NavChannel v-if="!isAdmin && data?.channels?.length" :items="data?.channels ?? []" />
       <NavHistory v-if="!isAdmin" :items="data?.documents" @new="emit('newChat')"
         @archive="emit('archiveConversation', $event)"
         @pin="emit('pinConversation', $event)"

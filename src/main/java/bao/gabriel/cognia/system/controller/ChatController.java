@@ -54,6 +54,10 @@ public class ChatController {
     @GetMapping("/models")
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<List<PublicChatModel>> models() {
+        if (!billingService.isBillingEnabled()) {
+            return ApiResponse.success(modelConfigService.publicModels().stream()
+                    .map(this::toChatModel).toList());
+        }
         java.util.Map<String, Object> me = billingService.me(SecurityUtils.getUserId());
         java.util.Set<String> allowed = ((java.util.List<java.util.Map<String, Object>>) me.getOrDefault("allowedModels", java.util.List.of()))
                 .stream().map(m -> String.valueOf(m.get("id"))).collect(java.util.stream.Collectors.toSet());
@@ -67,7 +71,8 @@ public class ChatController {
     public SseEmitter stream(@Valid @RequestBody ChatRequest request) {
         String requestId = java.util.UUID.randomUUID().toString();
         ChatRequest effectiveRequest = request;
-        if (request.modelId() == null) {
+        boolean billingEnabled = billingService.isBillingEnabled();
+        if (request.modelId() == null && billingEnabled) {
             java.util.Map<String, Object> me = billingService.me(SecurityUtils.getUserId());
             java.util.List<java.util.Map<String, Object>> allowedModels =
                     (java.util.List<java.util.Map<String, Object>>) me.getOrDefault("allowedModels", java.util.List.of());
@@ -80,9 +85,18 @@ public class ChatController {
                     request.thinking(), request.conversationId(), request.webSearch(), request.temporary(),
                     request.attachments(), request.regenerate(), request.editMessageIndex(), request.debug(),
                     request.debugTopK(), request.debugRerankEnabled(), request.debugToolsEnabled());
+        } else if (request.modelId() == null) {
+            Long firstAvailableModelId = modelConfigService.publicModels().stream()
+                    .findFirst()
+                    .map(PublicModelResponse::id)
+                    .orElseThrow(() -> BusinessException.badRequest("当前没有可用的聊天模型"));
+            effectiveRequest = new ChatRequest(firstAvailableModelId, request.messages(), request.channelIds(),
+                    request.effort(), request.thinking(), request.conversationId(), request.webSearch(),
+                    request.temporary(), request.attachments(), request.regenerate(), request.editMessageIndex(),
+                    request.debug(), request.debugTopK(), request.debugRerankEnabled(), request.debugToolsEnabled());
         }
         final ChatRequest finalRequest = effectiveRequest;
-        if (finalRequest.modelId() != null) {
+        if (billingEnabled && finalRequest.modelId() != null) {
             java.util.Map<String, Object> me = billingService.me(SecurityUtils.getUserId());
             java.util.List<java.util.Map<String, Object>> allowedModels =
                     (java.util.List<java.util.Map<String, Object>>) me.getOrDefault("allowedModels", java.util.List.of());

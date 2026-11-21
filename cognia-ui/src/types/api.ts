@@ -189,6 +189,7 @@ export interface PermissionItem {
 export type LanguageCode = 'zhCn' | 'enUs'
 
 export interface PublicSiteSettings {
+  billingEnabled: boolean
   siteName: string
   logoUrl: string
   siteDescription?: string

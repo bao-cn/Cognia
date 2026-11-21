@@ -13,10 +13,14 @@ import java.time.LocalDateTime;
 public class BillingSetting {
     @TableId
     private Long id;
+    private Boolean billingEnabled;
     private Long defaultPlanId;
     private Long registrationTokens;
     private Integer registrationTokenExpireDays;
     private String currency;
+    private String walletCurrency;
+    private Integer walletFractionalDigits;
+    private String walletUnitLabel;
     private Long updatedBy;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

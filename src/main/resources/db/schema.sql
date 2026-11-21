@@ -1232,16 +1232,100 @@ CREATE INDEX IF NOT EXISTS idx_metric_event_model ON sys_metric_event(model_name
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sys_billing_setting (
     id BIGINT PRIMARY KEY,
+    billing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     default_plan_id BIGINT,
     registration_tokens BIGINT NOT NULL DEFAULT 0,
     registration_token_expire_days INTEGER,
     currency VARCHAR(16) NOT NULL DEFAULT 'CNY',
+    wallet_currency VARCHAR(3) NOT NULL DEFAULT 'CNY',
+    wallet_fractional_digits INTEGER NOT NULL DEFAULT 2,
+    wallet_unit_label VARCHAR(16) NOT NULL DEFAULT '分',
     updated_by BIGINT,
     create_time TIMESTAMP NOT NULL DEFAULT NOW(),
     update_time TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE sys_billing_setting ADD COLUMN IF NOT EXISTS billing_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE sys_billing_setting ADD COLUMN IF NOT EXISTS wallet_currency VARCHAR(3) NOT NULL DEFAULT 'CNY';
+ALTER TABLE sys_billing_setting ADD COLUMN IF NOT EXISTS wallet_fractional_digits INTEGER NOT NULL DEFAULT 2;
+ALTER TABLE sys_billing_setting ADD COLUMN IF NOT EXISTS wallet_unit_label VARCHAR(16) NOT NULL DEFAULT '分';
 INSERT INTO sys_billing_setting (id, registration_tokens, currency)
 VALUES (1, 0, 'CNY') ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS sys_wallet_account (
+    user_id BIGINT PRIMARY KEY,
+    balance_units BIGINT NOT NULL DEFAULT 0 CHECK (balance_units >= 0),
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS sys_wallet_ledger (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    event_type VARCHAR(32) NOT NULL,
+    delta_units BIGINT NOT NULL,
+    balance_after_units BIGINT NOT NULL,
+    currency VARCHAR(3) NOT NULL,
+    fractional_digits INTEGER NOT NULL,
+    unit_label VARCHAR(16) NOT NULL,
+    source_type VARCHAR(32),
+    source_id BIGINT,
+    request_id VARCHAR(128),
+    reason VARCHAR(512),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_ledger_user_time ON sys_wallet_ledger(user_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_ledger_request ON sys_wallet_ledger(request_id)
+    WHERE request_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_wallet_ledger_source_event
+    ON sys_wallet_ledger(source_type, source_id, event_type)
+    WHERE source_type IS NOT NULL AND source_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS sys_billing_redeem_code_batch (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    batch_no VARCHAR(64) NOT NULL,
+    benefit_type VARCHAR(32) NOT NULL,
+    product_id BIGINT,
+    benefit_snapshot TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    created_by BIGINT NOT NULL,
+    valid_from TIMESTAMP,
+    expire_time TIMESTAMP,
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_redeem_batch_no
+    ON sys_billing_redeem_code_batch(batch_no);
+CREATE INDEX IF NOT EXISTS idx_billing_redeem_batch_time
+    ON sys_billing_redeem_code_batch(create_time DESC);
+
+CREATE TABLE IF NOT EXISTS sys_billing_redeem_code (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    batch_id BIGINT NOT NULL,
+    code_hash VARCHAR(64) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'AVAILABLE',
+    redeemed_by BIGINT,
+    redeemed_at TIMESTAMP,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_redeem_code_hash
+    ON sys_billing_redeem_code(code_hash);
+CREATE INDEX IF NOT EXISTS idx_billing_redeem_code_batch
+    ON sys_billing_redeem_code(batch_id, status);
+
+CREATE TABLE IF NOT EXISTS sys_billing_redemption (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    code_id BIGINT NOT NULL,
+    idempotency_key VARCHAR(128) NOT NULL,
+    benefit_type VARCHAR(32) NOT NULL,
+    benefit_snapshot TEXT NOT NULL,
+    redeemed_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_redemption_code
+    ON sys_billing_redemption(code_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_redemption_user_key
+    ON sys_billing_redemption(user_id, idempotency_key);
 
 CREATE TABLE IF NOT EXISTS sys_billing_plan (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

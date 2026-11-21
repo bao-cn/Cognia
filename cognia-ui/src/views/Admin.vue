@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import AppSidebar from "@/components/AppSidebar.vue"
 import NotificationBell from "@/components/NotificationBell.vue"
+import { ref, watch } from "vue"
+import { useRoute } from "vue-router"
 import { useSiteStore } from "@/stores/site"
 import {
   SidebarInset,
@@ -151,6 +153,22 @@ const data = {
   ]
 }
 const siteStore = useSiteStore()
+const route = useRoute()
+const contentRef = ref<HTMLElement | null>(null)
+const pageScrolled = ref(false)
+
+function handleContentScroll(event: Event): void {
+  const target = event.target
+  if (!(target instanceof HTMLElement))
+    return
+  if (target.scrollHeight <= target.clientHeight + 1)
+    return
+  pageScrolled.value = target.scrollTop > 2
+}
+
+watch(() => route.fullPath, () => {
+  pageScrolled.value = false
+})
 </script>
 
 <template>
@@ -162,10 +180,15 @@ const siteStore = useSiteStore()
       :title="siteStore.siteName + ' Console'" :badge_status="true" :badge_value="'Beta'" />
     <SidebarInset class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <!-- <SiteHeader class="z-99 shrink-0 rounded-t-xl bg-background" /> -->
-      <div class="flex h-12 shrink-0 items-center justify-end border-b px-4">
+      <div class="relative flex h-12 shrink-0 items-center justify-end px-4">
         <NotificationBell />
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-x-0 top-full z-20 h-5 bg-linear-to-b from-background via-background/60 to-transparent transition-opacity duration-200"
+          :class="pageScrolled ? 'opacity-100' : 'opacity-0'"
+        />
       </div>
-      <div class="@container/main route-transition-content flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <div ref="contentRef" class="@container/main route-transition-content flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto" @scroll.capture="handleContentScroll">
         <router-view v-slot="{ Component }">
           <KeepAlive include="ChannelDetail">
             <component :is="Component" />

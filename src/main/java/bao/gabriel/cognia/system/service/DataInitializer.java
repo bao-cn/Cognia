@@ -92,7 +92,11 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("channel:read", "查看频道", "API", "/api/v1/channels", "GET", 86),
             new PermissionSeed("channel:create", "创建频道", "API", "/api/v1/channels", "POST", 87),
             new PermissionSeed("document:read", "查看频道文档", "API", "/api/v1/channels/{id}/documents", "GET", 88),
-            new PermissionSeed("document:upload", "上传频道文件", "API", "/api/v1/channels/{id}/documents", "POST", 89)
+            new PermissionSeed("document:upload", "上传频道文件", "API", "/api/v1/channels/{id}/documents", "POST", 89),
+            new PermissionSeed("billing:wallet-read", "查看钱包余额与流水", "API", "/api/v1/admin/billing/users", "GET", 90),
+            new PermissionSeed("billing:wallet-adjust", "调整用户钱包余额", "API", "/api/v1/admin/billing/users", "POST", 91),
+            new PermissionSeed("billing:redeem-read", "查看兑换码批次", "API", "/api/v1/admin/billing/redeem-code-batches", "GET", 92),
+            new PermissionSeed("billing:redeem-manage", "创建或作废兑换码", "API", "/api/v1/admin/billing/redeem-code-batches", "POST", 93)
     );
 
     private final InitProperties initProperties;

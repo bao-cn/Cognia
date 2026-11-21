@@ -6,6 +6,7 @@ import { useConfigStore } from '@/stores/config'
 import { getDefaultBrandIcon, resolveBrandLogo, setFavicon } from '@/lib/branding'
 
 const DEFAULT_SETTINGS: PublicSiteSettings = {
+  billingEnabled: true,
   siteName: 'Cognia',
   logoUrl: getDefaultBrandIcon(),
   siteDescription: 'Cognia Open',
@@ -41,6 +42,7 @@ export const useSiteStore = defineStore('site', {
   }),
 
   getters: {
+    billingEnabled: state => state.config.billingEnabled !== false,
     siteName: state => state.config.siteName || 'Cognia',
     logo: state => resolveBrandLogo(state.config.logoUrl),
     description: state => state.config.siteDescription || '',

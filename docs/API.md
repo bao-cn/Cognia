@@ -47,7 +47,7 @@
 | `204` | 成功但无响应体（删除、状态变更、登出、改密） | — |
 | `400` | 参数校验失败 | `40000` |
 | `401` | 未登录、令牌过期/失效、密码错误、账户禁用/锁定 | `40100`–`40105` |
-| `402` | Token 余额不足 | `40200` |
+| `402` | Token 或钱包余额不足 | `40200`、`40201` |
 | `403` | 已登录但缺少权限 | `40300` |
 | `404` | 资源或接口不存在 | `40400` |
 | `405` | 方法不支持 | `40500` |
@@ -488,7 +488,7 @@ Authorization: Bearer <accessToken>
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
-| `GET` | `/settings/public` | 公开 | 站点品牌、注册/登录开关、上传类型等公开配置 |
+| `GET` | `/settings/public` | 公开 | 站点品牌、注册/登录开关、上传类型及全局计费开关等公开配置 |
 | `GET` | `/settings` | `settings:read` | 管理端完整配置（不含 SMTP 明文密码） |
 | `PUT` | `/settings` | `settings:update` | 保存系统设置 |
 | `POST` | `/settings/smtp/test` | `settings:update` | 使用数据库中已保存的 SMTP 配置发送测试邮件 |
@@ -507,6 +507,7 @@ Authorization: Bearer <accessToken>
 ```json
 {
   "siteName": "Cognia",
+  "billingEnabled": true,
   "logoUrl": "/logo.png",
   "siteDescription": "Cognia Open",
   "keywords": ["Cognia", "企业知识库", "AI 搜索", "知识管理"],
@@ -527,7 +528,7 @@ Authorization: Bearer <accessToken>
 }
 ```
 
-前端在每次应用启动/路由首次进入时读取该接口，用于品牌展示、标题后缀、注册页/登录页开关、人机验证、白名单提示、第三方登录按钮和默认语言。
+前端在每次应用启动/路由首次进入时读取该接口，用于品牌展示、标题后缀、注册页/登录页开关、人机验证、白名单提示、第三方登录按钮、默认语言及 Platform + 页面显隐。
 
 `captchaProvider` 是当前**实际生效**的人机验证服务，取 `NONE` / `TURNSTILE` / `GEETEST`；`NONE` 表示未配置或已在控制台关闭。前端仅在该值非 `NONE` 时渲染对应组件：`TURNSTILE` 使用 `turnstileSiteKey`，`GEETEST` 使用 `geetestCaptchaId`。
 
@@ -1050,13 +1051,14 @@ Authorization: Bearer <accessToken>
 ## 7. 订阅与 Token 计费
 
 计费接口统一使用 Bearer access token。管理接口使用 `billing:*` 权限。
+`GET /settings/public` 会返回 `billingEnabled`。关闭后，前端隐藏 Platform + 页面并将其路由重定向到聊天页；聊天仍限于已启用且公开的模型。已开始的聊天在关闭计费期间结算为 0 Token，重新开启后新聊天恢复正常计费。已创建订单仍可完成支付回调。
 
 ### 7.1 管理端设置与商品
 
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
-| `GET` | `/admin/billing/settings` | `billing:read` | 查询默认方案、注册赠送额度、过期天数和币种 |
-| `PUT` | `/admin/billing/settings` | `billing:update` | 更新计费设置 |
+| `GET` | `/admin/billing/settings` | `billing:read` | 查询全局计费开关、注册赠送额度、默认币种及钱包单位 |
+| `PUT` | `/admin/billing/settings` | `billing:update` | 更新计费设置；`billingEnabled=false` 时用户聊天不限 Token 额度与方案模型权限，关闭 Platform + 入口并禁止新购买/兑换；钱包已有账户、流水或余额兑换码后不能修改钱包币种/精度 |
 | `GET / POST` | `/admin/billing/plans` | `billing:read/update` | 分页查询或创建订阅方案 |
 | `GET / PUT` | `/admin/billing/plans/{id}` | `billing:read/update` | 查询或更新方案 |
 | `PUT` | `/admin/billing/plans/{id}/models` | `billing:update` | 全量替换方案允许的聊天模型 |
@@ -1078,11 +1080,15 @@ Authorization: Bearer <accessToken>
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/billing/catalog` | 查询已发布订阅方案和补充包 |
-| `GET` | `/billing/me` | 查询有效订阅、允许模型、可用/冻结额度和 Token 分桶 |
+| `GET` | `/billing/catalog` | 查询已发布订阅方案、补充包和钱包单位配置 |
+| `GET` | `/billing/me` | 查询有效订阅、允许模型、Token 分桶及钱包余额 |
 | `GET` | `/billing/me/ledger` | 查询个人额度流水 |
+| `GET` | `/billing/me/wallet` | 查询钱包余额和统一单位 |
+| `GET` | `/billing/me/wallet/ledger` | 分页查询个人钱包流水 |
+| `GET` | `/billing/me/redemptions` | 分页查询个人兑换结果，不返回兑换码 |
+| `POST` | `/billing/redeem` | 兑换订阅、Token 补充包或钱包余额码，需 `Idempotency-Key` |
 | `GET` | `/billing/me/usage` | 查询个人逐次模型用量，可按模型、状态和日期过滤 |
-| `POST` | `/billing/orders` | 创建待支付订单，必须携带 `Idempotency-Key` |
+| `POST` | `/billing/orders` | 创建待支付订单或执行钱包支付，必须携带 `Idempotency-Key` |
 | `GET` | `/billing/orders/{orderNo}` | 查询本人订单 |
 | `POST` | `/billing/orders/{orderNo}/cancel` | 取消未支付订单 |
 
@@ -1103,10 +1109,20 @@ Content-Type: application/json
 
 补充包订单使用 `productType: "TOKEN_PACK"`。金额、币种、Token 数、有效期和权益快照均由服务端读取商品，不接受客户端传入。
 
+`paymentProvider` 可设置为 `WALLET`。钱包支付会在同一事务内扣款、标记订单已支付并履约；不会创建第三方支付交易。商品币种必须与钱包币种一致，金额需能无损换算成配置的整数单位。余额不足返回 `40201/WALLET_BALANCE_INSUFFICIENT`。
+
+```json
+{
+  "productType": "TOKEN_PACK",
+  "productId": "51001",
+  "paymentProvider": "WALLET"
+}
+```
+
 幂等规则：
 
 - 同一用户和 `Idempotency-Key` 重复下单返回原订单
-- 不同商品或参数不得复用同一幂等键
+- 同一幂等键不能用于不同商品或支付渠道（返回 `40902`）
 - 浏览器 `returnUrl` 不会直接发放权益
 
 ### 7.3 支付回调
@@ -1250,6 +1266,49 @@ Idempotency-Key: 2f58cabc-...
 ```
 
 重复请求和重复幂等键不会重复增加余额。
+
+### 7.8 钱包与兑换码
+
+钱包金额与 Token 额度分离。后台通过计费设置配置 `walletCurrency`、`walletFractionalDigits` 和 `walletUnitLabel`；例如 `CNY`、`2`、`分` 表示余额整数 `100` 对应 1 元。钱包账户按用户唯一，余额、流水和兑换批次均使用整数单位。
+
+余额兑换码和钱包支付会分别记录 `REDEMPTION_CREDIT`、`PURCHASE_DEBIT` 流水。钱包扣款、订单已支付状态和商品履约在同一事务提交；失败时全部回滚。兑换码生成时仅保存 SHA-256 摘要，明文只在创建批次的响应中返回一次，列表和兑换历史不包含码值。兑换请求按用户每小时最多 20 次、来源 IP 每小时最多 60 次限流。
+
+用户兑换请求：
+
+```http
+POST /billing/redeem
+Idempotency-Key: 2ef58145-...
+Content-Type: application/json
+
+{ "code": "A1B2C3D4-E5F60718-192A3B4C-5D6E7F80" }
+```
+
+成功响应数据包含兑换记录 `id`、`benefitType`、权益快照 `benefit` 和 `redeemedAt`。同一用户以相同幂等键重放同一码时返回原兑换结果；同一码不能被重复消费。
+
+管理端接口及新增权限：
+
+| 方法 | 路径 | 权限 | 用途 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/billing/redeem-code-batches` | `billing:redeem-read` | 查询批次和兑换数量，不含明文 |
+| `POST` | `/admin/billing/redeem-code-batches` | `billing:redeem-manage` | 创建订阅、Token 包或钱包余额码批次 |
+| `POST` | `/admin/billing/redeem-code-batches/{batchId}/revoke` | `billing:redeem-manage` | 作废批次未兑换的码 |
+| `GET` | `/admin/billing/users/{userId}/wallet` | `billing:wallet-read` | 查询指定用户钱包余额 |
+| `GET` | `/admin/billing/users/{userId}/wallet-ledger` | `billing:wallet-read` | 查询指定用户钱包流水 |
+| `POST` | `/admin/billing/users/{userId}/wallet-adjustments` | `billing:wallet-adjust` | 有理由地增减用户钱包整数单位 |
+
+创建批次请求示例：
+
+```json
+{
+  "benefitType": "WALLET_CREDIT",
+  "quantity": 20,
+  "amountUnits": 5000,
+  "validFrom": "2026-04-01T00:00:00",
+  "expireTime": "2026-12-31T23:59:59"
+}
+```
+
+`SUBSCRIPTION` 和 `TOKEN_PACK` 类型使用 `productId` 替代 `amountUnits`，且商品必须已发布。每批最多创建 1000 个码。钱包调整请求为 `{"deltaUnits": 1000, "reason": "..."}`，同样必须携带 `Idempotency-Key`；扣减后余额不能小于零。新建 RBAC 权限由初始化器同步到管理员角色。
 
 ## 8. CORS
 

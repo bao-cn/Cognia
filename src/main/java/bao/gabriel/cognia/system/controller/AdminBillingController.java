@@ -105,6 +105,28 @@ public class AdminBillingController {
     @PreAuthorize("hasAuthority('billing:update')")
     public ApiResponse<Void> publishPack(@PathVariable Long id) { billingService.publishTokenPack(id); return ApiResponse.success(); }
 
+    @GetMapping("/redeem-code-batches")
+    @PreAuthorize("hasAuthority('billing:redeem-read')")
+    public ApiResponse<PageResult<Map<String, Object>>> redeemCodeBatches(
+            @RequestParam(defaultValue="1") long page,
+            @RequestParam(defaultValue="20") long size) {
+        return ApiResponse.success(billingService.pageRedeemCodeBatches(page, size));
+    }
+
+    @PostMapping("/redeem-code-batches")
+    @PreAuthorize("hasAuthority('billing:redeem-manage')")
+    public ApiResponse<Map<String, Object>> createRedeemCodeBatch(
+            @Valid @RequestBody CreateRedeemCodeBatchRequest request) {
+        return ApiResponse.success(billingService.createRedeemCodeBatch(request));
+    }
+
+    @PostMapping("/redeem-code-batches/{batchId}/revoke")
+    @PreAuthorize("hasAuthority('billing:redeem-manage')")
+    public ApiResponse<Void> revokeRedeemCodeBatch(@PathVariable Long batchId) {
+        billingService.revokeRedeemCodeBatch(batchId);
+        return ApiResponse.success();
+    }
+
     @GetMapping("/orders")
     @PreAuthorize("hasAuthority('billing:order-read')")
     public ApiResponse<PageResult<BillingOrder>> orders(@RequestParam(defaultValue="1") long page,
@@ -164,6 +186,29 @@ public class AdminBillingController {
                                                             @RequestParam(defaultValue="1") long page,
                                                             @RequestParam(defaultValue="20") long size) {
         return ApiResponse.success(billingService.ledger(userId, page, size));
+    }
+
+    @GetMapping("/users/{userId}/wallet")
+    @PreAuthorize("hasAuthority('billing:wallet-read')")
+    public ApiResponse<Map<String, Object>> userWallet(@PathVariable Long userId) {
+        return ApiResponse.success(billingService.wallet(userId));
+    }
+
+    @GetMapping("/users/{userId}/wallet-ledger")
+    @PreAuthorize("hasAuthority('billing:wallet-read')")
+    public ApiResponse<PageResult<WalletLedger>> userWalletLedger(@PathVariable Long userId,
+                                                                   @RequestParam(defaultValue="1") long page,
+                                                                   @RequestParam(defaultValue="20") long size) {
+        return ApiResponse.success(billingService.walletLedger(userId, page, size));
+    }
+
+    @PostMapping("/users/{userId}/wallet-adjustments")
+    @PreAuthorize("hasAuthority('billing:wallet-adjust')")
+    public ApiResponse<Map<String, Object>> adjustWallet(
+            @PathVariable Long userId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody WalletAdjustmentRequest request) {
+        return ApiResponse.success(billingService.adjustWallet(userId, idempotencyKey, request));
     }
 
     @PostMapping("/users/{userId}/token-grants")
