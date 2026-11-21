@@ -23,8 +23,10 @@ public record PublicSettingsResponse(
         boolean emailCodeLoginEnabled,
         boolean appleLoginEnabled,
         boolean googleLoginEnabled,
+        CaptchaProvider captchaProvider,
         boolean turnstileConfigured,
         String turnstileSiteKey,
+        String geetestCaptchaId,
         int teamCreationLimit,
         int teamJoinLimit
 ) {

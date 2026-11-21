@@ -60,6 +60,12 @@ public class AdminBillingController {
         return ApiResponse.success();
     }
 
+    @GetMapping("/plans/{id}/models")
+    @PreAuthorize("hasAuthority('billing:read')")
+    public ApiResponse<List<String>> planModels(@PathVariable Long id) {
+        return ApiResponse.success(billingService.planModelIds(id));
+    }
+
     @PostMapping("/plans/{id}/publish")
     @PreAuthorize("hasAuthority('billing:update')")
     public ApiResponse<Void> publish(@PathVariable Long id) { billingService.publishPlan(id); return ApiResponse.success(); }
@@ -94,6 +100,10 @@ public class AdminBillingController {
     @PostMapping("/token-packs/{id}/disable")
     @PreAuthorize("hasAuthority('billing:update')")
     public ApiResponse<Void> disablePack(@PathVariable Long id) { billingService.disableTokenPack(id); return ApiResponse.success(); }
+
+    @PostMapping("/token-packs/{id}/publish")
+    @PreAuthorize("hasAuthority('billing:update')")
+    public ApiResponse<Void> publishPack(@PathVariable Long id) { billingService.publishTokenPack(id); return ApiResponse.success(); }
 
     @GetMapping("/orders")
     @PreAuthorize("hasAuthority('billing:order-read')")

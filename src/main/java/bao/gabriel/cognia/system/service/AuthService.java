@@ -3,11 +3,11 @@ package bao.gabriel.cognia.system.service;
 import bao.gabriel.cognia.common.api.ResultCode;
 import bao.gabriel.cognia.common.exception.BusinessException;
 import bao.gabriel.cognia.config.properties.LoginProperties;
+import bao.gabriel.cognia.security.CaptchaService;
 import bao.gabriel.cognia.security.LoginUser;
 import bao.gabriel.cognia.security.SecurityUtils;
 import bao.gabriel.cognia.security.TokenPair;
 import bao.gabriel.cognia.security.TokenService;
-import bao.gabriel.cognia.security.TurnstileService;
 import bao.gabriel.cognia.system.dto.auth.LoginOptionsResponse;
 import bao.gabriel.cognia.system.dto.auth.LoginRequest;
 import bao.gabriel.cognia.system.dto.auth.LoginCodeSendRequest;
@@ -46,7 +46,7 @@ public class AuthService {
     private final UserService userService;
     private final VerificationCodeService verificationCodeService;
     private final TokenService tokenService;
-    private final TurnstileService turnstileService;
+    private final CaptchaService captchaService;
     private final SiteSettingService settingService;
     private final LegalService legalService;
     private final PasswordEncoder passwordEncoder;
@@ -55,7 +55,8 @@ public class AuthService {
     private final TwoFactorService twoFactorService;
 
     public SendCodeResponse sendRegisterCode(SendCodeRequest request, String clientIp) {
-        return verificationCodeService.sendRegisterCode(request.email(), clientIp, request.turnstileToken());
+        return verificationCodeService.sendRegisterCode(
+                request.email(), clientIp, request.captcha(), request.turnstileToken());
     }
 
     public AvailabilityResponse checkEmail(String email) {
@@ -155,7 +156,8 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request, String clientIp, String userAgent) {
         // Human verification is checked before credentials / failure counters.
-        turnstileService.verify(request.turnstileToken(), clientIp, settingService.isLoginCaptchaEnabled());
+        captchaService.verify(request.captcha(), request.turnstileToken(), clientIp,
+                settingService.isLoginCaptchaEnabled());
 
         String account = request.account().trim();
         String failKey = LOGIN_FAIL_PREFIX + account.toLowerCase(Locale.ROOT);
@@ -186,7 +188,8 @@ public class AuthService {
     }
 
     public LoginResponse loginWithTwoFactor(LoginTwoFactorRequest request, String clientIp, String userAgent) {
-        turnstileService.verify(request.turnstileToken(), clientIp, settingService.isLoginCaptchaEnabled());
+        captchaService.verify(request.captcha(), request.turnstileToken(), clientIp,
+                settingService.isLoginCaptchaEnabled());
         if (!settingService.isTwoFactorEnabled()) {
             throw BusinessException.badRequest("当前站点未开启两步验证登录");
         }

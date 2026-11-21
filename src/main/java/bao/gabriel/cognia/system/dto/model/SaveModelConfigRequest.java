@@ -21,6 +21,10 @@ public record SaveModelConfigRequest(
         @Size(max = 4000) String extraBody,
         @Min(1) @Max(65536) Integer dimension,
         @Min(1000) @Max(2000000) Integer contextWindow,
-        @Min(1) @Max(1000000) Integer maxOutputTokens
+        @Min(1) @Max(1000000) Integer maxOutputTokens,
+        @Size(max = 16) String billingMode,
+        @Min(0) @Max(1000000000000L) Long inputCreditsPerMillion,
+        @Min(0) @Max(1000000000000L) Long outputCreditsPerMillion,
+        @Min(0) @Max(1000000000000L) Long creditsPerRound
 ) {
 }

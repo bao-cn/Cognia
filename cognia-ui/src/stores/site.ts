@@ -23,8 +23,10 @@ const DEFAULT_SETTINGS: PublicSiteSettings = {
   emailCodeLoginEnabled: false,
   appleLoginEnabled: false,
   googleLoginEnabled: false,
+  captchaProvider: 'NONE',
   turnstileConfigured: false,
   turnstileSiteKey: '',
+  geetestCaptchaId: '',
   teamCreationLimit: 5,
   teamJoinLimit: 10,
 }
@@ -56,8 +58,11 @@ export const useSiteStore = defineStore('site', {
     emailCodeLoginEnabled: state => Boolean(state.config.emailCodeLoginEnabled),
     appleLoginEnabled: state => Boolean(state.config.appleLoginEnabled),
     googleLoginEnabled: state => Boolean(state.config.googleLoginEnabled),
+    captchaProvider: state => state.config.captchaProvider ?? 'NONE',
+    captchaConfigured: state => (state.config.captchaProvider ?? 'NONE') !== 'NONE',
     turnstileConfigured: state => Boolean(state.config.turnstileConfigured),
     turnstileSiteKey: state => state.config.turnstileSiteKey ?? '',
+    geetestCaptchaId: state => state.config.geetestCaptchaId ?? '',
     allowedUploadTypes: state => state.config.allowedUploadTypes ?? [],
   },
 

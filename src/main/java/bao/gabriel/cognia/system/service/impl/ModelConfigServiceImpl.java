@@ -11,8 +11,10 @@ import bao.gabriel.cognia.system.dto.model.RemoteModelResponse;
 import bao.gabriel.cognia.system.dto.model.SaveModelConfigRequest;
 import bao.gabriel.cognia.system.dto.model.SaveModelProviderRequest;
 import bao.gabriel.cognia.system.entity.ModelConfig;
+import bao.gabriel.cognia.system.entity.ModelBillingRate;
 import bao.gabriel.cognia.system.entity.ModelProvider;
 import bao.gabriel.cognia.system.entity.RagSetting;
+import bao.gabriel.cognia.system.mapper.ModelBillingRateMapper;
 import bao.gabriel.cognia.system.mapper.ModelConfigMapper;
 import bao.gabriel.cognia.system.mapper.ModelProviderMapper;
 import bao.gabriel.cognia.system.mapper.RagSettingMapper;
@@ -44,6 +46,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
 
     private final ModelProviderMapper providerMapper;
     private final ModelConfigMapper modelMapper;
+    private final ModelBillingRateMapper billingRateMapper;
     private final RagSettingMapper ragSettingMapper;
     private final SecurityCryptoService cryptoService;
     private final SiteSettingService siteSettingService;
@@ -132,6 +135,10 @@ public class ModelConfigServiceImpl implements ModelConfigService {
                 || Objects.equals(id, rag.getEmbeddingModelId())
                 || Objects.equals(id, rag.getRerankModelId()))) {
             throw BusinessException.conflict("该供应商下仍有模型被检索/向量配置使用，请先调整配置");
+        }
+        if (!ids.isEmpty()) {
+            billingRateMapper.delete(new LambdaQueryWrapper<ModelBillingRate>()
+                    .in(ModelBillingRate::getModelConfigId, ids));
         }
         modelMapper.delete(new LambdaQueryWrapper<ModelConfig>().eq(ModelConfig::getProviderId, providerId));
         providerMapper.deleteById(provider.getId());
@@ -294,6 +301,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         } else {
             modelMapper.updateById(model);
         }
+        saveBillingRate(model.getId(), request);
         return toModel(model, provider);
     }
 
@@ -306,6 +314,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
                 || Objects.equals(modelId, rag.getRerankModelId()))) {
             throw BusinessException.conflict("该模型正在被检索/向量配置使用，请先调整配置");
         }
+        billingRateMapper.delete(new LambdaQueryWrapper<ModelBillingRate>()
+                .eq(ModelBillingRate::getModelConfigId, modelId));
         modelMapper.deleteById(model.getId());
     }
 
@@ -431,13 +441,70 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     }
 
     private ModelConfigResponse toModel(ModelConfig model, ModelProvider provider) {
+        ModelBillingRate rate = billingRateMapper.selectOne(new LambdaQueryWrapper<ModelBillingRate>()
+                .eq(ModelBillingRate::getModelConfigId, model.getId()));
         return new ModelConfigResponse(model.getId(), model.getProviderId(),
                 provider == null ? "" : provider.getName(), model.getModelId(), displayName(model),
                 model.getModelType(), model.enabled(), model.visible(), model.supportsTools(),
                 model.supportsText(), model.thinkingEnabled(), model.supportsVision(),
                 model.getReasoningEffort(), model.getReasoningLevels(), model.getExtraBody(),
                 model.getDimension(), model.getContextWindow(), model.getMaxOutputTokens(),
+                rate == null || rate.getBillingMode() == null ? "TOKEN" : rate.getBillingMode(),
+                rate == null || rate.getInputCreditsPerMillion() == null ? 1_000_000L : rate.getInputCreditsPerMillion(),
+                rate == null || rate.getOutputCreditsPerMillion() == null ? 1_000_000L : rate.getOutputCreditsPerMillion(),
+                rate == null || rate.getCreditsPerRound() == null ? 0L : rate.getCreditsPerRound(),
                 siteSettingService.formatDateTime(model.getUpdateTime()));
+    }
+
+    private void saveBillingRate(Long modelId, SaveModelConfigRequest request) {
+        if (request.billingMode() == null
+                && request.inputCreditsPerMillion() == null
+                && request.outputCreditsPerMillion() == null
+                && request.creditsPerRound() == null) {
+            return;
+        }
+        ModelBillingRate rate = billingRateMapper.selectOne(new LambdaQueryWrapper<ModelBillingRate>()
+                .eq(ModelBillingRate::getModelConfigId, modelId));
+        boolean created = rate == null;
+        if (created) {
+            rate = new ModelBillingRate();
+            rate.setModelConfigId(modelId);
+            rate.setBillingMode("TOKEN");
+            rate.setInputCreditsPerMillion(1_000_000L);
+            rate.setOutputCreditsPerMillion(1_000_000L);
+            rate.setCreditsPerRound(0L);
+            rate.setCreateTime(LocalDateTime.now());
+        }
+        if (request.billingMode() != null) {
+            rate.setBillingMode(normalizeBillingMode(request.billingMode()));
+        }
+        if (request.inputCreditsPerMillion() != null) {
+            rate.setInputCreditsPerMillion(request.inputCreditsPerMillion());
+        }
+        if (request.outputCreditsPerMillion() != null) {
+            rate.setOutputCreditsPerMillion(request.outputCreditsPerMillion());
+        }
+        if (request.creditsPerRound() != null) {
+            rate.setCreditsPerRound(request.creditsPerRound());
+        }
+        if ("ROUND".equals(rate.getBillingMode())
+                && (rate.getCreditsPerRound() == null || rate.getCreditsPerRound() <= 0)) {
+            throw BusinessException.badRequest("按轮计费必须配置大于 0 的每轮额度");
+        }
+        rate.setUpdateTime(LocalDateTime.now());
+        if (created) {
+            billingRateMapper.insert(rate);
+        } else {
+            billingRateMapper.updateById(rate);
+        }
+    }
+
+    private String normalizeBillingMode(String value) {
+        String mode = value.trim().toUpperCase(Locale.ROOT);
+        if (!"TOKEN".equals(mode) && !"ROUND".equals(mode)) {
+            throw BusinessException.badRequest("不支持的模型计费模式");
+        }
+        return mode;
     }
 
     private String displayName(ModelConfig model) {

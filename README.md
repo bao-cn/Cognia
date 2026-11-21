@@ -177,6 +177,9 @@ pnpm dev
 | `INIT_DATA_ENABLED` | `true` | 是否初始化角色、权限、管理员与默认数据 |
 | `APP_TIME_ZONE` | `Asia/Shanghai` | 默认时区 |
 | `OLLAMA_BASE_URL` | 空 | 可选，指向本地/外部 Ollama 的 `http://host:11434` |
+| `BILLING_ALIPAY_WEBHOOK_SECRET` | 空 | 支付宝计费回调的 HMAC-SHA256 密钥；未配置时拒绝回调 |
+| `BILLING_WECHAT_WEBHOOK_SECRET` | 空 | 微信支付计费回调的 HMAC-SHA256 密钥；未配置时拒绝回调 |
+| `BILLING_STRIPE_WEBHOOK_SECRET` | 空 | Stripe 计费回调的 HMAC-SHA256 密钥；未配置时拒绝回调 |
 
 对象存储、模型、检索、提示词、SMTP、注册策略与计划任务都在数据库/控制台中维护，不依赖环境变量。完整配置与接口说明见 [`docs/API.md`](docs/API.md)。
 
@@ -186,7 +189,7 @@ pnpm dev
 src/main/java/bao/gabriel/cognia/
   system/    用户、团队、频道、设置、通知、审计、存储、邮件、任务
   rag/       模型、检索、对话、工具、缓存、反馈、文档处理队列
-  security/  JWT、会话、权限、Turnstile
+  security/  JWT、会话、权限、人机验证（Cloudflare Turnstile / 极验 4.0）
   common/    响应、异常、加密、文档解析、OCR、结构化切片
 src/main/resources/db/schema.sql   幂等数据库结构
 cognia-ui/                         Vue 3 前端

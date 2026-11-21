@@ -1,7 +1,11 @@
 import { http } from './http'
 import type {
   AvailabilityResult,
+<<<<<<< Updated upstream
   LoginEmailCodePayload,
+=======
+  CaptchaSubmission,
+>>>>>>> Stashed changes
   LoginOptions,
   LoginPayload,
   LoginResult,
@@ -12,8 +16,8 @@ import type {
 } from '@/types/api'
 
 export const authApi = {
-  sendRegisterCode(email: string, turnstileToken?: string): Promise<SendCodeResult> {
-    return http.post<SendCodeResult>('/auth/register/code', { email, turnstileToken })
+  sendRegisterCode(email: string, captcha?: CaptchaSubmission): Promise<SendCodeResult> {
+    return http.post<SendCodeResult>('/auth/register/code', { email, captcha })
   },
   checkEmail(email: string): Promise<AvailabilityResult> {
     return http.get<AvailabilityResult>('/auth/register/check-email', { params: { email } })

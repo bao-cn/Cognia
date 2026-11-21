@@ -16,6 +16,7 @@ public interface BillingService {
     BillingPlan createPlan(SavePlanRequest request);
     BillingPlan updatePlan(Long id, SavePlanRequest request);
     void replacePlanModels(Long id, List<String> modelIds);
+    List<String> planModelIds(Long id);
     void publishPlan(Long id);
     void disablePlan(Long id);
 
@@ -24,6 +25,7 @@ public interface BillingService {
     TokenPack createTokenPack(SaveTokenPackRequest request);
     TokenPack updateTokenPack(Long id, SaveTokenPackRequest request);
     void disableTokenPack(Long id);
+    void publishTokenPack(Long id);
 
     Map<String, Object> catalog();
     Map<String, Object> me(Long userId);
@@ -44,7 +46,8 @@ public interface BillingService {
     Map<String, Object> adminUserBilling(Long userId, String from, String to);
 
     void initializeNewUser(Long userId);
-    void reserveChatTokens(Long userId, String requestId, long estimatedTokens);
+    void reserveChatTokens(Long userId, String requestId, Long modelId,
+                           long estimatedInputTokens, long estimatedOutputTokens);
     void settleChatTokens(Long userId, String requestId, Long modelId, Long providerId,
                           String modelName, long inputTokens, long outputTokens, long durationMs,
                           String status, Long conversationId);

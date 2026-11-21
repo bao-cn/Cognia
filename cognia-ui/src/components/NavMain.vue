@@ -5,6 +5,7 @@ import {
   IconBrandSafari,
   IconHash,
   IconSearch,
+  IconCreditCard,
 } from "@tabler/icons-vue"
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
@@ -82,6 +83,15 @@ const emit = defineEmits<{ 'newChat': []; 'temporaryChat': [] }>()
           <SidebarMenuButton @click="router.push('/channels')">
             <IconHash />
             <span>我的频道</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton @click="router.push('/subscribe')">
+            <IconCreditCard />
+            <span>订阅方案</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

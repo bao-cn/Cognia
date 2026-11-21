@@ -119,7 +119,21 @@ Authorization: Bearer <accessToken>
 ```json
 {
   "email": "tester@cognia.local",
-  "turnstileToken": "0.xxxxx..."
+  "captcha": { "token": "0.xxxxx..." }
+}
+```
+
+使用极验 4.0 时，`captcha` 改为前端 `captchaObj.getValidate()` 返回的四个字段：
+
+```json
+{
+  "email": "tester@cognia.local",
+  "captcha": {
+    "lotNumber": "4dc3cfc2cdff448cad8d13107198d473",
+    "captchaOutput": "……",
+    "passToken": "……",
+    "genTime": "1690000000"
+  }
 }
 ```
 
@@ -145,7 +159,7 @@ Authorization: Bearer <accessToken>
 - 同一邮箱 60 秒内只能发送一次；每天最多 10 次；同一 IP 每小时最多 30 次。
 - 邮箱已注册时返回 `409 / 40900`。
 - 控制台关闭注册时返回 `403 / 40300`；关闭「注册邮箱验证」或「验证码开关」时返回 `400 / 40000`。
-- 开启「验证码开关」（注册发信人机验证）后，`turnstileToken` 必填；缺失返回 `400 / 40000`，校验失败返回 `400 / 40000`，验证服务不可用返回 `500 / 50000`。
+- 开启「验证码开关」（注册发信人机验证）后，必须提交当前启用服务对应的 `captcha`；缺失返回 `400 / 40000`，校验失败返回 `400 / 40000`，验证服务不可用返回 `500 / 50000`。Cloudflare Turnstile 使用 `captcha.token`，极验 4.0 使用 `captcha.lotNumber` / `captchaOutput` / `passToken` / `genTime`；旧客户端仍可提交顶层的 `turnstileToken`（等价于 `captcha.token`）。
 - 开启注册邮箱白名单时，不在白名单内的邮箱返回 `400 / 40000`。
 
 ### 2.2 注册
@@ -205,12 +219,12 @@ Authorization: Bearer <accessToken>
 {
   "account": "admin",
   "password": "Admin@123",
-  "turnstileToken": "0.xxxxx...",
+  "captcha": { "token": "0.xxxxx..." },
   "rememberMe": true
 }
 ```
 
-`account` 支持用户名或邮箱；`rememberMe` 可选，默认 `false`。开启「登录人机验证」后 `turnstileToken` 必填，缺失返回 `400 / 40000`，校验失败返回 `400 / 40000`，验证服务不可用返回 `500 / 50000`。
+`account` 支持用户名或邮箱；`rememberMe` 可选，默认 `false`。开启「登录人机验证」后 `captcha` 必填（极验 4.0 时提交四个验证字段，其余同上），缺失返回 `400 / 40000`，校验失败返回 `400 / 40000`，验证服务不可用返回 `500 / 50000`。
 
 响应 `200`：
 
@@ -507,12 +521,15 @@ Authorization: Bearer <accessToken>
   "loginCaptchaEnabled": false,
   "appleLoginEnabled": false,
   "googleLoginEnabled": false,
+  "captchaProvider": "TURNSTILE",
   "turnstileConfigured": true,
   "turnstileSiteKey": "0x4AAAAAAA..."
 }
 ```
 
 前端在每次应用启动/路由首次进入时读取该接口，用于品牌展示、标题后缀、注册页/登录页开关、人机验证、白名单提示、第三方登录按钮和默认语言。
+
+`captchaProvider` 是当前**实际生效**的人机验证服务，取 `NONE` / `TURNSTILE` / `GEETEST`；`NONE` 表示未配置或已在控制台关闭。前端仅在该值非 `NONE` 时渲染对应组件：`TURNSTILE` 使用 `turnstileSiteKey`，`GEETEST` 使用 `geetestCaptchaId`。
 
 ### 5.2 管理端设置
 
@@ -536,8 +553,10 @@ Authorization: Bearer <accessToken>
   "registrationEmailWhitelist": [],
   "appleLoginEnabled": false,
   "googleLoginEnabled": false,
+  "captchaProvider": "TURNSTILE",
   "turnstileSiteKey": "0x4AAAAAAA...",
   "turnstileSecretKeyConfigured": true,
+  "geetestCaptchaKeyConfigured": false,
   "smtpEnabled": true,
   "smtpHost": "smtp.example.com",
   "smtpPort": 587,
@@ -552,6 +571,7 @@ Authorization: Bearer <accessToken>
 ```
 
 > SMTP 密码永不返回；`smtpPasswordConfigured` 表示数据库中是否已有加密密码。
+> `captchaProvider` 是控制台当前选择的服务（即使尚未配置完整）；`turnstileSecretKeyConfigured` / `geetestCaptchaKeyConfigured` 表示对应密钥是否已加密保存，`geetestCaptchaId` 在配置极验后返回。
 
 ### 5.3 保存设置
 
@@ -575,9 +595,13 @@ Authorization: Bearer <accessToken>
   "registrationEmailWhitelist": ["user@example.com", "@example.com"],
   "appleLoginEnabled": false,
   "googleLoginEnabled": false,
+  "captchaProvider": "TURNSTILE",
   "turnstileSiteKey": "0x4AAAAAAA...",
   "turnstileSecretKey": "0x4AAAAAAA...",
   "clearTurnstileSecretKey": false,
+  "geetestCaptchaId": "647f5ed2ed8acb4be36784e01556bb71",
+  "geetestCaptchaKey": "b09a7aafbfd83f73b35a9b530d0337bf",
+  "clearGeeTestCaptchaKey": false,
   "smtpEnabled": true,
   "smtpHost": "smtp.example.com",
   "smtpPort": 465,
@@ -596,10 +620,10 @@ Authorization: Bearer <accessToken>
 - `smtpPassword` 留空表示保持原密码；`clearSmtpPassword=true` 显式清除。
 - 启用 SMTP 时必须填写主机；`allowedUploadTypes` 至少保留一种。
 - 开启 `registrationEmailVerification` 时必须先启用 SMTP 且填写主机，否则返回 `400`。
-- 开启 `registerEmailCaptchaEnabled` / `loginCaptchaEnabled` 前必须同时配置 Turnstile Site Key 与 Secret Key。
+- 开启 `registerEmailCaptchaEnabled` / `loginCaptchaEnabled` 前，必须先选择并完整配置对应的人机验证服务；`captchaProvider` 取 `NONE` / `TURNSTILE` / `GEETEST`，同一时间只启用一种。
 - 开启 `registrationEmailWhitelistEnabled` 时白名单不能为空；条目支持完整邮箱、`@example.com`、`example.com`（域名含子域名）。
-- 密码与 Turnstile Secret Key 使用 AES-GCM 加密存储；接口只返回 `smtpPasswordConfigured` / `turnstileSecretKeyConfigured`。
-- Turnstile 只有 Site Key 与 Secret Key **同时配置**时可用；「验证码开关」控制发送注册验证码前是否校验，「登录人机验证」控制登录时是否校验；清除密钥时需同时清空 Site Key 并关闭相关开关。
+- 密码、Turnstile Secret Key 与极验 Captcha Key 使用 AES-GCM 加密存储；接口只返回 `smtpPasswordConfigured` / `turnstileSecretKeyConfigured` / `geetestCaptchaKeyConfigured`。
+- Cloudflare Turnstile 需同时配置 Site Key 与 Secret Key，极验 4.0 需同时配置 Captcha ID 与 Captcha Key：每个服务要么两项都填、要么都清空。切换 `captchaProvider` 不会删除另一服务已保存的密钥，可随时切回；「验证码开关」控制发送注册验证码前是否校验，「登录人机验证」控制登录时是否校验；清除密钥时需同时清空对应 ID 并关闭相关开关。
 - 保存后立即生效，无需重启；前端会重新拉取公开设置更新品牌与开关。
 - 语言仅支持 `zhCn` / `enUs`；时区使用 IANA 名称（如 `Asia/Shanghai`），控制台以 Select 下拉方式提供常用 IANA 时区。
 
@@ -1083,6 +1107,27 @@ BILLING_ALIPAY_WEBHOOK_SECRET
 BILLING_WECHAT_WEBHOOK_SECRET
 BILLING_STRIPE_WEBHOOK_SECRET
 ```
+
+配置方法：
+
+1. 在项目根目录复制 `.env.example` 为 `.env`，填写对应渠道密钥。
+2. 生产环境可直接设置进进程、容器编排或平台密钥管理，而不写入源码。
+3. Docker Compose 会读取并传递上述变量：
+
+```bash
+openssl rand -hex 32
+# 把生成的值填入对应 .env 变量
+docker compose up -d --build
+```
+
+4. 将相同密钥配置到支付渠道的 Webhook 签名设置中。
+5. 请求头使用十六进制 HMAC-SHA256：
+
+```http
+X-Cognia-Signature: <hex-encoded-hmac-sha256>
+```
+
+签名必须基于支付渠道发来的**原始 JSON 请求体**计算，不能先解析再重新序列化。签名密钥未配置或签名不匹配时，接口拒绝处理且不会发放订阅或 Token。
 
 校验内容为请求原始 JSON 的 HMAC-SHA256。请求体至少包含：
 

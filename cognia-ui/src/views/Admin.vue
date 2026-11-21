@@ -16,6 +16,7 @@ import {
   IconDashboard,
   IconMail,
   IconThumbUp,
+  IconCreditCard,
 } from "@tabler/icons-vue"
 const data = {
   navMain: [
@@ -131,6 +132,11 @@ const data = {
       title: "计划任务",
       url: "/console/task",
       icon: IconSubtask,
+    },
+    {
+      title: "订阅与计费",
+      url: "/console/billing",
+      icon: IconCreditCard,
     },
     {
       title: "邮件服务",

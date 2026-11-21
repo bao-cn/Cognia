@@ -113,8 +113,14 @@ CREATE TABLE IF NOT EXISTS sys_site_setting
     registration_email_whitelist     VARCHAR(2000),
     apple_login_enabled              BOOLEAN      NOT NULL DEFAULT FALSE,
     google_login_enabled             BOOLEAN      NOT NULL DEFAULT FALSE,
+    -- One active human-verification provider: NONE / TURNSTILE / GEETEST.
+    -- NULL means the row predates this column; Turnstile is inferred from the
+    -- keys below so existing installations keep working.
+    captcha_provider                 VARCHAR(16),
     turnstile_site_key               VARCHAR(255),
     turnstile_secret_key             VARCHAR(1024),
+    geetest_captcha_id               VARCHAR(255),
+    geetest_captcha_key              VARCHAR(1024),
     smtp_enabled                     BOOLEAN      NOT NULL DEFAULT FALSE,
     smtp_host                        VARCHAR(255),
     smtp_port                        INTEGER               DEFAULT 587,
@@ -132,8 +138,11 @@ CREATE TABLE IF NOT EXISTS sys_site_setting
 );
 
 -- Existing installations predate the Turnstile / captcha / whitelist columns.
+ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS captcha_provider VARCHAR(16);
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS turnstile_site_key VARCHAR(255);
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS turnstile_secret_key VARCHAR(1024);
+ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS geetest_captcha_id VARCHAR(255);
+ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS geetest_captcha_key VARCHAR(1024);
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS login_captcha_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS registration_email_whitelist_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE sys_site_setting ADD COLUMN IF NOT EXISTS registration_email_whitelist VARCHAR(2000);
@@ -1267,12 +1276,16 @@ CREATE INDEX IF NOT EXISTS idx_billing_plan_model_plan ON sys_billing_plan_model
 CREATE TABLE IF NOT EXISTS sys_model_billing_rate (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_config_id BIGINT NOT NULL,
+    billing_mode VARCHAR(16) NOT NULL DEFAULT 'TOKEN',
     input_credits_per_million BIGINT NOT NULL DEFAULT 1000000,
     output_credits_per_million BIGINT NOT NULL DEFAULT 1000000,
+    credits_per_round BIGINT NOT NULL DEFAULT 0,
     create_time TIMESTAMP NOT NULL DEFAULT NOW(),
     update_time TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_model_billing_rate UNIQUE(model_config_id)
 );
+ALTER TABLE sys_model_billing_rate ADD COLUMN IF NOT EXISTS billing_mode VARCHAR(16) NOT NULL DEFAULT 'TOKEN';
+ALTER TABLE sys_model_billing_rate ADD COLUMN IF NOT EXISTS credits_per_round BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS sys_token_pack (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

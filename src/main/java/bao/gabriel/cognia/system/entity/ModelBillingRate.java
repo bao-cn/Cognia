@@ -15,8 +15,10 @@ public class ModelBillingRate {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long modelConfigId;
+    private String billingMode;
     private Long inputCreditsPerMillion;
     private Long outputCreditsPerMillion;
+    private Long creditsPerRound;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

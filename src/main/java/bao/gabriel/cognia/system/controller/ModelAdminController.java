@@ -37,7 +37,7 @@ public class ModelAdminController {
     private final OllamaService ollamaService;
 
     @GetMapping("/providers")
-    @PreAuthorize("hasAnyAuthority('model:read', 'settings:read')")
+    @PreAuthorize("hasAnyAuthority('model:read', 'settings:read', 'billing:read')")
     public ApiResponse<List<ModelProviderResponse>> providers() {
         return ApiResponse.success(modelConfigService.listProviders());
     }

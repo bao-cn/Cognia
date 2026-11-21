@@ -26,6 +26,21 @@ export { debugApi } from './debug'
 export { chatApi } from './chat'
 export { favoriteApi } from './favorite'
 export { searchApi } from './search'
+export { billingApi } from './billing'
+export type {
+  BillingMe,
+  BillingOrder,
+  BillingPlan,
+  BillingSettings,
+  BillingTokenPack,
+  BillingUsageByModel,
+  BillingUsageSummary,
+  BillingTokenLedger,
+  BillingTokenUsage,
+  BillingUserDetails,
+  SaveBillingPlan,
+  SaveBillingTokenPack,
+} from './billing'
 export { ApiError, http, httpClient } from './http'
 
 import { authApi } from './auth'
@@ -53,6 +68,7 @@ import { debugApi } from './debug'
 import { chatApi } from './chat'
 import { favoriteApi } from './favorite'
 import { searchApi } from './search'
+import { billingApi } from './billing'
 
 import { discoverApi } from './discover'
 
@@ -87,4 +103,5 @@ export const api = {
   favorite: favoriteApi,
   search: searchApi,
   discover: discoverApi,
+  billing: billingApi,
 }

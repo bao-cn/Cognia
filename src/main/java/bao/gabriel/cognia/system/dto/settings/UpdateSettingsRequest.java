@@ -63,6 +63,17 @@ public record UpdateSettingsRequest(
 
         Boolean clearTurnstileSecretKey,
 
+        @Pattern(regexp = "^(NONE|TURNSTILE|GEETEST)$", message = "人机验证服务只能是 NONE、TURNSTILE 或 GEETEST")
+        String captchaProvider,
+
+        @Size(max = 255, message = "极验验证 ID 长度不能超过 255 个字符")
+        String geetestCaptchaId,
+
+        @Size(max = 512, message = "极验验证密钥长度不能超过 512 个字符")
+        String geetestCaptchaKey,
+
+        Boolean clearGeeTestCaptchaKey,
+
         Boolean smtpEnabled,
 
         @Size(max = 255, message = "SMTP 主机长度不能超过 255 个字符")

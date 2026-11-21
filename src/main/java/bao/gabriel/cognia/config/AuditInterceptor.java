@@ -30,7 +30,8 @@ import java.util.regex.Pattern;
 public class AuditInterceptor implements HandlerInterceptor {
 
     private static final Pattern SECRET_FIELD = Pattern.compile(
-            "(\"(?:password|oldPassword|newPassword|secretKey|token|accessToken|refreshToken|secret|authorization|turnstileToken)\"\\s*:\\s*)\"[^\"]*\"",
+            "(\"(?:password|oldPassword|newPassword|secretKey|token|accessToken|refreshToken|secret|authorization"
+                    + "|turnstileToken|captchaOutput|passToken|captchaKey|signToken)\"\\s*:\\s*)\"[^\"]*\"",
             Pattern.CASE_INSENSITIVE);
     private static final String ATTR_START = AuditInterceptor.class.getName() + ".start";
     private static final String[] SKIP_PREFIXES = {

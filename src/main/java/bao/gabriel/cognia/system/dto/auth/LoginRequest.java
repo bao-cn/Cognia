@@ -1,5 +1,7 @@
 package bao.gabriel.cognia.system.dto.auth;
 
+import bao.gabriel.cognia.security.CaptchaSubmission;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -12,6 +14,11 @@ public record LoginRequest(
         @Size(max = 64, message = "密码长度不能超过 64 个字符")
         String password,
 
+        /** Structured challenge result (Turnstile token or GeeTest fields). */
+        @Valid
+        CaptchaSubmission captcha,
+
+        /** Legacy Cloudflare Turnstile token kept for older clients. */
         @Size(max = 2048, message = "Turnstile 令牌过长")
         String turnstileToken,
 

@@ -90,15 +90,14 @@ public class ChatController {
                     .anyMatch(model -> String.valueOf(model.get("id")).equals(String.valueOf(finalRequest.modelId())));
             if (!allowed) throw new BusinessException(ResultCode.MODEL_NOT_ENTITLED);
         }
-        var model = finalRequest.modelId() == null
-                ? null : modelConfigService.resolveModel(finalRequest.modelId());
+        var model = modelConfigService.resolveChat(finalRequest.modelId());
         long inputEstimate = finalRequest.messages().stream()
                 .filter(message -> "user".equalsIgnoreCase(message.role()))
                 .mapToLong(message -> message.content() == null ? 0L
                         : Math.max(1L, message.content().length() / 4L))
                 .sum();
-        long estimated = inputEstimate + (model == null ? 4096L : model.maxOutputTokensOrDefault());
-        billingService.reserveChatTokens(SecurityUtils.getUserId(), requestId, estimated);
+        billingService.reserveChatTokens(SecurityUtils.getUserId(), requestId, model.id(),
+                inputEstimate, model.maxOutputTokensOrDefault());
         return chatService.stream(finalRequest, SecurityUtils.getUserId(), requestId);
     }
 

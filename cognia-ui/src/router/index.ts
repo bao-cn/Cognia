@@ -20,6 +20,14 @@ const routes: Array<RouteRecordRaw> = [
         },
       },
       {
+        name: 'Subscribe',
+        path: 'subscribe',
+        component: () => import('@/pages/Subscribe.vue'),
+        meta: {
+          title: '订阅方案',
+        },
+      },
+      {
         name: 'SettingsTeams',
         path: 'settings/teams',
         component: () => import('@/pages/Teams.vue'),
@@ -300,6 +308,15 @@ const routes: Array<RouteRecordRaw> = [
         meta: {
           title: '模型配置',
           permissions: ['model:read', 'settings:read'],
+        },
+      },
+      {
+        name: 'ConsoleBilling',
+        path: 'billing',
+        component: () => import('@/pages/console/Billing.vue'),
+        meta: {
+          title: '订阅与计费',
+          permissions: ['billing:read', 'billing:order-read', 'billing:usage-read'],
         },
       },
       {

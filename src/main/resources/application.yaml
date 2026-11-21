@@ -109,7 +109,8 @@ app:
     max-attempts: 5
     daily-limit: 10
   settings:
-    # Encrypts SMTP passwords and Turnstile secrets stored in the database.
+    # Encrypts SMTP passwords and human-verification secrets (Turnstile / GeeTest)
+    # stored in the database.
     # Override in production.
     secret: ${SETTINGS_SECRET:c7f1d9a3b5e7482f9a0c4d6e8b1f3a5c7e9d0b2f4a6c8e1d3b5f7a9c0e2d4b6f}
   mail:

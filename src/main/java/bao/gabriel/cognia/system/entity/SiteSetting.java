@@ -58,11 +58,24 @@ public class SiteSetting {
     private Boolean appleLoginEnabled;
     private Boolean googleLoginEnabled;
 
+    /**
+     * Active human-verification provider: {@code NONE}, {@code TURNSTILE} or
+     * {@code GEETEST}. Null on rows created before the column existed; those
+     * are treated as Turnstile when Turnstile keys are configured.
+     */
+    private String captchaProvider;
+
     /** Cloudflare Turnstile public site key; the secret is stored encrypted. */
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String turnstileSiteKey;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String turnstileSecretKey;
+
+    /** GeeTest 4.0 public captcha id; the captcha key is stored encrypted. */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String geetestCaptchaId;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String geetestCaptchaKey;
 
     private Boolean smtpEnabled;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)

@@ -27,6 +27,8 @@ function normalize(value: string) {
 }
 
 const DYNAMIC_RULES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+  [/^已启用 · Cloudflare Turnstile$/, () => 'Enabled · Cloudflare Turnstile'],
+  [/^已启用 · 极验 4\.0$/, () => 'Enabled · GeeTest 4.0'],
   [/^更新于 (.+)$/, m => `Updated ${m[1]}`],
   [/^正常 (\d+)$/, m => `Active ${m[1]}`],
   [/^封禁 (\d+)$/, m => `Banned ${m[1]}`],

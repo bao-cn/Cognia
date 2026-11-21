@@ -2,11 +2,8 @@ package bao.gabriel.cognia.security;
 
 import bao.gabriel.cognia.common.api.ResultCode;
 import bao.gabriel.cognia.common.exception.BusinessException;
-import bao.gabriel.cognia.system.dto.settings.TurnstileConfig;
-import bao.gabriel.cognia.system.service.SiteSettingService;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -21,49 +18,37 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
- * Cloudflare Turnstile server-side verification.
- *
- * <p>Enabled implicitly when the verification-code switch is on and both the
- * site key and secret key are configured in the console. The secret is
- * decrypted from the database by {@link SiteSettingService}.
+ * Cloudflare Turnstile server-side verification. The provider and keys are
+ * resolved by {@link CaptchaService}; this class only performs the handshake
+ * with Cloudflare and translates the outcome into business errors.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
-public class TurnstileService {
+public class TurnstileVerifier {
 
     private static final String VERIFY_URL =
             "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-    private final SiteSettingService settingService;
+    private final HttpClient httpClient;
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
-
-    public boolean isConfigured() {
-        return settingService.getTurnstileConfig().configured();
+    public TurnstileVerifier() {
+        this(HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build());
     }
 
-    /**
-     * Verifies the widget token when the caller's flow requires human
-     * verification. No-op when {@code required} is false.
-     */
-    public void verify(String token, String remoteIp, boolean required) {
-        if (!required) {
-            return;
-        }
-        TurnstileConfig config = settingService.getTurnstileConfig();
-        if (!config.configured() || !StringUtils.hasText(config.secretKey())) {
-            log.warn("Turnstile verification is required but the site/secret key is missing");
+    TurnstileVerifier(HttpClient httpClient) {
+        this.httpClient = httpClient;
+    }
+
+    public void verify(String token, String secretKey, String remoteIp) {
+        if (!StringUtils.hasText(secretKey)) {
+            log.warn("Turnstile verification is required but the secret key is missing");
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "人机验证尚未配置，请联系管理员");
-        }
-        if (!StringUtils.hasText(token)) {
-            throw BusinessException.badRequest("请先完成人机验证");
         }
 
         StringBuilder form = new StringBuilder()
-                .append("secret=").append(encode(config.secretKey()))
+                .append("secret=").append(encode(secretKey))
                 .append("&response=").append(encode(token.trim()));
         if (StringUtils.hasText(remoteIp)) {
             form.append("&remoteip=").append(encode(remoteIp));

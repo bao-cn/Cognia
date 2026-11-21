@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -155,6 +156,14 @@ public class BillingServiceImpl implements BillingService {
     }
 
     @Override
+    public List<String> planModelIds(Long id) {
+        getPlan(id);
+        return planModelMapper.selectList(new LambdaQueryWrapper<BillingPlanModel>()
+                        .eq(BillingPlanModel::getPlanId, id))
+                .stream().map(link -> String.valueOf(link.getModelConfigId())).toList();
+    }
+
+    @Override
     @Transactional
     public void publishPlan(Long id) {
         planMapper.update(null, new LambdaUpdateWrapper<BillingPlan>()
@@ -222,6 +231,15 @@ public class BillingServiceImpl implements BillingService {
     public void disableTokenPack(Long id) {
         packMapper.update(null, new LambdaUpdateWrapper<TokenPack>()
                 .eq(TokenPack::getId, id).set(TokenPack::getStatus, "DISABLED")
+                .set(TokenPack::getUpdateTime, LocalDateTime.now()));
+    }
+
+    @Override
+    @Transactional
+    public void publishTokenPack(Long id) {
+        getTokenPack(id);
+        packMapper.update(null, new LambdaUpdateWrapper<TokenPack>()
+                .eq(TokenPack::getId, id).set(TokenPack::getStatus, "PUBLISHED")
                 .set(TokenPack::getUpdateTime, LocalDateTime.now()));
     }
 
@@ -668,12 +686,16 @@ public class BillingServiceImpl implements BillingService {
 
     @Override
     @Transactional
-    public void reserveChatTokens(Long userId, String requestId, long estimatedTokens) {
+    public void reserveChatTokens(Long userId, String requestId, Long modelId,
+                                  long estimatedInputTokens, long estimatedOutputTokens) {
         if (requestId == null || requestId.isBlank()) throw BusinessException.badRequest("缺少 requestId");
         TokenReservation existing = reservationMapper.selectOne(new LambdaQueryWrapper<TokenReservation>()
                 .eq(TokenReservation::getRequestId, requestId));
         if (existing != null) return;
-        long needed = Math.max(1L, estimatedTokens);
+        ModelBillingRate rate = billingRate(modelId);
+        long needed = "ROUND".equals(rate.getBillingMode())
+                ? Math.max(0L, rate.getCreditsPerRound() == null ? 0L : rate.getCreditsPerRound())
+                : tokenCharge(estimatedInputTokens, estimatedOutputTokens, rate);
         List<TokenLot> lots = lotMapper.selectList(new LambdaQueryWrapper<TokenLot>()
                 .eq(TokenLot::getUserId, userId)
                 .and(w -> w.isNull(TokenLot::getExpireTime).or().ge(TokenLot::getExpireTime, LocalDateTime.now()))
@@ -720,18 +742,10 @@ public class BillingServiceImpl implements BillingService {
         if ("FAILED".equals(status) && inputTokens == 0 && outputTokens == 0) {
             charged = 0;
         } else {
-            long inputRate = 1000000L;
-            long outputRate = 1000000L;
-            if (modelId != null) {
-                ModelBillingRate rate = billingRateMapper.selectOne(new LambdaQueryWrapper<ModelBillingRate>()
-                        .eq(ModelBillingRate::getModelConfigId, modelId));
-                if (rate != null) {
-                    inputRate = rate.getInputCreditsPerMillion();
-                    outputRate = rate.getOutputCreditsPerMillion();
-                }
-            }
-            long numerator = inputTokens * inputRate + outputTokens * outputRate;
-            charged = (numerator + 999999L) / 1000000L;
+            ModelBillingRate rate = billingRate(modelId);
+            charged = "ROUND".equals(rate.getBillingMode())
+                    ? Math.max(0L, rate.getCreditsPerRound() == null ? 0L : rate.getCreditsPerRound())
+                    : tokenCharge(inputTokens, outputTokens, rate);
         }
         if (reservation != null) {
             List<Map> snapshot = JSON.parseArray(reservation.getLotSnapshot(), Map.class);
@@ -799,6 +813,38 @@ public class BillingServiceImpl implements BillingService {
     @Transactional
     public void releaseChatReservation(Long userId, String requestId) {
         settleChatTokens(userId, requestId, null, null, null, 0, 0, 0, "FAILED", null);
+    }
+
+    private ModelBillingRate billingRate(Long modelId) {
+        if (modelId != null) {
+            ModelBillingRate rate = billingRateMapper.selectOne(new LambdaQueryWrapper<ModelBillingRate>()
+                    .eq(ModelBillingRate::getModelConfigId, modelId));
+            if (rate != null) {
+                return rate;
+            }
+        }
+        ModelBillingRate defaults = new ModelBillingRate();
+        defaults.setBillingMode("TOKEN");
+        defaults.setInputCreditsPerMillion(1_000_000L);
+        defaults.setOutputCreditsPerMillion(1_000_000L);
+        defaults.setCreditsPerRound(0L);
+        return defaults;
+    }
+
+    private long tokenCharge(long inputTokens, long outputTokens, ModelBillingRate rate) {
+        long inputRate = rate.getInputCreditsPerMillion() == null ? 1_000_000L : rate.getInputCreditsPerMillion();
+        long outputRate = rate.getOutputCreditsPerMillion() == null ? 1_000_000L : rate.getOutputCreditsPerMillion();
+        BigInteger numerator = BigInteger.valueOf(Math.max(0L, inputTokens))
+                .multiply(BigInteger.valueOf(inputRate))
+                .add(BigInteger.valueOf(Math.max(0L, outputTokens))
+                        .multiply(BigInteger.valueOf(outputRate)));
+        BigInteger charged = numerator.add(BigInteger.valueOf(999_999L))
+                .divide(BigInteger.valueOf(1_000_000L));
+        try {
+            return charged.longValueExact();
+        } catch (ArithmeticException ex) {
+            throw BusinessException.badRequest("模型计费额度超出支持范围");
+        }
     }
 
     @Override
