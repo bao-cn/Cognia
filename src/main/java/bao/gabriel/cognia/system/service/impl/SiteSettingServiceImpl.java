@@ -414,9 +414,9 @@ public class SiteSettingServiceImpl implements SiteSettingService {
         setting.setId(SiteSetting.SINGLETON_ID);
         setting.setLogoUrl("/logo.png");
         setting.setSiteName("Cognia");
-        setting.setSiteDescription("Cognia 开源的企业知识库平台");
+        setting.setSiteDescription("Cognia Open");
         setting.setSiteKeywords("Cognia,企业知识库,AI 搜索,知识管理");
-        setting.setRouteSuffix(" - Cognia 开源的企业知识库平台");
+        setting.setRouteSuffix(" - Cognia Open");
         setting.setDefaultLanguage("zhCn");
         setting.setTimezone("Asia/Shanghai");
         setting.setAllowedUploadTypes("pdf,doc,docx,xls,xlsx,ppt,pptx,txt,md,html,csv");

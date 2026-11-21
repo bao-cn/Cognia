@@ -75,6 +75,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/register/check-username",
                                 "/api/v1/auth/register/suggestions").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/oauth/link", "/api/v1/auth/oauth/register").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/billing/webhooks/**").permitAll()
                         .requestMatchers("/api/v1/public/**", "/error", "/favicon.ico").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

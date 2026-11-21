@@ -47,10 +47,12 @@
 | `204` | 成功但无响应体（删除、状态变更、登出、改密） | — |
 | `400` | 参数校验失败 | `40000` |
 | `401` | 未登录、令牌过期/失效、密码错误、账户禁用/锁定 | `40100`–`40105` |
+| `402` | Token 余额不足 | `40200` |
 | `403` | 已登录但缺少权限 | `40300` |
 | `404` | 资源或接口不存在 | `40400` |
 | `405` | 方法不支持 | `40500` |
 | `409` | 唯一性/状态冲突 | `40900` |
+| `422` | 支付金额或币种不匹配 | `42200` |
 | `429` | 限流 | `42900` |
 | `500` | 服务端异常 | `50000` |
 
@@ -492,9 +494,9 @@ Authorization: Bearer <accessToken>
 {
   "siteName": "Cognia",
   "logoUrl": "/logo.png",
-  "siteDescription": "Cognia 开源的企业知识库平台",
+  "siteDescription": "Cognia Open",
   "keywords": ["Cognia", "企业知识库", "AI 搜索", "知识管理"],
-  "routeSuffix": " - Cognia 开源的企业知识库平台",
+  "routeSuffix": " - Cognia Open",
   "defaultLanguage": "zhCn",
   "timezone": "Asia/Shanghai",
   "allowedUploadTypes": ["pdf", "docx", "md"],
@@ -522,7 +524,7 @@ Authorization: Bearer <accessToken>
   "logoUrl": "/logo.png",
   "siteDescription": "……",
   "keywords": ["Cognia"],
-  "routeSuffix": " - Cognia 开源的企业知识库平台",
+  "routeSuffix": " - Cognia Open",
   "defaultLanguage": "zhCn",
   "timezone": "Asia/Shanghai",
   "allowedUploadTypes": ["pdf", "docx"],
@@ -559,9 +561,9 @@ Authorization: Bearer <accessToken>
 {
   "siteName": "Cognia",
   "logoUrl": "/logo.png",
-  "siteDescription": "Cognia 开源的企业知识库平台",
+  "siteDescription": "Cognia Open",
   "keywords": ["Cognia", "企业知识库"],
-  "routeSuffix": " - Cognia 开源的企业知识库平台",
+  "routeSuffix": " - Cognia Open",
   "defaultLanguage": "zhCn",
   "timezone": "Asia/Shanghai",
   "allowedUploadTypes": ["pdf", "docx", "md"],
@@ -1002,7 +1004,190 @@ Authorization: Bearer <accessToken>
 
 ---
 
-## 7. CORS
+## 7. 订阅与 Token 计费
+
+计费接口统一使用 Bearer access token。管理接口使用 `billing:*` 权限。
+
+### 7.1 管理端设置与商品
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/billing/settings` | `billing:read` | 查询默认方案、注册赠送额度、过期天数和币种 |
+| `PUT` | `/admin/billing/settings` | `billing:update` | 更新计费设置 |
+| `GET / POST` | `/admin/billing/plans` | `billing:read/update` | 分页查询或创建订阅方案 |
+| `GET / PUT` | `/admin/billing/plans/{id}` | `billing:read/update` | 查询或更新方案 |
+| `PUT` | `/admin/billing/plans/{id}/models` | `billing:update` | 全量替换方案允许的聊天模型 |
+| `POST` | `/admin/billing/plans/{id}/publish` | `billing:update` | 发布方案 |
+| `POST` | `/admin/billing/plans/{id}/disable` | `billing:update` | 下架方案 |
+| `GET / POST` | `/admin/billing/token-packs` | `billing:read/update` | 分页查询或创建 Token 补充包 |
+| `GET / PUT` | `/admin/billing/token-packs/{id}` | `billing:read/update` | 查询或更新补充包 |
+| `POST` | `/admin/billing/token-packs/{id}/disable` | `billing:update` | 下架补充包 |
+| `GET` | `/admin/billing/orders` | `billing:order-read` | 按状态、用户分页查询订单 |
+
+方案模型校验要求：
+
+- 模型必须存在于 `sys_model_config`
+- 模型类型必须为 `CHAT`
+- 模型全局状态必须启用
+- 更新方案不会删除历史订单快照
+
+### 7.2 用户接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/billing/catalog` | 查询已发布订阅方案和补充包 |
+| `GET` | `/billing/me` | 查询有效订阅、允许模型、可用/冻结额度和 Token 分桶 |
+| `GET` | `/billing/me/ledger` | 查询个人额度流水 |
+| `GET` | `/billing/me/usage` | 查询个人逐次模型用量，可按模型、状态和日期过滤 |
+| `POST` | `/billing/orders` | 创建待支付订单，必须携带 `Idempotency-Key` |
+| `GET` | `/billing/orders/{orderNo}` | 查询本人订单 |
+| `POST` | `/billing/orders/{orderNo}/cancel` | 取消未支付订单 |
+
+创建订单示例：
+
+```http
+POST /billing/orders
+Idempotency-Key: 8bc2f7b7-...
+Content-Type: application/json
+
+{
+  "productType": "SUBSCRIPTION",
+  "productId": "31001",
+  "paymentProvider": "ALIPAY",
+  "returnUrl": "https://app.example.com/billing/return"
+}
+```
+
+补充包订单使用 `productType: "TOKEN_PACK"`。金额、币种、Token 数、有效期和权益快照均由服务端读取商品，不接受客户端传入。
+
+幂等规则：
+
+- 同一用户和 `Idempotency-Key` 重复下单返回原订单
+- 不同商品或参数不得复用同一幂等键
+- 浏览器 `returnUrl` 不会直接发放权益
+
+### 7.3 支付回调
+
+`POST /billing/webhooks/{provider}` 是公开路由，但必须携带渠道签名。
+
+```http
+POST /billing/webhooks/alipay
+X-Cognia-Signature: <HmacSHA256 hex>
+Content-Type: application/json
+```
+
+签名密钥使用环境变量：
+
+```text
+BILLING_ALIPAY_WEBHOOK_SECRET
+BILLING_WECHAT_WEBHOOK_SECRET
+BILLING_STRIPE_WEBHOOK_SECRET
+```
+
+校验内容为请求原始 JSON 的 HMAC-SHA256。请求体至少包含：
+
+- `eventId` 或 `id`
+- `transactionId` 或 `tradeNo`
+- `orderNo` 或 `outTradeNo`
+- `amountMinor`
+- `currency`
+
+回调处理保证：
+
+- 事件和渠道交易具有幂等保护
+- 支付金额及币种必须与订单快照一致
+- 支付成功后在一个事务中更新订单、写支付交易、创建订阅或补充包额度分桶、追加流水及通知 outbox
+- 重复回调不会重复履约
+- 签名缺失、密钥未配置或签名失败不会发放权益
+
+站务通知由 `sys_billing_notification_outbox` 异步派发；派发使用稳定 `sourceKey`，重试不会重复产生通知。
+
+### 7.4 新用户初始额度
+
+密码注册、OAuth 注册和管理员创建普通用户共用 `UserServiceImpl.createUser`，只初始化一次：
+
+- 创建免费默认方案（首次初始化时）
+- 设置用户的默认方案
+- 按 `sys_billing_setting.registrationTokens` 发放一次性注册 Token
+- 按 `registrationTokenExpireDays` 设置过期时间；未设置时永久有效
+- 管理员角色新建用户不会获得普通注册赠送额度
+
+重复创建路径、重复回调或重试不会为同一用户重复发放注册额度。
+
+### 7.5 聊天预扣与结算
+
+`POST /chat/stream` 在启动模型前执行：
+
+1. 校验模型全局启用状态和当前方案允许列表
+2. 服务端生成唯一 `requestId`
+3. 按输入估算与最大输出额度预扣 Token
+4. 余额不足时以 `402/TOKEN_BALANCE_INSUFFICIENT` 拒绝请求
+
+流式调用结束后服务端按实际输入/输出 Token 和模型倍率结算：
+
+- 成功：扣除实际计算额度，释放未使用预扣
+- 模型失败：无可靠用量时释放预扣
+- 超时：定时任务释放超过阈值的未结算预扣
+- 重复结算：按 `requestId` 幂等，重复执行不重复扣款
+
+最终扣除公式：
+
+```text
+ceil((inputTokens × inputCreditsPerMillion
+      + outputTokens × outputCreditsPerMillion) / 1000000)
+```
+
+未配置倍率时平台使用每百万输入/输出均为 `1,000,000` 的默认 1:1 倘值。
+
+用量记录不包含 Prompt 或回答正文。
+
+### 7.6 周期额度与过期任务
+
+系统注册以下预置计划任务：
+
+| 任务码 | 默认周期 | 功能 |
+| --- | --- | --- |
+| `BILLING_CYCLE_SYNC` | 每 10 分钟 | 发放到期周期额度、标记过期订阅、失效过期 Token 分桶并写通知 |
+| `BILLING_RESERVATION_CLEANUP` | 每 5 分钟 | 释放超过阈值且未结算的聊天预扣 |
+
+订阅周期额度的到期时间等于周期结算时间或订阅结束时间，以较早者为准。补充包和永久有效的注册额度不因订阅到期失效。
+
+### 7.7 管理员用量与账本
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/admin/billing/usage/summary` | `billing:usage-read` | 全站汇总 |
+| `GET` | `/admin/billing/usage/by-model` | `billing:usage-read` | 按模型聚合调用量及 Token |
+| `GET` | `/admin/billing/usage/trend` | `billing:usage-read` | 按小时、日或月查看趋势 |
+| `GET` | `/admin/billing/users/{userId}` | `billing:usage-read` | 用户订阅、分桶和用量汇总 |
+| `GET` | `/admin/billing/users/{userId}/usage` | `billing:usage-read` | 用户逐次模型用量 |
+| `GET` | `/admin/billing/users/{userId}/ledger` | `billing:usage-read` | 用户额度流水 |
+| `POST` | `/admin/billing/users/{userId}/token-grants` | `billing:grant` | 手动发放已配置的 Token 包 |
+| `POST` | `/admin/billing/users/{userId}/adjustments` | `billing:adjust` | 管理员纠正额度，必须填写原因 |
+
+趋势参数：
+
+```text
+/admin/billing/usage/trend?from=2026-11-01&to=2026-11-21&interval=DAY
+```
+
+`interval` 支持 `HOUR`、`DAY`、`MONTH`。汇总和趋势默认读取最近 30 天。
+
+手动发包示例：
+
+```http
+POST /admin/billing/users/2114256826568491009/token-grants
+Idempotency-Key: 2f58cabc-...
+
+{
+  "tokenPackId": "51001",
+  "reason": "活动奖励"
+}
+```
+
+重复请求和重复幂等键不会重复增加余额。
+
+## 8. CORS
 
 后端通过 `app.cors.*` 统一配置，并在 Spring Security 过滤器链前处理预检请求：
 
@@ -1016,7 +1201,7 @@ Access-Control-Request-Method: GET
 
 ---
 
-## 8. 错误码
+## 9. 错误码
 
 | code | HTTP | 说明 |
 | --- | --- | --- |
@@ -1037,7 +1222,7 @@ Access-Control-Request-Method: GET
 
 ---
 
-## 9. 快速流程示例
+## 10. 快速流程示例
 
 ```bash
 BASE=http://localhost:8080/api/v1

@@ -1,6 +1,7 @@
 package bao.gabriel.cognia.system.service;
 
 import bao.gabriel.cognia.config.properties.InitProperties;
+import bao.gabriel.cognia.common.util.DefaultAvatarPicker;
 import bao.gabriel.cognia.system.entity.Permission;
 import bao.gabriel.cognia.system.entity.Role;
 import bao.gabriel.cognia.system.entity.RolePermission;
@@ -78,7 +79,13 @@ public class DataInitializer implements ApplicationRunner {
             new PermissionSeed("trace:read", "查看开发链路", "API", "/api/v1/admin/traces", "GET", 73),
             new PermissionSeed("trace:write", "清理开发链路", "API", "/api/v1/admin/traces", "DELETE", 74),
             new PermissionSeed("feedback:read", "查看质量反馈", "API", "/api/v1/admin/feedback", "GET", 75),
-            new PermissionSeed("feedback:update", "处理质量反馈", "API", "/api/v1/admin/feedback", "PUT", 76)
+            new PermissionSeed("feedback:update", "处理质量反馈", "API", "/api/v1/admin/feedback", "PUT", 76),
+            new PermissionSeed("billing:read", "查看计费设置", "API", "/api/v1/admin/billing", "GET", 77),
+            new PermissionSeed("billing:update", "修改计费设置", "API", "/api/v1/admin/billing", "PUT", 78),
+            new PermissionSeed("billing:order-read", "查看计费订单", "API", "/api/v1/admin/billing/orders", "GET", 79),
+            new PermissionSeed("billing:usage-read", "查看计费用量", "API", "/api/v1/admin/billing/usage", "GET", 80),
+            new PermissionSeed("billing:grant", "手动发放 Token", "API", "/api/v1/admin/billing/users", "POST", 81),
+            new PermissionSeed("billing:adjust", "手动调整额度", "API", "/api/v1/admin/billing/users", "POST", 82)
     );
 
     private final InitProperties initProperties;
@@ -179,6 +186,7 @@ public class DataInitializer implements ApplicationRunner {
             admin.setPassword(passwordEncoder.encode(initProperties.getAdminPassword()));
             admin.setNickname("系统管理员");
             admin.setEmail(email);
+            admin.setAvatar(DefaultAvatarPicker.randomPath());
             admin.setStatus(1);
             admin.setRemark("系统初始化创建");
             userMapper.insert(admin);

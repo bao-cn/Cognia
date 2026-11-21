@@ -166,7 +166,7 @@ watch(() => route.fullPath, () => {
     <SidebarInset class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <SiteHeader class="z-49 shrink-0 rounded-t-xl bg-background" />
 
-      <div class="@container/main flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <div class="@container/main route-transition-content flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         <router-view />
       </div>
     </SidebarInset>

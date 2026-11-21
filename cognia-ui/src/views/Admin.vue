@@ -159,7 +159,7 @@ const siteStore = useSiteStore()
       <div class="flex h-12 shrink-0 items-center justify-end border-b px-4">
         <NotificationBell />
       </div>
-      <div class="@container/main flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+      <div class="@container/main route-transition-content flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         <router-view />
       </div>
     </SidebarInset>

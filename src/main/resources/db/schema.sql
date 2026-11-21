@@ -153,9 +153,9 @@ INSERT INTO sys_site_setting (id, logo_url, site_name, site_description, site_ke
                               apple_login_enabled, google_login_enabled,
                               smtp_enabled, smtp_port, smtp_ssl, smtp_starttls, smtp_auth,
                               create_time, updated_at)
-VALUES (1, '/logo.png', 'Cognia', 'Cognia 开源的企业知识库平台',
+VALUES (1, '/logo.png', 'Cognia', 'Cognia Open',
         'Cognia,企业知识库,AI 搜索,知识管理',
-        ' - Cognia 开源的企业知识库平台', 'zhCn', 'Asia/Shanghai',
+        ' - Cognia Open', 'zhCn', 'Asia/Shanghai',
         'pdf,doc,docx,xls,xlsx,ppt,pptx,txt,md,html,csv',
         TRUE, FALSE, TRUE, FALSE, FALSE, FALSE, 587, FALSE, TRUE, TRUE, NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
@@ -566,6 +566,9 @@ CREATE TABLE IF NOT EXISTS sys_notification
     delivered_time TIMESTAMP,
     create_time    TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+ALTER TABLE sys_notification ADD COLUMN IF NOT EXISTS source_key VARCHAR(128);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_notification_source_key
+    ON sys_notification (source_key) WHERE source_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_notification_user_read ON sys_notification (user_id, read_flag);
 CREATE INDEX IF NOT EXISTS idx_notification_user_created ON sys_notification (user_id, create_time DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_undelivered ON sys_notification (user_id, delivered);
@@ -633,6 +636,22 @@ INSERT INTO sys_scheduled_task (code, name, description, enabled, cron_expressio
 VALUES ('STORAGE_LIFECYCLE_SYNC', '同步临时文件生命周期',
         '确保单桶中存在 tmp/ 前缀的生命周期规则，临时文件到期后由 S3 自动清理。',
         TRUE, '0 0 5 * * *', NULL, NULL, NULL, 1, NOW(), NOW())
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO sys_scheduled_task (code, name, description, enabled, cron_expression,
+                                threshold_minutes, retention_days, older_than_hours,
+                                batch_size, create_time, update_time)
+VALUES ('BILLING_CYCLE_SYNC', '同步订阅周期与额度过期',
+        '发放到期订阅周期额度、失效已过期订阅及过期 Token 分桶，并写入账本和站务通知。',
+        TRUE, '0 */10 * * * *', NULL, NULL, NULL, 500, NOW(), NOW())
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO sys_scheduled_task (code, name, description, enabled, cron_expression,
+                                threshold_minutes, retention_days, older_than_hours,
+                                batch_size, create_time, update_time)
+VALUES ('BILLING_RESERVATION_CLEANUP', '清理超时聊天预扣',
+        '释放超过阈值且仍未结算的聊天 Token 预扣，并记录审计状态。',
+        TRUE, '0 */5 * * * *', 30, NULL, NULL, 500, NOW(), NOW())
 ON CONFLICT (code) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -1197,6 +1216,237 @@ CREATE INDEX IF NOT EXISTS idx_metric_event_type_time ON sys_metric_event(event_
 CREATE INDEX IF NOT EXISTS idx_metric_event_user ON sys_metric_event(user_id, create_time DESC);
 CREATE INDEX IF NOT EXISTS idx_metric_event_channel ON sys_metric_event(channel_id, create_time DESC);
 CREATE INDEX IF NOT EXISTS idx_metric_event_model ON sys_metric_event(model_name, create_time DESC);
+
+-- ---------------------------------------------------------------------------
+-- Subscription and token billing.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_billing_setting (
+    id BIGINT PRIMARY KEY,
+    default_plan_id BIGINT,
+    registration_tokens BIGINT NOT NULL DEFAULT 0,
+    registration_token_expire_days INTEGER,
+    currency VARCHAR(16) NOT NULL DEFAULT 'CNY',
+    updated_by BIGINT,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+INSERT INTO sys_billing_setting (id, registration_tokens, currency)
+VALUES (1, 0, 'CNY') ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS sys_billing_plan (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    code VARCHAR(64) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    description VARCHAR(512),
+    plan_type VARCHAR(16) NOT NULL DEFAULT 'PAID',
+    price_minor BIGINT NOT NULL DEFAULT 0,
+    currency VARCHAR(16) NOT NULL DEFAULT 'CNY',
+    duration_days INTEGER,
+    quota_tokens BIGINT NOT NULL DEFAULT 0,
+    quota_cycle_days INTEGER,
+    status VARCHAR(16) NOT NULL DEFAULT 'DISABLED',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    version INTEGER NOT NULL DEFAULT 1,
+    sort INTEGER NOT NULL DEFAULT 0,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_plan_code ON sys_billing_plan(code);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_default_plan ON sys_billing_plan(is_default) WHERE is_default = TRUE;
+
+CREATE TABLE IF NOT EXISTS sys_billing_plan_model (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    plan_id BIGINT NOT NULL,
+    model_config_id BIGINT NOT NULL,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_billing_plan_model UNIQUE (plan_id, model_config_id)
+);
+CREATE INDEX IF NOT EXISTS idx_billing_plan_model_plan ON sys_billing_plan_model(plan_id);
+
+CREATE TABLE IF NOT EXISTS sys_model_billing_rate (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    model_config_id BIGINT NOT NULL,
+    input_credits_per_million BIGINT NOT NULL DEFAULT 1000000,
+    output_credits_per_million BIGINT NOT NULL DEFAULT 1000000,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_model_billing_rate UNIQUE(model_config_id)
+);
+
+CREATE TABLE IF NOT EXISTS sys_token_pack (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    code VARCHAR(64) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    description VARCHAR(512),
+    price_minor BIGINT NOT NULL DEFAULT 0,
+    currency VARCHAR(16) NOT NULL DEFAULT 'CNY',
+    tokens BIGINT NOT NULL,
+    expire_days INTEGER,
+    status VARCHAR(16) NOT NULL DEFAULT 'DISABLED',
+    sort INTEGER NOT NULL DEFAULT 0,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_token_pack_code ON sys_token_pack(code);
+
+CREATE TABLE IF NOT EXISTS sys_billing_order (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    order_no VARCHAR(64) NOT NULL,
+    user_id BIGINT NOT NULL,
+    product_type VARCHAR(32) NOT NULL,
+    product_id BIGINT NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING_PAYMENT',
+    amount_minor BIGINT NOT NULL,
+    currency VARCHAR(16) NOT NULL,
+    product_snapshot TEXT NOT NULL,
+    idempotency_key VARCHAR(128) NOT NULL,
+    payment_provider VARCHAR(32),
+    expire_time TIMESTAMP,
+    paid_time TIMESTAMP,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_order_no ON sys_billing_order(order_no);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_order_user_idempotency ON sys_billing_order(user_id, idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_billing_order_user ON sys_billing_order(user_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_order_status ON sys_billing_order(status, create_time DESC);
+
+CREATE TABLE IF NOT EXISTS sys_payment_transaction (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    provider VARCHAR(32) NOT NULL,
+    provider_transaction_id VARCHAR(128),
+    amount_minor BIGINT NOT NULL,
+    currency VARCHAR(16) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    paid_time TIMESTAMP,
+    raw_payload TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_payment_provider_transaction
+    ON sys_payment_transaction(provider, provider_transaction_id)
+    WHERE provider_transaction_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS sys_payment_webhook_event (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    provider VARCHAR(32) NOT NULL,
+    provider_event_id VARCHAR(128) NOT NULL,
+    payload_hash VARCHAR(64),
+    processed_time TIMESTAMP,
+    result VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_payment_webhook_event
+    ON sys_payment_webhook_event(provider, provider_event_id);
+
+CREATE TABLE IF NOT EXISTS sys_user_subscription (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    plan_id BIGINT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP NOT NULL,
+    next_quota_time TIMESTAMP,
+    product_snapshot TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_user_subscription_user_status ON sys_user_subscription(user_id, status, end_time DESC);
+
+CREATE TABLE IF NOT EXISTS sys_token_lot (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    source_type VARCHAR(32) NOT NULL,
+    source_id BIGINT,
+    granted_tokens BIGINT NOT NULL,
+    remaining_tokens BIGINT NOT NULL DEFAULT 0,
+    held_tokens BIGINT NOT NULL DEFAULT 0,
+    expire_time TIMESTAMP,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_token_lot_user_expiry ON sys_token_lot(user_id, expire_time);
+
+CREATE TABLE IF NOT EXISTS sys_token_ledger (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    event_type VARCHAR(32) NOT NULL,
+    delta_tokens BIGINT NOT NULL,
+    balance_after BIGINT NOT NULL,
+    source_type VARCHAR(32),
+    source_id BIGINT,
+    request_id VARCHAR(128),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_token_ledger_user_time ON sys_token_ledger(user_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_token_ledger_request ON sys_token_ledger(request_id)
+    WHERE request_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS sys_token_reservation (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    request_id VARCHAR(128) NOT NULL,
+    user_id BIGINT NOT NULL,
+    reserved_tokens BIGINT NOT NULL,
+    settled_tokens BIGINT NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL DEFAULT 'RESERVED',
+    lot_snapshot TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_token_reservation_request ON sys_token_reservation(request_id);
+
+CREATE TABLE IF NOT EXISTS sys_token_usage (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    request_id VARCHAR(128) NOT NULL,
+    user_id BIGINT NOT NULL,
+    model_config_id BIGINT,
+    provider_id BIGINT,
+    model_name_snapshot VARCHAR(255),
+    input_tokens BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    charged_tokens BIGINT NOT NULL DEFAULT 0,
+    duration_ms BIGINT NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL,
+    conversation_id BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_token_usage_request ON sys_token_usage(request_id);
+CREATE INDEX IF NOT EXISTS idx_token_usage_time_model ON sys_token_usage(created_at, model_config_id);
+CREATE INDEX IF NOT EXISTS idx_token_usage_time_user ON sys_token_usage(created_at, user_id);
+
+CREATE TABLE IF NOT EXISTS sys_admin_token_grant (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    grant_no VARCHAR(64) NOT NULL,
+    user_id BIGINT NOT NULL,
+    token_pack_id BIGINT,
+    operator_id BIGINT NOT NULL,
+    tokens BIGINT NOT NULL,
+    reason VARCHAR(512) NOT NULL,
+    expire_time TIMESTAMP,
+    idempotency_key VARCHAR(128) NOT NULL,
+    ledger_id BIGINT,
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_admin_token_grant_no ON sys_admin_token_grant(grant_no);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_admin_token_grant_idempotency ON sys_admin_token_grant(idempotency_key);
+
+CREATE TABLE IF NOT EXISTS sys_billing_notification_outbox (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    event_key VARCHAR(128) NOT NULL,
+    user_id BIGINT,
+    type VARCHAR(64) NOT NULL,
+    title VARCHAR(200),
+    content VARCHAR(1000),
+    payload_json TEXT,
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_time TIMESTAMP NOT NULL DEFAULT NOW(),
+    processed_time TIMESTAMP,
+    last_error VARCHAR(1000),
+    create_time TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_billing_notification_event ON sys_billing_notification_outbox(event_key);
 
 -- Conversation archive (no hard deletion from UI; archive instead)
 ALTER TABLE chat_conversation ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;

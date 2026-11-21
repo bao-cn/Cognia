@@ -114,7 +114,7 @@
             <div class="grid gap-4 p-4 md:grid-cols-2">
               <div class="grid gap-2">
                 <Label for="route-suffix">路由默认后缀文本</Label>
-                <Input id="route-suffix" v-model="form.routeSuffix" placeholder=" - Cognia 开源的企业知识库平台" />
+                <Input id="route-suffix" v-model="form.routeSuffix" placeholder=" - Cognia Open" />
                 <p class="text-xs text-muted-foreground">
                   浏览器标题预览：<span class="font-medium text-foreground">用户管理{{ form.routeSuffix }}</span>
                 </p>

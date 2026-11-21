@@ -7,7 +7,9 @@
                 </div>
                 {{ siteStore.siteName }}
             </router-link>
-            <router-view />
+            <div class="route-transition-content">
+                <router-view />
+            </div>
         </div>
         <div class="absolute top-0 left-0 h-screen w-full overflow-hidden z-[-1]">
             <LiquidBackground />

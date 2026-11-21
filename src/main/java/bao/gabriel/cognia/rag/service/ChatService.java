@@ -5,4 +5,5 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 public interface ChatService {
     SseEmitter stream(ChatRequest request, Long userId);
+    SseEmitter stream(ChatRequest request, Long userId, String requestId);
 }

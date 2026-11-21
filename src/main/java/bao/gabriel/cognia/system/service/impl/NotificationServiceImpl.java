@@ -39,11 +39,26 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public void notify(Long userId, String type, String title, String content, Map<String, Object> payload) {
+        notify(userId, null, type, title, content, payload);
+    }
+
+    @Override
+    public void notify(Long userId, String sourceKey, String type, String title, String content,
+                      Map<String, Object> payload) {
         if (userId == null) {
             return;
         }
+        if (sourceKey != null && !sourceKey.isBlank()) {
+            Long existing = notificationMapper.selectCount(new LambdaQueryWrapper<Notification>()
+                    .eq(Notification::getUserId, userId)
+                    .eq(Notification::getSourceKey, sourceKey));
+            if (existing != null && existing > 0) {
+                return;
+            }
+        }
         Notification entity = new Notification();
         entity.setUserId(userId);
+        entity.setSourceKey(sourceKey);
         entity.setType(type);
         entity.setTitle(title);
         entity.setContent(content);
